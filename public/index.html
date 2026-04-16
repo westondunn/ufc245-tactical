@@ -2783,6 +2783,10 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 (()=>{
 const __t0=performance.now();
 
+// Math utilities
+const lerp = (a, b, t) => a + (b - a) * t;
+const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
 /* -----------------------------------------------------------
    DATA MODEL — all verified from UFCStats.com
 ----------------------------------------------------------- */
