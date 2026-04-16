@@ -5036,9 +5036,10 @@ function recCycleSpeed(){
 const REC_3D = { ready: false };
 
 function init3DScene(){
-  if (typeof THREE === 'undefined') return;
+  if (typeof THREE === 'undefined') { console.warn('[3D] Three.js not loaded — skipping'); return; }
   const canvas = document.getElementById('recCanvas3d');
   if (!canvas) return;
+  try {
   const stage = canvas.parentElement;
   const W = stage.clientWidth || 900;
   const H = stage.clientHeight || 440;
@@ -5147,13 +5148,21 @@ function init3DScene(){
     camera.aspect = w/h; camera.updateProjectionMatrix();
     renderer.setSize(w, h);
   }).observe(stage);
+  } catch(err) {
+    console.error('[3D] init failed (WebGL may not be supported):', err.message);
+    // Fall back: show SVG instead
+    const svg = document.getElementById('recStage');
+    if (svg) svg.style.display = '';
+    if (canvas) canvas.style.display = 'none';
+  }
 }
 
 // Position a cylinder between two 3D points
-const _tmpDir = new THREE.Vector3();
-const _tmpUp = new THREE.Vector3(0,1,0);
-const _tmpQuat = new THREE.Quaternion();
+const _tmpDir = typeof THREE !== 'undefined' ? new THREE.Vector3() : null;
+const _tmpUp = typeof THREE !== 'undefined' ? new THREE.Vector3(0,1,0) : null;
+const _tmpQuat = typeof THREE !== 'undefined' ? new THREE.Quaternion() : null;
 function posLimb3D(mesh, ax,ay,az, bx,by,bz){
+  if (!_tmpDir) return; // Three.js not loaded
   const dx=bx-ax, dy=by-ay, dz=bz-az;
   const len = Math.sqrt(dx*dx+dy*dy+dz*dz);
   if (len < 0.001){ mesh.visible=false; return; }
@@ -5465,7 +5474,62 @@ function selectFight(fightId){
   // Update selector chips
   document.querySelectorAll('.fight-chip').forEach(c => c.classList.toggle('active', c.dataset.fight === fightId));
 
-  // Update hero text
+  // ── RESET ALL ANIMATIONS & COUNTERS ──
+
+  // Recreation: pause + reset to start
+  try {
+    if (_recPlaying) recPause();
+    _recTime = 0;
+    _recLastEventIdx = -1;
+    _recLastCaption = '';
+    _trailInited = false;
+    const fin = document.getElementById('recFinishOverlay');
+    if (fin) fin.classList.remove('show');
+    const progFill = document.getElementById('recProgressFill');
+    if (progFill) progFill.style.width = '0%';
+    const recTimeEl = document.getElementById('recTime');
+    if (recTimeEl) recTimeEl.textContent = '00:00 / 01:40';
+    const capEl = document.getElementById('recCaption');
+    if (capEl) capEl.textContent = 'Ready · Press play';
+    const chEl = document.getElementById('recChapter');
+    if (chEl) chEl.textContent = 'ROUND 01';
+    const playBtn = document.getElementById('recPlayBtn');
+    if (playBtn){ playBtn.textContent = '▶ PLAY'; playBtn.classList.remove('paused'); }
+    // Reset fighter poses to frame 0
+    if (_recPartsR && _recPartsB) applyRecFrame(0);
+    // Clear 3D particles
+    if (REC_3D.ready && REC_3D.particles) {
+      REC_3D.particles.forEach(p => { REC_3D.scene.remove(p); p.geometry.dispose(); p.material.dispose(); });
+      REC_3D.particles.length = 0;
+      REC_3D.shakeAmt = 0;
+    }
+  } catch(e){ console.warn('[reset] recreation:', e.message); }
+
+  // Octagon: reset to phase 0
+  try {
+    if (_octTimer) clearTimeout(_octTimer);
+    _octIdx = 0;
+    _octPaused = false;
+    applyOctPhase(0);
+    const octBtn = document.getElementById('octPlayPause');
+    if (octBtn){ octBtn.textContent = '❚❚'; octBtn.classList.remove('paused'); }
+    // Restart the loop
+    octLoopStart();
+  } catch(e){ console.warn('[reset] octagon:', e.message); }
+
+  // Spotlight: clear any active filter
+  try { if (_spotlight) setSpotlight(null); } catch(e){}
+
+  // Round buttons: reset active state
+  document.querySelectorAll('[data-recjump]').forEach(btn => btn.classList.remove('active'));
+
+  // Close any open panels
+  try {
+    document.getElementById('fighterPanel').style.display = 'none';
+    document.getElementById('comparePanel').classList.remove('show');
+  } catch(e){}
+
+  // ── UPDATE HERO TEXT ──
   const setHtml = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
   setHtml('heroEvent', fight.event);
   setHtml('heroRedTag', fight.red.tag + ' <span class="dot"></span>');
@@ -5479,7 +5543,7 @@ function selectFight(fightId){
   setHtml('heroBlueRecord', fight.blue.record);
   setHtml('heroBlueStyle', fight.blue.style);
 
-  // Scope detailed sections
+  // ── SCOPE DETAILED SECTIONS ──
   if (fight.full){
     SCOPED_SECTIONS.forEach(id => {
       const sec = document.getElementById(id);
@@ -5832,17 +5896,24 @@ function setupComparePanel(){
   });
 }
 
-renderPaceChart();
-setupNav();
-setupOctPhaseButtons();
-octLoopStart();
-setupSpotlight();
-setupOctControls();
-setupCrossLinks();
-setupRecreation();
-setupFightSelector();
-setupComparePanel();
-startTicker();
+// Init each module independently — one failure must not cascade
+const _inits = [
+  ['renderPaceChart', renderPaceChart],
+  ['setupNav', setupNav],
+  ['setupOctPhaseButtons', setupOctPhaseButtons],
+  ['octLoopStart', octLoopStart],
+  ['setupSpotlight', setupSpotlight],
+  ['setupOctControls', setupOctControls],
+  ['setupCrossLinks', setupCrossLinks],
+  ['setupRecreation', setupRecreation],
+  ['setupFightSelector', setupFightSelector],
+  ['setupComparePanel', setupComparePanel],
+  ['startTicker', startTicker]
+];
+_inits.forEach(([name, fn]) => {
+  try { fn(); }
+  catch(e) { console.error(`[init] ${name} failed:`, e.message); }
+});
 document.getElementById('renderTime').textContent = Math.round(performance.now() - __t0);
 
 // Expose functions needed by inline onclick in dynamically generated HTML
