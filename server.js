@@ -7,6 +7,7 @@ const compression = require('compression');
 const path = require('path');
 const db = require('./db');
 const bio = require('./lib/biomechanics');
+const tactical = require('./lib/tactical');
 const ver = require('./lib/version');
 
 const app = express();
@@ -148,6 +149,42 @@ app.get('/api/fights/:id/rounds', apiHandler((req, res) => {
   const fight = db.getFightWithRounds(parseInt(req.params.id, 10));
   if (!fight) return res.status(404).json({ error: 'fight_not_found' });
   res.json(fight);
+}));
+
+// Tactical breakdown for a single fight
+app.get('/api/fights/:id/tactical', apiHandler((req, res) => {
+  const fightId = parseInt(req.params.id, 10);
+  const fight = db.getFight(fightId);
+  if (!fight) return res.status(404).json({ error: 'fight_not_found' });
+  const red = db.getFighter(fight.red_fighter_id);
+  const blue = db.getFighter(fight.blue_fighter_id);
+  const roundStats = db.getRoundStats(fightId);
+  const analysis = tactical.analyzeFight(fight, red, blue, roundStats);
+  res.json(analysis);
+}));
+
+// Tactical breakdowns for an entire event card
+app.get('/api/events/:id/tactical', apiHandler((req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (isNaN(eventId)) return res.status(400).json({ error: 'invalid_id' });
+  const event = db.getEvent(eventId);
+  if (!event) return res.status(404).json({ error: 'event_not_found' });
+  const card = db.getEventCard(eventId);
+  const analyses = card.map(bout => {
+    const fight = db.getFight(bout.id);
+    if (!fight) return null;
+    const red = db.getFighter(fight.red_fighter_id);
+    const blue = db.getFighter(fight.blue_fighter_id);
+    const roundStats = db.getRoundStats(bout.id);
+    return tactical.analyzeFight(fight, red, blue, roundStats);
+  }).filter(Boolean);
+  res.json({ event, analyses });
+}));
+
+// All tactical breakdowns (bulk)
+app.get('/api/tactical/all', apiHandler((req, res) => {
+  const analyses = tactical.generateAllAnalyses(db);
+  res.json({ count: analyses.length, analyses });
 }));
 
 // Stat leaders

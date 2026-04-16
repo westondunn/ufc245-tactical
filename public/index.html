@@ -6140,8 +6140,13 @@ async function loadFightDetailTab(fightId){
   panel.classList.add('show');
   panel.innerHTML = '<div style="color:var(--muted);padding:12px;font-family:var(--f-mono);font-size:11px">Loading fight details…</div>';
   try {
-    const res = await fetch('/api/fights/' + fightId + '/rounds');
-    const f = await res.json();
+    const [fightRes, tacRes] = await Promise.all([
+      fetch('/api/fights/' + fightId + '/rounds'),
+      fetch('/api/fights/' + fightId + '/tactical')
+    ]);
+    const f = await fightRes.json();
+    const tac = await tacRes.json();
+
     let html = '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:14px">' +
       '<div>' +
         '<span style="font-family:var(--f-disp);font-size:18px;font-weight:700;color:#FF5965">' + escHtml(f.red_name) + '</span>' +
@@ -6153,7 +6158,7 @@ async function loadFightDetailTab(fightId){
         (f.referee ? '<br>Ref: ' + escHtml(f.referee) : '') +
       '</div></div>';
 
-    // Fight totals from fight_stats
+    // Fight totals
     if (f.stats && f.stats.length >= 2) {
       const s1 = f.stats.find(s => s.fighter_id === f.red_fighter_id) || f.stats[0];
       const s2 = f.stats.find(s => s.fighter_id === f.blue_fighter_id) || f.stats[1];
@@ -6166,14 +6171,56 @@ async function loadFightDetailTab(fightId){
       html += '<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.15em;color:var(--cyan);margin:16px 0 8px;text-transform:uppercase">Per-Round Stats</div>';
       html += buildRoundTable(f.round_stats, f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name);
     } else {
-      html += '<div style="margin-top:16px"><span class="badge-no-stats">Stats unavailable</span>' +
+      html += '<div style="margin-top:16px"><span class="badge-no-stats">Per-round stats unavailable</span>' +
         '<span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim);margin-left:8px">' +
         'Run scraper to populate: node data/scrape.js</span></div>';
     }
 
+    // Tactical breakdown
+    if (tac && tac.sections) {
+      html += renderTacticalBreakdown(tac);
+    }
+
     panel.innerHTML = html;
     panel.scrollIntoView({behavior:'smooth', block:'nearest'});
-  } catch(e){ panel.innerHTML = '<div style="color:var(--red)">Error loading fight</div>'; }
+  } catch(e){ panel.innerHTML = '<div style="color:var(--red)">Error loading fight: ' + escHtml(e.message) + '</div>'; }
+}
+
+function renderTacticalBreakdown(tac){
+  let html = '<div style="margin-top:20px;border-top:1px solid var(--border);padding-top:16px">' +
+    '<div style="font-family:var(--f-disp);font-size:16px;font-weight:700;letter-spacing:.08em;color:var(--fg);margin-bottom:14px">Tactical Breakdown</div>';
+
+  for (const section of tac.sections) {
+    html += '<div style="margin-bottom:14px">' +
+      '<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.15em;color:var(--cyan);text-transform:uppercase;margin-bottom:6px;border-bottom:1px solid var(--border-soft);padding-bottom:4px">' +
+      escHtml(section.title) + (section.source ? ' <span style="color:var(--muted-dim);font-size:8px">· ' + escHtml(section.source) + '</span>' : '') +
+      '</div>';
+
+    for (const item of (section.items || [])) {
+      const advColor = item.advantage === 'red' ? '#FF5965' : item.advantage === 'blue' ? '#5EC2FF' : 'var(--fg-dim)';
+      html += '<div style="display:flex;gap:8px;padding:3px 0;font-family:var(--f-mono);font-size:11px;border-bottom:1px solid rgba(255,255,255,.02)">' +
+        '<div style="min-width:120px;color:var(--muted);font-size:9px;letter-spacing:.1em;padding-top:2px">' + escHtml(item.label) + '</div>' +
+        '<div style="flex:1">' +
+          '<div style="color:' + advColor + '">' + escHtml(item.value) + '</div>' +
+          (item.detail ? '<div style="font-size:9px;color:var(--muted-dim);margin-top:1px">' + escHtml(item.detail) + '</div>' : '') +
+          (item.note ? '<div style="font-size:9px;color:var(--muted);margin-top:1px;font-style:italic">' + escHtml(item.note) + '</div>' : '') +
+        '</div></div>';
+    }
+    html += '</div>';
+  }
+
+  // Key factors
+  if (tac.key_factors && tac.key_factors.length) {
+    html += '<div style="margin-top:8px;padding:10px 12px;background:rgba(45,220,255,.04);border-left:2px solid var(--cyan)">' +
+      '<div style="font-family:var(--f-mono);font-size:9px;letter-spacing:.15em;color:var(--cyan);text-transform:uppercase;margin-bottom:6px">Key Factors</div>';
+    tac.key_factors.forEach(f => {
+      html += '<div style="font-family:var(--f-mono);font-size:10px;color:var(--fg-dim);padding:2px 0">· ' + escHtml(f) + '</div>';
+    });
+    html += '</div>';
+  }
+
+  html += '</div>';
+  return html;
 }
 
 function buildTotalsRow(s1, s2){
