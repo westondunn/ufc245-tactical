@@ -122,6 +122,46 @@ app.get('/api/fights/:id', (req, res) => {
   res.json(fight);
 });
 
+// Fighter career stats (aggregated)
+app.get('/api/fighters/:id/career-stats', (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  const fighter = db.getFighter(id);
+  if (!fighter) return res.status(404).json({ error: 'fighter_not_found' });
+  const stats = db.getCareerStats(id);
+  const record = db.getFighterRecord(id);
+  res.json({ fighter, stats, record });
+});
+
+// Compare two fighters
+app.get('/api/fighters/:id1/compare/:id2', (req, res) => {
+  const id1 = parseInt(req.params.id1, 10);
+  const id2 = parseInt(req.params.id2, 10);
+  const f1 = db.getFighter(id1);
+  const f2 = db.getFighter(id2);
+  if (!f1 || !f2) return res.status(404).json({ error: 'fighter_not_found' });
+
+  const stats1 = db.getCareerStats(id1);
+  const stats2 = db.getCareerStats(id2);
+  const record1 = db.getFighterRecord(id1);
+  const record2 = db.getFighterRecord(id2);
+  const h2h = db.getHeadToHead(id1, id2);
+
+  // Generate biomechanics comparison for a right cross at each fighter's weight
+  const massKg1 = Math.round(f1.height_cm * 0.42); // rough estimate from height
+  const massKg2 = Math.round(f2.height_cm * 0.42);
+  const bio1 = bio.estimateStrikeForce({ bodyMassKg: massKg1, strikeType: 'right_cross' });
+  const bio2 = bio.estimateStrikeForce({ bodyMassKg: massKg2, strikeType: 'right_cross' });
+
+  res.json({
+    fighters: [
+      { ...f1, career_stats: stats1, record: record1, biomechanics: bio1 },
+      { ...f2, career_stats: stats2, record: record2, biomechanics: bio2 }
+    ],
+    head_to_head: h2h,
+    common_weight_class: f1.weight_class === f2.weight_class ? f1.weight_class : null
+  });
+});
+
 // Biomechanics calculation endpoint
 app.get('/api/biomechanics/estimate', (req, res) => {
   const bodyMassKg = parseFloat(req.query.mass) || 77;

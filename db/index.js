@@ -231,7 +231,61 @@ function getAllEvents() {
   return allRows('SELECT * FROM events ORDER BY date DESC');
 }
 
+function getCareerStats(fighterId) {
+  return oneRow(
+    `SELECT
+       fighter_id,
+       COUNT(*) as total_fights,
+       SUM(sig_str_landed) as total_sig_landed,
+       SUM(sig_str_attempted) as total_sig_attempted,
+       ROUND(CAST(SUM(sig_str_landed) AS REAL) / NULLIF(SUM(sig_str_attempted),0) * 100, 1) as sig_accuracy_pct,
+       SUM(knockdowns) as total_knockdowns,
+       SUM(takedowns_landed) as total_td_landed,
+       SUM(takedowns_attempted) as total_td_attempted,
+       ROUND(CAST(SUM(takedowns_landed) AS REAL) / NULLIF(SUM(takedowns_attempted),0) * 100, 1) as td_accuracy_pct,
+       SUM(sub_attempts) as total_sub_attempts,
+       SUM(control_time_sec) as total_control_sec,
+       SUM(head_landed) as total_head,
+       SUM(body_landed) as total_body,
+       SUM(leg_landed) as total_leg,
+       SUM(distance_landed) as total_distance,
+       SUM(clinch_landed) as total_clinch,
+       SUM(ground_landed) as total_ground,
+       ROUND(CAST(SUM(sig_str_landed) AS REAL) / NULLIF(COUNT(*),0), 1) as avg_sig_per_fight,
+       ROUND(CAST(SUM(knockdowns) AS REAL) / NULLIF(COUNT(*),0), 2) as avg_kd_per_fight
+     FROM fight_stats WHERE fighter_id = ?`,
+    [fighterId]
+  );
+}
+
+function getHeadToHead(id1, id2) {
+  return allRows(
+    `SELECT f.*, e.number as event_number, e.name as event_name, e.date as event_date,
+       fr.name as red_name, fb.name as blue_name
+     FROM fights f
+     JOIN events e ON f.event_id = e.id
+     JOIN fighters fr ON f.red_fighter_id = fr.id
+     JOIN fighters fb ON f.blue_fighter_id = fb.id
+     WHERE (f.red_fighter_id = ? AND f.blue_fighter_id = ?)
+        OR (f.red_fighter_id = ? AND f.blue_fighter_id = ?)
+     ORDER BY e.date DESC`,
+    [id1, id2, id2, id1]
+  );
+}
+
+function getFighterRecord(fighterId) {
+  const wins = allRows(
+    'SELECT COUNT(*) as c FROM fights WHERE winner_id = ?', [fighterId]
+  )[0]?.c || 0;
+  const total = allRows(
+    'SELECT COUNT(*) as c FROM fights WHERE red_fighter_id = ? OR blue_fighter_id = ?',
+    [fighterId, fighterId]
+  )[0]?.c || 0;
+  return { wins, losses: total - wins, total };
+}
+
 module.exports = {
   init, searchFighters, getFighter, getFighterEvents,
-  getEventCard, getEvent, getEventByNumber, getFight, getAllEvents
+  getEventCard, getEvent, getEventByNumber, getFight, getAllEvents,
+  getCareerStats, getHeadToHead, getFighterRecord
 };
