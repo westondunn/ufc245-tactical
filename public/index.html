@@ -1310,6 +1310,63 @@ body.spotlight-blue .fill-red{
 }
 .rec-finish-overlay.show{opacity:1}
 
+/* FULLSCREEN MODE · recreation panel */
+.recreation-panel:fullscreen,
+.recreation-panel:-webkit-full-screen{
+  background:#000;
+  width:100vw;height:100vh;
+  display:flex;flex-direction:column;
+  padding:0;border:none;
+}
+.recreation-panel:fullscreen .recreation-head,
+.recreation-panel:-webkit-full-screen .recreation-head{
+  flex-shrink:0;padding:18px 32px 14px;
+  background:#04050A;
+}
+.recreation-panel:fullscreen .rec-stage,
+.recreation-panel:-webkit-full-screen .rec-stage{
+  flex:1;
+  min-height:0;height:auto;
+}
+.recreation-panel:fullscreen .rec-stage-svg,
+.recreation-panel:-webkit-full-screen .rec-stage-svg{
+  height:100%;
+}
+.recreation-panel:fullscreen .rec-controls,
+.recreation-panel:-webkit-full-screen .rec-controls{
+  flex-shrink:0;padding:18px 32px;
+}
+.recreation-panel:fullscreen .rec-chapter,
+.recreation-panel:-webkit-full-screen .rec-chapter{
+  font-size:38px;top:28px;left:40px;
+}
+.recreation-panel:fullscreen .rec-chapter-sub,
+.recreation-panel:-webkit-full-screen .rec-chapter-sub{
+  font-size:12px;margin-top:6px;
+}
+.recreation-panel:fullscreen .rec-round-pill,
+.recreation-panel:-webkit-full-screen .rec-round-pill{
+  top:32px;right:40px;font-size:13px;padding:8px 16px;
+}
+.recreation-panel:fullscreen .rec-caption,
+.recreation-panel:-webkit-full-screen .rec-caption{
+  font-size:15px;padding:12px 28px;bottom:44px;letter-spacing:.22em;
+}
+.recreation-panel:fullscreen .rec-corner-r,
+.recreation-panel:-webkit-full-screen .rec-corner-r,
+.recreation-panel:fullscreen .rec-corner-b,
+.recreation-panel:-webkit-full-screen .rec-corner-b{
+  font-size:11px;bottom:32px;
+}
+.recreation-panel:fullscreen .rec-corner-r,
+.recreation-panel:-webkit-full-screen .rec-corner-r{left:36px}
+.recreation-panel:fullscreen .rec-corner-b,
+.recreation-panel:-webkit-full-screen .rec-corner-b{right:36px}
+.recreation-panel:fullscreen .rec-finish-overlay,
+.recreation-panel:-webkit-full-screen .rec-finish-overlay{
+  font-size:120px;
+}
+
 /* =============================================================
    AFTERMATH
 ============================================================= */
@@ -2692,6 +2749,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
         <button class="rec-btn" data-recjump="4">R5</button>
       </div>
       <button class="rec-btn" id="recSpeedBtn">1.0×</button>
+      <button class="rec-btn" id="recFsBtn" title="Fullscreen (F)">⛶ FS</button>
     </div>
   </div>
 </section>
@@ -4413,6 +4471,40 @@ function recCycleSpeed(){
   document.getElementById('recSpeedBtn').textContent = _recSpeed.toFixed(1) + '×';
 }
 
+/* -----------------------------------------------------------
+   RECREATION · FULLSCREEN
+----------------------------------------------------------- */
+function _recFsEl(){
+  return document.fullscreenElement || document.webkitFullscreenElement || document.msFullscreenElement || null;
+}
+function recToggleFullscreen(){
+  const panel = document.querySelector('.recreation-panel');
+  if (!panel) return;
+  if (!_recFsEl()){
+    const req = panel.requestFullscreen || panel.webkitRequestFullscreen || panel.msRequestFullscreen;
+    if (req){
+      const p = req.call(panel);
+      if (p && p.catch) p.catch(err => console.warn('Fullscreen rejected:', err && err.message));
+      // Auto-play on entering fullscreen if paused and not yet at end
+      if (!_recPlaying && _recTime < REC_TOTAL - 0.1) recPlay();
+    }
+  } else {
+    const exit = document.exitFullscreen || document.webkitExitFullscreen || document.msExitFullscreen;
+    if (exit) exit.call(document);
+  }
+}
+// Update FS button label on state change
+['fullscreenchange','webkitfullscreenchange','msfullscreenchange'].forEach(evName => {
+  document.addEventListener(evName, () => {
+    const btn = document.getElementById('recFsBtn');
+    if (!btn) return;
+    const panel = document.querySelector('.recreation-panel');
+    const inFs = _recFsEl() === panel;
+    btn.innerHTML = inFs ? '⛶× EXIT' : '⛶ FS';
+    btn.classList.toggle('active', inFs);
+  });
+});
+
 function setupRecreation(){
   _recPartsR = cachePartsFor('rR');
   _recPartsB = cachePartsFor('rB');
@@ -4420,8 +4512,11 @@ function setupRecreation(){
   // Render initial frame
   applyRecFrame(0);
 
+  // Button wiring
   document.getElementById('recPlayBtn').addEventListener('click', recToggle);
   document.getElementById('recSpeedBtn').addEventListener('click', recCycleSpeed);
+  const fsBtn = document.getElementById('recFsBtn');
+  if (fsBtn) fsBtn.addEventListener('click', recToggleFullscreen);
 
   // Progress bar click/drag
   const prog = document.getElementById('recProgress');
@@ -4434,6 +4529,39 @@ function setupRecreation(){
   // Round jump buttons
   document.querySelectorAll('[data-recjump]').forEach(btn => {
     btn.addEventListener('click', () => recJumpToRound(parseInt(btn.dataset.recjump, 10)));
+  });
+
+  // Keyboard shortcuts
+  // F globally toggles fullscreen when recreation is visible or already fullscreen
+  // When recreation is fullscreen: Space toggles play/pause, arrows seek ±3s
+  document.addEventListener('keydown', e => {
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    const panel = document.querySelector('.recreation-panel');
+    if (!panel) return;
+    const isFs = _recFsEl() === panel;
+    const rect = panel.getBoundingClientRect();
+    const inView = rect.top < window.innerHeight * 0.7 && rect.bottom > window.innerHeight * 0.3;
+
+    // F key · toggle fullscreen (requires panel in view or already fs)
+    if ((e.key === 'f' || e.key === 'F') && (isFs || inView)){
+      e.preventDefault();
+      recToggleFullscreen();
+      return;
+    }
+
+    // When fullscreen · priority keys
+    if (isFs){
+      if (e.key === ' '){
+        e.preventDefault();
+        recToggle();
+      } else if (e.key === 'ArrowRight'){
+        e.preventDefault();
+        recSeek(Math.min(1, (_recTime + 3) / REC_TOTAL));
+      } else if (e.key === 'ArrowLeft'){
+        e.preventDefault();
+        recSeek(Math.max(0, (_recTime - 3) / REC_TOTAL));
+      }
+    }
   });
 
   // Auto-play when scrolled into view for first time
