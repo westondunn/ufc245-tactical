@@ -1308,6 +1308,51 @@ body.spotlight-blue .fill-red{
   color:#FFFFFF;
   text-shadow:0 0 24px rgba(255,45,63,.8);
 }
+
+/* Stage shake on big impacts */
+.rec-stage.shake{
+  animation:stageShake .35s ease-out;
+}
+@keyframes stageShake{
+  0%{transform:translate(0,0)}
+  15%{transform:translate(-6px,3px)}
+  30%{transform:translate(5px,-2px)}
+  45%{transform:translate(-4px,2px)}
+  60%{transform:translate(3px,-1px)}
+  80%{transform:translate(-1px,1px)}
+  100%{transform:translate(0,0)}
+}
+.rec-stage.shake-big{
+  animation:stageShakeBig .5s ease-out;
+}
+@keyframes stageShakeBig{
+  0%{transform:translate(0,0)}
+  10%{transform:translate(-10px,5px)}
+  20%{transform:translate(8px,-4px)}
+  30%{transform:translate(-7px,3px)}
+  40%{transform:translate(5px,-3px)}
+  50%{transform:translate(-4px,2px)}
+  60%{transform:translate(3px,-1px)}
+  75%{transform:translate(-2px,1px)}
+  100%{transform:translate(0,0)}
+}
+
+/* Motion trail lines */
+.rec-trail{
+  stroke-linecap:round;
+  fill:none;
+  pointer-events:none;
+  opacity:0;
+  transition:opacity .15s ease;
+}
+.rec-trail.active{
+  opacity:1;
+  animation:trailFade .4s ease-out forwards;
+}
+@keyframes trailFade{
+  0%{opacity:.7}
+  100%{opacity:0}
+}
 .rec-finish-overlay.show{opacity:1}
 
 /* FULLSCREEN MODE · recreation panel */
@@ -2711,6 +2756,16 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 
         <!-- Hit flash layer (populated by JS) -->
         <g id="recHitLayer"></g>
+
+        <!-- Motion trail layer -->
+        <g id="recTrailLayer">
+          <line class="rec-trail" id="trailR1" stroke="#FF2D3F" stroke-width="2"/>
+          <line class="rec-trail" id="trailR2" stroke="#FF2D3F" stroke-width="2"/>
+          <line class="rec-trail" id="trailR3" stroke="#FF2D3F" stroke-width="1.5" stroke-dasharray="3 4"/>
+          <line class="rec-trail" id="trailB1" stroke="#2DB4FF" stroke-width="2"/>
+          <line class="rec-trail" id="trailB2" stroke="#2DB4FF" stroke-width="2"/>
+          <line class="rec-trail" id="trailB3" stroke="#2DB4FF" stroke-width="1.5" stroke-dasharray="3 4"/>
+        </g>
 
         <!-- Fighter name labels -->
         <text id="recLabelR" x="420" y="70" text-anchor="middle" font-family="JetBrains Mono" font-size="11" font-weight="700" letter-spacing=".18em" fill="#FF5965">USMAN</text>
@@ -4377,6 +4432,50 @@ function lerpFighter(f1, f2, t){
   };
 }
 
+/* -----------------------------------------------------------
+   EASING FUNCTIONS · strike snap, recoil, smooth movement
+----------------------------------------------------------- */
+function easeSmooth(t){ return t * t * (3 - 2 * t); }                    // smooth S-curve
+function easeSnap(t){ return 1 - Math.pow(1 - t, 3); }                   // fast start → slow end (strike extension)
+function easeRecoil(t){ return t < .4 ? t/.4 * 1.08 : 1.08 - .08 * ((t-.4)/.6); } // overshoot then settle
+function easeWhip(t){                                                     // chamber then snap (kicks)
+  if (t < 0.35) return (t / 0.35) * 0.3;                                 // slow chamber
+  return 0.3 + ((t - 0.35) / 0.65) * 0.7;                               // fast extension
+}
+
+// Determine easing curve based on keyframe content
+function pickEase(prev, next){
+  // If the next keyframe has a strike event → snap easing
+  if (next.ev && next.ev.big) return easeSnap;
+  if (next.ev) return easeSnap;
+  // If either fighter is throwing a kick → whip easing
+  const nR = next.r, nB = next.b;
+  if ((nR.lk||0) > 0.3 || (nR.rk||0) > 0.3 || (nB.lk||0) > 0.3 || (nB.rk||0) > 0.3) return easeWhip;
+  // If either fighter is entering/exiting clinch → smooth
+  if (Math.abs((nR.cl||0) - (prev.r.cl||0)) > 0.2 || Math.abs((nB.cl||0) - (prev.b.cl||0)) > 0.2) return easeSmooth;
+  // If fighter is getting hit (head offset or lean changes sharply) → recoil
+  const dHoxR = Math.abs((nR.hox||0) - (prev.r.hox||0));
+  const dHoxB = Math.abs((nB.hox||0) - (prev.b.hox||0));
+  if (dHoxR > 10 || dHoxB > 10) return easeRecoil;
+  // Default → smooth
+  return easeSmooth;
+}
+
+/* -----------------------------------------------------------
+   IDLE BOUNCE · procedural micro-animation layer
+----------------------------------------------------------- */
+function idleOffset(time, seed){
+  // Breathing-like vertical oscillation + slight lateral sway
+  const freq1 = 1.8 + seed * 0.3;   // ~2Hz bounce (bouncing on balls of feet)
+  const freq2 = 0.7 + seed * 0.15;  // slower sway
+  return {
+    dy: Math.sin(time * freq1 * Math.PI * 2) * 2.2 + Math.sin(time * freq2 * Math.PI * 2) * 0.8,
+    dx: Math.sin(time * freq2 * Math.PI * 2 + 1.2) * 1.5,
+    headDx: Math.sin(time * freq1 * Math.PI * 2 + 0.5) * 0.8,
+    leanOsc: Math.sin(time * freq2 * Math.PI * 2 + 2.0) * 0.015
+  };
+}
+
 function getRecFrameAt(time){
   let prev = FIGHT_KEYFRAMES[0], next = FIGHT_KEYFRAMES[0];
   let prevIdx = 0;
@@ -4393,19 +4492,43 @@ function getRecFrameAt(time){
     prevIdx = FIGHT_KEYFRAMES.length - 1;
   }
   const span = next.t - prev.t;
-  const tt = span > 0 ? (time - prev.t) / span : 0;
+  const rawT = span > 0 ? (time - prev.t) / span : 0;
+
+  // Apply easing curve
+  const easeFn = pickEase(prev, next);
+  const tt = easeFn(rawT);
+
+  const red = lerpFighter(prev.r, next.r, tt);
+  const blue = lerpFighter(prev.b, next.b, tt);
+
+  // Layer idle oscillation (suppressed when lying down or in clinch or actively kicking)
+  const suppressR = (red.dn || 0) > 0.3 || (red.cl || 0) > 0.4 || (red.lk || 0) > 0.3 || (red.rk || 0) > 0.3 ? 0 : 1;
+  const suppressB = (blue.dn || 0) > 0.3 || (blue.cl || 0) > 0.4 || (blue.lk || 0) > 0.3 || (blue.rk || 0) > 0.3 ? 0 : 1;
+  const idleR = idleOffset(time, 0.0);
+  const idleB = idleOffset(time, 0.5);
+
+  red.x += idleR.dx * suppressR;
+  red.hox = (red.hox || 0) + idleR.headDx * suppressR;
+  red.ln += idleR.leanOsc * suppressR;
+  red._idleDy = idleR.dy * suppressR;
+
+  blue.x += idleB.dx * suppressB;
+  blue.hox = (blue.hox || 0) + idleB.headDx * suppressB;
+  blue.ln += idleB.leanOsc * suppressB;
+  blue._idleDy = idleB.dy * suppressB;
+
   return {
-    red: lerpFighter(prev.r, next.r, tt),
-    blue: lerpFighter(prev.b, next.b, tt),
+    red, blue,
     caption: prev.cap,
     round: prev.rd,
     tc: prev.tc,
     event: prev.ev,
-    prevIdx
+    prevIdx,
+    rawT
   };
 }
 
-// Hit flash burst at a given position
+// Hit flash burst at a given position + stage shake
 function spawnHitFlash(ev){
   const layer = document.getElementById('recHitLayer');
   if (!layer) return;
@@ -4434,6 +4557,84 @@ function spawnHitFlash(ev){
   g.appendChild(label);
   layer.appendChild(g);
   setTimeout(() => g.remove(), 1400);
+
+  // Stage shake
+  const stage = document.querySelector('.rec-stage');
+  if (stage){
+    stage.classList.remove('shake', 'shake-big');
+    void stage.offsetWidth;  // force reflow to restart animation
+    stage.classList.add(ev.big ? 'shake-big' : 'shake');
+    setTimeout(() => stage.classList.remove('shake', 'shake-big'), ev.big ? 500 : 350);
+  }
+}
+
+/* -----------------------------------------------------------
+   MOTION TRAIL TRACKING
+----------------------------------------------------------- */
+// Store previous fist/foot positions to draw trails
+let _trailPrev = { rFistX: 0, rFistY: 0, rFootX: 0, rFootY: 0, bFistX: 0, bFistY: 0, bFootX: 0, bFootY: 0 };
+let _trailInited = false;
+
+function updateTrails(partsR, partsB, red, blue){
+  // Read current fist positions from the lead forearm endpoint
+  const rFistX = parseFloat(partsR.leadFore.getAttribute('x2')) || 0;
+  const rFistY = parseFloat(partsR.leadFore.getAttribute('y2')) || 0;
+  const rFootX = parseFloat(partsR.leadShin.getAttribute('x1')) || 0;
+  const rFootY = parseFloat(partsR.leadShin.getAttribute('y1')) || 0;
+  const bFistX = parseFloat(partsB.leadFore.getAttribute('x2')) || 0;
+  const bFistY = parseFloat(partsB.leadFore.getAttribute('y2')) || 0;
+  const bFootX = parseFloat(partsB.leadShin.getAttribute('x1')) || 0;
+  const bFootY = parseFloat(partsB.leadShin.getAttribute('y1')) || 0;
+
+  if (!_trailInited){
+    _trailPrev = { rFistX, rFistY, rFootX, rFootY, bFistX, bFistY, bFootX, bFootY };
+    _trailInited = true;
+    return;
+  }
+
+  const threshold = 18;  // min distance to show trail
+  const pairs = [
+    { id: 'trailR1', px: _trailPrev.rFistX, py: _trailPrev.rFistY, cx: rFistX, cy: rFistY, active: red.le > 0.5 || red.re > 0.5 },
+    { id: 'trailR2', px: _trailPrev.rFootX, py: _trailPrev.rFootY, cx: rFootX, cy: rFootY, active: (red.lk||0) > 0.3 || (red.rk||0) > 0.3 },
+    { id: 'trailB1', px: _trailPrev.bFistX, py: _trailPrev.bFistY, cx: bFistX, cy: bFistY, active: blue.le > 0.5 || blue.re > 0.5 },
+    { id: 'trailB2', px: _trailPrev.bFootX, py: _trailPrev.bFootY, cx: bFootX, cy: bFootY, active: (blue.lk||0) > 0.3 || (blue.rk||0) > 0.3 }
+  ];
+
+  pairs.forEach(p => {
+    const el = document.getElementById(p.id);
+    if (!el) return;
+    const dist = Math.hypot(p.cx - p.px, p.cy - p.py);
+    if (p.active && dist > threshold){
+      setLineAttr(el, p.px, p.py, p.cx, p.cy);
+      el.classList.remove('active');
+      void el.offsetWidth;
+      el.classList.add('active');
+    }
+  });
+
+  // Also track rear arm trails
+  const rRFistX = parseFloat(partsR.rearFore.getAttribute('x2')) || 0;
+  const rRFistY = parseFloat(partsR.rearFore.getAttribute('y2')) || 0;
+  const bRFistX = parseFloat(partsB.rearFore.getAttribute('x2')) || 0;
+  const bRFistY = parseFloat(partsB.rearFore.getAttribute('y2')) || 0;
+
+  const rearPairs = [
+    { id: 'trailR3', px: _trailPrev.rRFistX||rRFistX, py: _trailPrev.rRFistY||rRFistY, cx: rRFistX, cy: rRFistY, active: red.re > 0.6 },
+    { id: 'trailB3', px: _trailPrev.bRFistX||bRFistX, py: _trailPrev.bRFistY||bRFistY, cx: bRFistX, cy: bRFistY, active: blue.re > 0.6 }
+  ];
+  rearPairs.forEach(p => {
+    const el = document.getElementById(p.id);
+    if (!el) return;
+    const dist = Math.hypot(p.cx - p.px, p.cy - p.py);
+    if (p.active && dist > threshold){
+      setLineAttr(el, p.px, p.py, p.cx, p.cy);
+      el.classList.remove('active');
+      void el.offsetWidth;
+      el.classList.add('active');
+    }
+  });
+
+  _trailPrev = { rFistX, rFistY, rFootX, rFootY, bFistX, bFistY, bFootX, bFootY, rRFistX, rRFistY, bRFistX, bRFistY };
 }
 
 // Animation state
@@ -4452,30 +4653,33 @@ function applyRecFrame(time){
   renderFighter(_recPartsR, f.red, 1);
   renderFighter(_recPartsB, f.blue, -1);
 
+  // Motion trails (after rendering so limb positions are set)
+  if (_recPartsR && _recPartsB) updateTrails(_recPartsR, _recPartsB, f.red, f.blue);
+
   // Shadows follow fighters
   const shR = document.getElementById('recShadowR');
   const shB = document.getElementById('recShadowB');
   if (shR){
     shR.setAttribute('cx', f.red.x);
     shR.setAttribute('cy', REC_GROUND_Y + 2);
-    shR.setAttribute('rx', f.red.dn > 0.5 ? 55 : 40);
+    shR.setAttribute('rx', (f.red.dn||0) > 0.5 ? 55 : 40);
   }
   if (shB){
     shB.setAttribute('cx', f.blue.x);
     shB.setAttribute('cy', REC_GROUND_Y + 2);
-    shB.setAttribute('rx', f.blue.dn > 0.5 ? 55 : 40);
+    shB.setAttribute('rx', (f.blue.dn||0) > 0.5 ? 55 : 40);
   }
 
-  // Fighter name labels follow (but clamp to above standing head)
+  // Fighter name labels follow
   const labelR = document.getElementById('recLabelR');
   const labelB = document.getElementById('recLabelB');
   if (labelR){
     labelR.setAttribute('x', f.red.x);
-    labelR.setAttribute('y', f.red.dn > 0.5 ? REC_GROUND_Y - 40 : 70);
+    labelR.setAttribute('y', (f.red.dn||0) > 0.5 ? REC_GROUND_Y - 40 : 70);
   }
   if (labelB){
     labelB.setAttribute('x', f.blue.x);
-    labelB.setAttribute('y', f.blue.dn > 0.5 ? REC_GROUND_Y - 40 : 70);
+    labelB.setAttribute('y', (f.blue.dn||0) > 0.5 ? REC_GROUND_Y - 40 : 70);
   }
 
   // Caption / round / TC updates
@@ -4502,7 +4706,7 @@ function applyRecFrame(time){
   const frac = clamp(time / REC_TOTAL, 0, 1);
   document.getElementById('recProgressFill').style.width = (frac * 100) + '%';
 
-  // Time readout (shows real fight time by finding nearest KF)
+  // Time readout
   const elapsedMin = Math.floor(time / 60);
   const elapsedSec = Math.floor(time % 60);
   const elapsedStr = `${String(elapsedMin).padStart(2,'0')}:${String(elapsedSec).padStart(2,'0')}`;
