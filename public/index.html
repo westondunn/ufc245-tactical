@@ -1548,6 +1548,7 @@ footer{
 
 svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 </style>
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
 </head>
 <body>
 
@@ -2666,7 +2667,11 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
     </div>
 
     <div class="rec-stage">
-      <svg class="rec-stage-svg" id="recStage" viewBox="0 0 1200 440" preserveAspectRatio="xMidYMid meet">
+      <!-- Three.js canvas (primary renderer) -->
+      <canvas id="recCanvas3d" style="width:100%;height:100%;display:block;position:absolute;inset:0"></canvas>
+
+      <!-- SVG fallback (hidden when Three.js active) -->
+      <svg class="rec-stage-svg" id="recStage" viewBox="0 0 1200 440" preserveAspectRatio="xMidYMid meet" style="display:none">
         <defs>
           <radialGradient id="recShadow" cx="50%" cy="50%" r="50%">
             <stop offset="0%" stop-color="#000" stop-opacity=".5"/>
@@ -4566,6 +4571,12 @@ function spawnHitFlash(ev){
     stage.classList.add(ev.big ? 'shake-big' : 'shake');
     setTimeout(() => stage.classList.remove('shake', 'shake-big'), ev.big ? 500 : 350);
   }
+
+  // 3D effects
+  const evX3d = (ev.x - 550) * 0.015;
+  const evY3d = (REC_GROUND_Y - ev.y) * 0.015;
+  spawn3DParticles(evX3d, evY3d, parseInt(ev.color.replace('#',''), 16), ev.big ? 18 : 8);
+  trigger3DShake(ev.big ? 1.2 : 0.4);
 }
 
 /* -----------------------------------------------------------
@@ -4646,12 +4657,16 @@ const REC_SPEEDS = [0.5, 1.0, 1.5, 2.0];
 let _recSpeedIdx = 1;
 let _recLastEventIdx = -1;
 let _recLastCaption = '';
+let _recDt = 0.016;
 
 function applyRecFrame(time){
   const f = getRecFrameAt(time);
 
   renderFighter(_recPartsR, f.red, 1);
   renderFighter(_recPartsB, f.blue, -1);
+
+  // 3D scene update (reads from SVG joint positions)
+  render3DFrame(_recDt);
 
   // Motion trails (after rendering so limb positions are set)
   if (_recPartsR && _recPartsB) updateTrails(_recPartsR, _recPartsB, f.red, f.blue);
@@ -4729,6 +4744,7 @@ function recTick(){
   if (!_recPlaying) return;
   const now = performance.now() / 1000;
   const dt = now - _recLastFrameT;
+  _recDt = dt;
   _recLastFrameT = now;
   _recTime += dt * _recSpeed;
   if (_recTime >= REC_TOTAL){
@@ -4780,6 +4796,274 @@ function recCycleSpeed(){
 }
 
 /* -----------------------------------------------------------
+   THREE.JS · 3D RECREATION RENDERER
+   Reads joint positions from hidden SVG, renders as 3D cylinders
+----------------------------------------------------------- */
+const REC_3D = { ready: false };
+
+function init3DScene(){
+  if (typeof THREE === 'undefined') return;
+  const canvas = document.getElementById('recCanvas3d');
+  if (!canvas) return;
+  const stage = canvas.parentElement;
+  const W = stage.clientWidth || 900;
+  const H = stage.clientHeight || 440;
+
+  const scene = new THREE.Scene();
+  scene.background = new THREE.Color(0x04050a);
+  scene.fog = new THREE.FogExp2(0x04050a, 0.025);
+
+  const camera = new THREE.PerspectiveCamera(38, W/H, 0.1, 100);
+  camera.position.set(0, 2.4, 10.5);
+  camera.lookAt(0, 1.6, 0);
+
+  const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
+  renderer.setSize(W, H);
+  renderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
+  renderer.shadowMap.enabled = true;
+  renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+  renderer.toneMapping = THREE.ACESFilmicToneMapping;
+  renderer.toneMappingExposure = 1.1;
+
+  // Lighting
+  scene.add(new THREE.AmbientLight(0x303850, 0.5));
+  const topLight = new THREE.DirectionalLight(0xe8ecf5, 0.7);
+  topLight.position.set(0, 10, 4);
+  topLight.castShadow = true;
+  topLight.shadow.mapSize.set(1024, 1024);
+  topLight.shadow.camera.near = 0.5; topLight.shadow.camera.far = 20;
+  topLight.shadow.camera.left = -8; topLight.shadow.camera.right = 8;
+  topLight.shadow.camera.top = 6; topLight.shadow.camera.bottom = -1;
+  scene.add(topLight);
+
+  const rimLight = new THREE.DirectionalLight(0x2ddcff, 0.25);
+  rimLight.position.set(0, 3, -6);
+  scene.add(rimLight);
+
+  const redPt = new THREE.PointLight(0xff2d3f, 1.0, 6);
+  const bluePt = new THREE.PointLight(0x2db4ff, 1.0, 6);
+  redPt.position.set(-2, 1.5, 1);
+  bluePt.position.set(2, 1.5, 1);
+  scene.add(redPt); scene.add(bluePt);
+
+  // Ground
+  const gMat = new THREE.MeshStandardMaterial({ color: 0x080a12, roughness: 0.92, metalness: 0.05 });
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(24, 14), gMat);
+  ground.rotation.x = -Math.PI/2; ground.receiveShadow = true;
+  scene.add(ground);
+  scene.add(new THREE.GridHelper(24, 48, 0x151b28, 0x0a0e1a));
+
+  // Cage posts + fence hint
+  const postMat = new THREE.MeshStandardMaterial({ color: 0x2a3045, metalness: 0.3, roughness: 0.7 });
+  [-7, 7].forEach(x => {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4.5, 8), postMat);
+    post.position.set(x, 2.25, 0); post.castShadow = true;
+    scene.add(post);
+    // Fence horizontal wires
+    for (let h = 0.4; h < 4.2; h += 0.6){
+      const wireMat = new THREE.LineBasicMaterial({ color: 0x12182a, transparent: true, opacity: 0.4 });
+      const pts = [new THREE.Vector3(x, h, -2), new THREE.Vector3(x, h, 2)];
+      scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
+    }
+  });
+
+  // Fighter mesh factory
+  function makeLimb(color, radius){
+    const geo = new THREE.CylinderGeometry(radius, radius*0.9, 1, 8);
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.3, roughness: 0.55, metalness: 0.15 });
+    const m = new THREE.Mesh(geo, mat); m.castShadow = true; scene.add(m); return m;
+  }
+  function makeJoint(color, r){
+    const geo = new THREE.SphereGeometry(r, 10, 10);
+    const mat = new THREE.MeshStandardMaterial({ color, emissive: color, emissiveIntensity: 0.35, roughness: 0.5 });
+    const m = new THREE.Mesh(geo, mat); m.castShadow = true; scene.add(m); return m;
+  }
+  function createFighter(col){
+    const lr = 0.035;
+    return {
+      rearShin: makeLimb(col, lr), rearThigh: makeLimb(col, lr*1.2),
+      leadShin: makeLimb(col, lr), leadThigh: makeLimb(col, lr*1.2),
+      torso: makeLimb(col, lr*1.8), shoulders: makeLimb(col, lr*1.3),
+      rearUpper: makeLimb(col, lr*.9), rearFore: makeLimb(col, lr*.8),
+      leadUpper: makeLimb(col, lr*.9), leadFore: makeLimb(col, lr*.8),
+      neck: makeLimb(col, lr*.7),
+      hip: makeJoint(col, .055), chest: makeJoint(col, .055),
+      rearKnee: makeJoint(col, .045), leadKnee: makeJoint(col, .045),
+      shLead: makeJoint(col, .04), shRear: makeJoint(col, .04),
+      elbowLead: makeJoint(col, .035), elbowRear: makeJoint(col, .035),
+      fistLead: makeJoint(col, .045), fistRear: makeJoint(col, .045),
+      head: makeJoint(col, .14)
+    };
+  }
+
+  Object.assign(REC_3D, {
+    scene, camera, renderer,
+    redF: createFighter(0xff2d3f), blueF: createFighter(0x2db4ff),
+    redPt, bluePt,
+    particles: [], shakeAmt: 0,
+    baseCamPos: camera.position.clone(), baseCamLook: new THREE.Vector3(0, 1.6, 0),
+    ready: true
+  });
+
+  new ResizeObserver(() => {
+    const w = stage.clientWidth, h = stage.clientHeight;
+    if (w < 1 || h < 1) return;
+    camera.aspect = w/h; camera.updateProjectionMatrix();
+    renderer.setSize(w, h);
+  }).observe(stage);
+}
+
+// Position a cylinder between two 3D points
+const _tmpDir = new THREE.Vector3();
+const _tmpUp = new THREE.Vector3(0,1,0);
+const _tmpQuat = new THREE.Quaternion();
+function posLimb3D(mesh, ax,ay,az, bx,by,bz){
+  const dx=bx-ax, dy=by-ay, dz=bz-az;
+  const len = Math.sqrt(dx*dx+dy*dy+dz*dz);
+  if (len < 0.001){ mesh.visible=false; return; }
+  mesh.visible = true;
+  mesh.position.set((ax+bx)/2, (ay+by)/2, (az+bz)/2);
+  mesh.scale.y = len;
+  _tmpDir.set(dx,dy,dz).normalize();
+  if (Math.abs(_tmpDir.dot(_tmpUp)) > 0.9999){
+    mesh.quaternion.identity();
+    if (_tmpDir.y < 0) mesh.rotation.x = Math.PI;
+  } else {
+    _tmpQuat.setFromUnitVectors(_tmpUp, _tmpDir);
+    mesh.quaternion.copy(_tmpQuat);
+  }
+}
+
+// Read SVG joints → place 3D meshes
+function update3DFighter(prefix, meshes, dir){
+  const S = 0.015;
+  const CX = 550;
+  const zLead = dir * 0.18;  // lead limbs closer to camera
+  const zRear = dir * -0.15; // rear limbs further
+
+  function sv(id, a){ const e = document.getElementById(id); return e ? parseFloat(e.getAttribute(a))||0 : 0; }
+  function toX(svgX){ return (svgX - CX) * S; }
+  function toY(svgY){ return (REC_GROUND_Y - svgY) * S; }
+
+  const limbMap = {
+    rearShin:  { z1: zRear, z2: zRear },
+    rearThigh: { z1: zRear, z2: 0 },
+    leadShin:  { z1: zLead, z2: zLead },
+    leadThigh: { z1: zLead, z2: 0 },
+    torso:     { z1: 0, z2: 0 },
+    shoulders: { z1: zLead, z2: zRear },
+    rearUpper: { z1: zRear, z2: zRear },
+    rearFore:  { z1: zRear, z2: zRear },
+    leadUpper: { z1: zLead, z2: zLead },
+    leadFore:  { z1: zLead, z2: zLead },
+    neck:      { z1: 0, z2: 0 }
+  };
+
+  Object.keys(limbMap).forEach(name => {
+    const id = prefix + '-' + name;
+    const lz = limbMap[name];
+    posLimb3D(meshes[name],
+      toX(sv(id,'x1')), toY(sv(id,'y1')), lz.z1,
+      toX(sv(id,'x2')), toY(sv(id,'y2')), lz.z2);
+  });
+
+  // Joints
+  const setJ = (m, id, a1, a2, z) => m.position.set(toX(sv(id,a1)), toY(sv(id,a2)), z||0);
+  setJ(meshes.hip, prefix+'-torso', 'x1','y1', 0);
+  setJ(meshes.chest, prefix+'-torso', 'x2','y2', 0);
+  setJ(meshes.rearKnee, prefix+'-rearShin', 'x2','y2', zRear);
+  setJ(meshes.leadKnee, prefix+'-leadShin', 'x2','y2', zLead);
+  setJ(meshes.shLead, prefix+'-leadUpper', 'x1','y1', zLead);
+  setJ(meshes.shRear, prefix+'-rearUpper', 'x1','y1', zRear);
+  setJ(meshes.elbowLead, prefix+'-leadFore', 'x1','y1', zLead);
+  setJ(meshes.elbowRear, prefix+'-rearFore', 'x1','y1', zRear);
+  setJ(meshes.fistLead, prefix+'-leadFore', 'x2','y2', zLead * 1.2);
+  setJ(meshes.fistRear, prefix+'-rearFore', 'x2','y2', zRear * 1.2);
+
+  // Head
+  const hx = sv(prefix+'-head','cx'), hy = sv(prefix+'-head','cy');
+  const hr = (sv(prefix+'-head','r') || 20) * S;
+  meshes.head.position.set(toX(hx), toY(hy), 0);
+  meshes.head.scale.setScalar(hr / 0.14);
+
+  // Fighter point light follows chest
+  return { x: meshes.chest.position.x, y: meshes.chest.position.y };
+}
+
+// Particle burst (impact sparks)
+function spawn3DParticles(worldX, worldY, color, count){
+  if (!REC_3D.ready) return;
+  const mat = new THREE.MeshBasicMaterial({ color, transparent: true });
+  for (let i = 0; i < count; i++){
+    const geo = new THREE.SphereGeometry(0.025 + Math.random() * 0.02, 6, 6);
+    const m = new THREE.Mesh(geo, mat.clone());
+    m.position.set(worldX + (Math.random()-.5)*.2, worldY + (Math.random()-.5)*.2, (Math.random()-.5)*.3);
+    m._vel = new THREE.Vector3((Math.random()-.5)*3, Math.random()*2+1, (Math.random()-.5)*2);
+    m._life = 1.0;
+    REC_3D.scene.add(m);
+    REC_3D.particles.push(m);
+  }
+}
+function updateParticles(dt){
+  if (!REC_3D.ready) return;
+  for (let i = REC_3D.particles.length - 1; i >= 0; i--){
+    const m = REC_3D.particles[i];
+    m._life -= dt * 2.5;
+    if (m._life <= 0){
+      REC_3D.scene.remove(m);
+      m.geometry.dispose(); m.material.dispose();
+      REC_3D.particles.splice(i, 1);
+      continue;
+    }
+    m._vel.y -= 9.8 * dt;  // gravity
+    m.position.addScaledVector(m._vel, dt);
+    m.material.opacity = m._life;
+    m.scale.setScalar(m._life);
+    if (m.position.y < 0) { m.position.y = 0; m._vel.y *= -0.3; m._vel.x *= 0.8; m._vel.z *= 0.8; }
+  }
+}
+
+// Camera shake
+function trigger3DShake(intensity){
+  if (!REC_3D.ready) return;
+  REC_3D.shakeAmt = intensity;
+}
+function updateCameraShake(){
+  if (!REC_3D.ready) return;
+  const c = REC_3D.camera;
+  const base = REC_3D.baseCamPos;
+  if (REC_3D.shakeAmt > 0.01){
+    const a = REC_3D.shakeAmt;
+    c.position.set(
+      base.x + (Math.random()-.5) * a * 0.3,
+      base.y + (Math.random()-.5) * a * 0.15,
+      base.z + (Math.random()-.5) * a * 0.1
+    );
+    REC_3D.shakeAmt *= 0.88;  // decay
+  } else {
+    c.position.copy(base);
+    REC_3D.shakeAmt = 0;
+  }
+  c.lookAt(REC_3D.baseCamLook);
+}
+
+// Main 3D render call (called from applyRecFrame)
+function render3DFrame(dt){
+  if (!REC_3D.ready) return;
+  // Update fighter meshes from SVG joint data
+  const rPos = update3DFighter('rR', REC_3D.redF, 1);
+  const bPos = update3DFighter('rB', REC_3D.blueF, -1);
+
+  // Point lights follow fighters
+  REC_3D.redPt.position.set(rPos.x, rPos.y + 0.5, 1.5);
+  REC_3D.bluePt.position.set(bPos.x, bPos.y + 0.5, 1.5);
+
+  updateParticles(dt || 0.016);
+  updateCameraShake();
+  REC_3D.renderer.render(REC_3D.scene, REC_3D.camera);
+}
+
+/* -----------------------------------------------------------
    RECREATION · FULLSCREEN
 ----------------------------------------------------------- */
 function _recFsEl(){
@@ -4816,6 +5100,9 @@ function recToggleFullscreen(){
 function setupRecreation(){
   _recPartsR = cachePartsFor('rR');
   _recPartsB = cachePartsFor('rB');
+
+  // Initialize Three.js 3D scene
+  init3DScene();
 
   // Render initial frame
   applyRecFrame(0);
