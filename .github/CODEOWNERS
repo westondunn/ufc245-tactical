@@ -1,0 +1,10 @@
+# Code owners — these paths require review from the owner before merge
+
+# Everything
+* @westondunn
+
+# Security-sensitive files require owner review
+server.js @westondunn
+db/ @westondunn
+lib/biomechanics.js @westondunn
+.github/workflows/ @westondunn

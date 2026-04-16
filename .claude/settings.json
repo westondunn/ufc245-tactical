@@ -1,0 +1,37 @@
+{
+  "project": {
+    "name": "UFC Tactical Dashboard",
+    "description": "Full-stack MMA tactical analysis platform with SQLite API, Three.js 3D recreation, biomechanics framework, and fighter comparison system",
+    "repository": "https://github.com/westondunn/ufc245-tactical"
+  },
+  "conventions": {
+    "language": "JavaScript (Node.js 20+, ES2022)",
+    "framework": "Express 4 + vanilla frontend (single HTML file)",
+    "database": "SQLite via sql.js (WASM, in-memory, seeded from JSON)",
+    "3d": "Three.js r128 via CDN",
+    "testing": "Custom runner (tests/run.js), no framework",
+    "style": {
+      "semicolons": true,
+      "quotes": "single",
+      "indent": 2,
+      "trailingComma": false,
+      "maxLineLength": 140
+    }
+  },
+  "security": {
+    "rules": [
+      "All innerHTML assignments must use escHtml() for API-sourced data",
+      "All API routes must be wrapped in apiHandler()",
+      "All database queries must use parameterized statements",
+      "Never commit tokens, passwords, or API keys",
+      "CSP header must be maintained in server.js",
+      "Biomechanics estimates must cite peer-reviewed sources"
+    ]
+  },
+  "commands": {
+    "test": "node tests/run.js",
+    "dev": "npm run dev",
+    "seed": "cd data && python3 generate_seed.py",
+    "start": "npm start"
+  }
+}

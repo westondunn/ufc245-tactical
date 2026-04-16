@@ -3110,7 +3110,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 <footer>
   <div class="footer-grid">
     <div>
-      <div class="footer-brand">Octagon Tactical Model · v4.6</div>
+      <div class="footer-brand">Octagon Tactical Model · <span id="appVersion">v2.0.0</span></div>
       <div class="footer-meta">
         Data · UFCStats.com · ESPN · Sherdog · NSAC · UFC medical staff<br>
         Biomechanics · Walilko et al. 2005 · Kacprzak et al. 2025 · Dunn et al. 2023 · Corcoran et al. 2024<br>
@@ -3133,6 +3133,9 @@ const __t0=performance.now();
 // Math utilities
 const lerp = (a, b, t) => a + (b - a) * t;
 const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
+
+// XSS prevention
+function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
 /* -----------------------------------------------------------
    DATA MODEL — all verified from UFCStats.com
@@ -5523,12 +5526,12 @@ function setupFightSelector(){
             ' onmouseover="this.style.background=\'rgba(45,220,255,.06)\'"' +
             ' onmouseout="this.style.background=\'none\'">' +
             '<div style="flex:1">' +
-            '<strong style="color:var(--fg)">' + f.name + '</strong>' +
-            (f.nickname ? ' <span style="color:var(--muted)">"' + f.nickname + '"</span>' : '') +
-            ' <span style="color:var(--muted-dim);font-size:9px;margin-left:8px">' + f.weight_class + '</span>' +
+            '<strong style="color:var(--fg)">' + escHtml(f.name) + '</strong>' +
+            (f.nickname ? ' <span style="color:var(--muted)">"' + escHtml(f.nickname) + '"</span>' : '') +
+            ' <span style="color:var(--muted-dim);font-size:9px;margin-left:8px">' + escHtml(f.weight_class) + '</span>' +
             '</div>' +
-            '<button class="add-compare-btn" data-cfid="' + f.id + '" data-cfname="' + f.name +
-            '" data-cfnick="' + (f.nickname||'') + '" data-cfwc="' + f.weight_class +
+            '<button class="add-compare-btn" data-cfid="' + f.id + '" data-cfname="' + escHtml(f.name) +
+            '" data-cfnick="' + escHtml(f.nickname||'') + '" data-cfwc="' + escHtml(f.weight_class) +
             '" onclick="event.stopPropagation();addToCompare(this.dataset)">⊕</button>' +
             '</div>'
           ).join('');
@@ -5841,6 +5844,21 @@ setupFightSelector();
 setupComparePanel();
 startTicker();
 document.getElementById('renderTime').textContent = Math.round(performance.now() - __t0);
+
+// Expose functions needed by inline onclick in dynamically generated HTML
+window.addToCompare = addToCompare;
+window.clearCompareSlot = clearCompareSlot;
+window.loadFighterEvents = loadFighterEvents;
+window.loadEventCard = loadEventCard;
+
+// Fetch and display version from API
+fetch('/api/version').then(r=>r.json()).then(v=>{
+  const tag = `v${v.version}+${v.sha}`;
+  const el = document.getElementById('appVersion');
+  if (el) el.textContent = tag;
+  const tb = document.querySelector('.top-bar__name');
+  if (tb) tb.textContent = `Octagon Tactical Model · ${tag}`;
+}).catch(()=>{});
 })();
 </script>
 </body>

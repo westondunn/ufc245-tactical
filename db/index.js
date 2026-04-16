@@ -143,12 +143,16 @@ async function init() {
 // --- Query helpers (return plain JS objects) ---
 
 function allRows(sql, params = []) {
+  if (!db) throw new Error('Database not initialized');
   const stmt = db.prepare(sql);
-  if (params.length) stmt.bind(params);
-  const rows = [];
-  while (stmt.step()) rows.push(stmt.getAsObject());
-  stmt.free();
-  return rows;
+  try {
+    if (params.length) stmt.bind(params);
+    const rows = [];
+    while (stmt.step()) rows.push(stmt.getAsObject());
+    return rows;
+  } finally {
+    stmt.free();
+  }
 }
 
 function oneRow(sql, params = []) {
@@ -281,7 +285,15 @@ function getFighterRecord(fighterId) {
     'SELECT COUNT(*) as c FROM fights WHERE red_fighter_id = ? OR blue_fighter_id = ?',
     [fighterId, fighterId]
   )[0]?.c || 0;
-  return { wins, losses: total - wins, total };
+  // Draws/NC: fights where winner_id is null or 0 and the fighter was involved
+  const draws = allRows(
+    `SELECT COUNT(*) as c FROM fights
+     WHERE (red_fighter_id = ? OR blue_fighter_id = ?)
+       AND (winner_id IS NULL OR winner_id = 0
+            OR method LIKE '%Draw%' OR method LIKE '%No Contest%')`,
+    [fighterId, fighterId]
+  )[0]?.c || 0;
+  return { wins, losses: total - wins - draws, draws, total };
 }
 
 module.exports = {

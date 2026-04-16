@@ -7,6 +7,7 @@ const compression = require('compression');
 const path = require('path');
 const db = require('./db');
 const bio = require('./lib/biomechanics');
+const ver = require('./lib/version');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -15,6 +16,12 @@ const NODE_ENV = process.env.NODE_ENV || 'production';
 app.set('trust proxy', 1);
 app.use(compression());
 app.use(express.json());
+
+// Version header on all responses
+app.use((req, res, next) => {
+  res.setHeader('X-App-Version', ver.full);
+  next();
+});
 
 // Security headers
 app.use((req, res, next) => {
@@ -45,95 +52,109 @@ app.use((req, _res, next) => {
 // API ROUTES
 // ============================================================
 
+// Error wrapper for async-safe route handlers
+function apiHandler(fn) {
+  return (req, res) => {
+    try { fn(req, res); }
+    catch (err) {
+      console.error(`[API ERROR] ${req.method} ${req.path}:`, err.message);
+      res.status(500).json({ error: 'internal_error', message: NODE_ENV === 'development' ? err.message : 'An error occurred' });
+    }
+  };
+}
+
+// Weight class → approximate mass (kg) mapping for biomechanics
+const WEIGHT_CLASS_KG = {
+  'Strawweight': 52, 'W-Strawweight': 52,
+  'Flyweight': 57, 'W-Flyweight': 57,
+  'Bantamweight': 61, 'W-Bantamweight': 61,
+  'Featherweight': 66, 'W-Featherweight': 66,
+  'Lightweight': 70,
+  'Welterweight': 77,
+  'Middleweight': 84,
+  'Light Heavyweight': 93,
+  'Heavyweight': 109
+};
+function fighterMassKg(fighter) {
+  return WEIGHT_CLASS_KG[fighter.weight_class] || Math.round(fighter.height_cm * 0.42);
+}
+
 // Fighter search (autocomplete)
-app.get('/api/fighters/search', (req, res) => {
+app.get('/api/fighters/search', apiHandler((req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
   res.json(db.searchFighters(q));
-});
+}));
 
 // Fighter profile
-app.get('/api/fighters/:id', (req, res) => {
+app.get('/api/fighters/:id', apiHandler((req, res) => {
   const fighter = db.getFighter(parseInt(req.params.id, 10));
   if (!fighter) return res.status(404).json({ error: 'fighter_not_found' });
   res.json(fighter);
-});
+}));
 
 // Fighter's event history (all UFC cards they appeared on)
-app.get('/api/fighters/:id/events', (req, res) => {
+app.get('/api/fighters/:id/events', apiHandler((req, res) => {
   const events = db.getFighterEvents(parseInt(req.params.id, 10));
-  // Group by event
   const grouped = {};
   for (const row of events) {
     if (!grouped[row.id]) {
-      grouped[row.id] = {
-        event_id: row.id,
-        number: row.number,
-        name: row.name,
-        date: row.date,
-        venue: row.venue,
-        city: row.city,
-        fights: []
-      };
+      grouped[row.id] = { event_id: row.id, number: row.number, name: row.name, date: row.date, venue: row.venue, city: row.city, fights: [] };
     }
     grouped[row.id].fights.push({
-      fight_id: row.fight_id,
-      red_name: row.red_name,
-      blue_name: row.blue_name,
-      red_id: row.red_id,
-      blue_id: row.blue_id,
-      method: row.method,
-      round: row.round,
-      time: row.time,
-      winner_id: row.winner_id,
-      is_title: row.is_title,
-      is_main: row.is_main
+      fight_id: row.fight_id, red_name: row.red_name, blue_name: row.blue_name,
+      red_id: row.red_id, blue_id: row.blue_id, method: row.method,
+      round: row.round, time: row.time, winner_id: row.winner_id,
+      is_title: row.is_title, is_main: row.is_main
     });
   }
   res.json(Object.values(grouped));
-});
+}));
 
 // All events
-app.get('/api/events', (req, res) => {
+app.get('/api/events', apiHandler((req, res) => {
   res.json(db.getAllEvents());
-});
+}));
 
 // Event detail + full card
-app.get('/api/events/:id/card', (req, res) => {
+app.get('/api/events/:id/card', apiHandler((req, res) => {
   const eventId = parseInt(req.params.id, 10);
+  if (isNaN(eventId)) return res.status(400).json({ error: 'invalid_id' });
   const event = db.getEvent(eventId);
   if (!event) return res.status(404).json({ error: 'event_not_found' });
   const card = db.getEventCard(eventId);
   res.json({ event, card });
-});
+}));
 
 // Event by UFC number (e.g., /api/events/number/245)
-app.get('/api/events/number/:num', (req, res) => {
-  const event = db.getEventByNumber(parseInt(req.params.num, 10));
+app.get('/api/events/number/:num', apiHandler((req, res) => {
+  const num = parseInt(req.params.num, 10);
+  if (isNaN(num)) return res.status(400).json({ error: 'invalid_number' });
+  const event = db.getEventByNumber(num);
   if (!event) return res.status(404).json({ error: 'event_not_found' });
   const card = db.getEventCard(event.id);
   res.json({ event, card });
-});
+}));
 
 // Fight detail with stats
-app.get('/api/fights/:id', (req, res) => {
+app.get('/api/fights/:id', apiHandler((req, res) => {
   const fight = db.getFight(parseInt(req.params.id, 10));
   if (!fight) return res.status(404).json({ error: 'fight_not_found' });
   res.json(fight);
-});
+}));
 
 // Fighter career stats (aggregated)
-app.get('/api/fighters/:id/career-stats', (req, res) => {
+app.get('/api/fighters/:id/career-stats', apiHandler((req, res) => {
   const id = parseInt(req.params.id, 10);
   const fighter = db.getFighter(id);
   if (!fighter) return res.status(404).json({ error: 'fighter_not_found' });
   const stats = db.getCareerStats(id);
   const record = db.getFighterRecord(id);
   res.json({ fighter, stats, record });
-});
+}));
 
 // Compare two fighters
-app.get('/api/fighters/:id1/compare/:id2', (req, res) => {
+app.get('/api/fighters/:id1/compare/:id2', apiHandler((req, res) => {
   const id1 = parseInt(req.params.id1, 10);
   const id2 = parseInt(req.params.id2, 10);
   const f1 = db.getFighter(id1);
@@ -146,9 +167,8 @@ app.get('/api/fighters/:id1/compare/:id2', (req, res) => {
   const record2 = db.getFighterRecord(id2);
   const h2h = db.getHeadToHead(id1, id2);
 
-  // Generate biomechanics comparison for a right cross at each fighter's weight
-  const massKg1 = Math.round(f1.height_cm * 0.42); // rough estimate from height
-  const massKg2 = Math.round(f2.height_cm * 0.42);
+  const massKg1 = fighterMassKg(f1);
+  const massKg2 = fighterMassKg(f2);
   const bio1 = bio.estimateStrikeForce({ bodyMassKg: massKg1, strikeType: 'right_cross' });
   const bio2 = bio.estimateStrikeForce({ bodyMassKg: massKg2, strikeType: 'right_cross' });
 
@@ -160,7 +180,7 @@ app.get('/api/fighters/:id1/compare/:id2', (req, res) => {
     head_to_head: h2h,
     common_weight_class: f1.weight_class === f2.weight_class ? f1.weight_class : null
   });
-});
+}));
 
 // Biomechanics calculation endpoint
 app.get('/api/biomechanics/estimate', (req, res) => {
@@ -208,7 +228,16 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 app.get('/healthz', (_req, res) => {
-  res.json({ status: 'ok', service: 'ufc-tactical', uptime_s: Math.round(process.uptime()), node: process.version, env: NODE_ENV });
+  res.json({
+    status: 'ok', service: 'ufc-tactical',
+    version: ver.version, build: ver.full, buildTime: ver.buildTime,
+    uptime_s: Math.round(process.uptime()), node: process.version, env: NODE_ENV
+  });
+});
+
+// Version endpoint (consumed by frontend)
+app.get('/api/version', (_req, res) => {
+  res.json({ version: ver.version, build: ver.full, sha: ver.buildSha, buildTime: ver.buildTime });
 });
 
 app.use((req, res) => {
@@ -225,7 +254,7 @@ app.use((req, res) => {
 
   const server = app.listen(PORT, () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
-    console.log('  UFC Tactical Dashboard · API + Frontend');
+    console.log(`  UFC Tactical Dashboard · v${ver.full}`);
     console.log(`  listening on :${PORT}  ·  env=${NODE_ENV}`);
     console.log('  endpoints:');
     console.log('    GET /api/fighters/search?q=...');
