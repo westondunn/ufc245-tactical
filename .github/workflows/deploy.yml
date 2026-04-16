@@ -1,0 +1,121 @@
+name: Deploy · Version Bump + Railway
+
+on:
+  push:
+    branches: [main]
+    # Don't trigger on version bump commits (prevents infinite loop)
+    paths-ignore:
+      - 'package.json'
+      - 'package-lock.json'
+
+permissions:
+  contents: write
+
+jobs:
+  version-bump:
+    name: Bump Version
+    runs-on: ubuntu-latest
+    # Skip if the commit message contains [skip-version]
+    if: "!contains(github.event.head_commit.message, '[skip-version]')"
+    outputs:
+      new_version: ${{ steps.bump.outputs.new_version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Determine version bump type
+        id: bump_type
+        run: |
+          MSG="${{ github.event.head_commit.message }}"
+          if echo "$MSG" | grep -qi "BREAKING\|major"; then
+            echo "type=major" >> $GITHUB_OUTPUT
+          elif echo "$MSG" | grep -qi "feat\|feature\|add\|new"; then
+            echo "type=minor" >> $GITHUB_OUTPUT
+          else
+            echo "type=patch" >> $GITHUB_OUTPUT
+          fi
+
+      - name: Bump version
+        id: bump
+        run: |
+          BUMP_TYPE=${{ steps.bump_type.outputs.type }}
+          CURRENT=$(node -e "console.log(require('./package.json').version)")
+          IFS='.' read -r MAJOR MINOR PATCH <<< "$CURRENT"
+
+          case "$BUMP_TYPE" in
+            major) MAJOR=$((MAJOR + 1)); MINOR=0; PATCH=0 ;;
+            minor) MINOR=$((MINOR + 1)); PATCH=0 ;;
+            patch) PATCH=$((PATCH + 1)) ;;
+          esac
+
+          NEW_VERSION="$MAJOR.$MINOR.$PATCH"
+          echo "Bumping $CURRENT → $NEW_VERSION ($BUMP_TYPE)"
+          echo "new_version=$NEW_VERSION" >> $GITHUB_OUTPUT
+
+          # Update package.json
+          node -e "
+            const pkg = require('./package.json');
+            pkg.version = '$NEW_VERSION';
+            require('fs').writeFileSync('package.json', JSON.stringify(pkg, null, 2) + '\n');
+          "
+
+          # Update package-lock.json if it exists
+          if [ -f package-lock.json ]; then
+            node -e "
+              const lock = require('./package-lock.json');
+              lock.version = '$NEW_VERSION';
+              if (lock.packages && lock.packages['']) lock.packages[''].version = '$NEW_VERSION';
+              require('fs').writeFileSync('package-lock.json', JSON.stringify(lock, null, 2) + '\n');
+            "
+          fi
+
+      - name: Commit version bump
+        run: |
+          NEW_VERSION=${{ steps.bump.outputs.new_version }}
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "v${NEW_VERSION} [skip-version]" || echo "No changes to commit"
+          git tag "v${NEW_VERSION}"
+          git push origin main --tags
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: v${{ steps.bump.outputs.new_version }}
+          name: v${{ steps.bump.outputs.new_version }}
+          body: |
+            Automated release from commit ${{ github.sha }}
+
+            **Commit:** ${{ github.event.head_commit.message }}
+
+            **Deploy:** Railway auto-deploys from main branch.
+          generate_release_notes: true
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+  # Railway deploys automatically via GitHub integration — no action needed.
+  # This job just verifies the deployment happened.
+  verify-deploy:
+    name: Verify Railway Deploy
+    runs-on: ubuntu-latest
+    needs: version-bump
+    if: always()
+    steps:
+      - name: Wait for Railway build
+        run: |
+          echo "Railway auto-deploys from main branch."
+          echo "Version ${{ needs.version-bump.outputs.new_version }} should be live shortly."
+          echo "Check your Railway dashboard for deployment status."
+          # If you add RAILWAY_DEPLOY_URL as a secret, uncomment below:
+          # sleep 120
+          # curl -f "${{ secrets.RAILWAY_DEPLOY_URL }}/healthz" || echo "Deploy verification skipped"

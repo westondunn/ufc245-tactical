@@ -1,0 +1,131 @@
+name: CI · Quality Gates
+
+on:
+  pull_request:
+    branches: [main]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  quality:
+    name: Quality & Security
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Dependency audit
+        run: npm audit --audit-level=high
+        continue-on-error: true
+
+      - name: Check for known vulnerabilities
+        run: |
+          echo "::group::npm audit"
+          npm audit --json > /tmp/audit.json 2>&1 || true
+          CRITICAL=$(node -e "const a=require('/tmp/audit.json');console.log(a.metadata?.vulnerabilities?.critical||0)")
+          HIGH=$(node -e "const a=require('/tmp/audit.json');console.log(a.metadata?.vulnerabilities?.high||0)")
+          echo "Critical: $CRITICAL, High: $HIGH"
+          if [ "$CRITICAL" -gt 0 ]; then
+            echo "::error::Critical vulnerabilities found"
+            exit 1
+          fi
+          echo "::endgroup::"
+
+      - name: Validate seed data integrity
+        run: |
+          node -e "
+            const seed = require('./data/seed.json');
+            const fids = new Set(seed.fighters.map(f=>f.id));
+            const eids = new Set(seed.events.map(e=>e.id));
+            let ok = true;
+            for (const f of seed.fights) {
+              if (!fids.has(f.red_fighter_id) || !fids.has(f.blue_fighter_id)) {
+                console.error('Bad fighter ref in fight', f.id);
+                ok = false;
+              }
+              if (!eids.has(f.event_id)) {
+                console.error('Bad event ref in fight', f.id);
+                ok = false;
+              }
+            }
+            if (!ok) process.exit(1);
+            console.log('Seed data integrity: OK');
+            console.log('  Fighters:', seed.fighters.length);
+            console.log('  Events:', seed.events.length);
+            console.log('  Fights:', seed.fights.length);
+          "
+
+      - name: Run test suite
+        run: node tests/run.js
+
+      - name: Check HTML structure
+        run: |
+          node -e "
+            const fs = require('fs');
+            const html = fs.readFileSync('public/index.html','utf8');
+            const required = [
+              'Content-Security-Policy', 'escHtml', 'window.addToCompare',
+              '/api/version', 'comparePanel', 'fighterSearch',
+              'three.min.js', 'appVersion'
+            ];
+            let ok = true;
+            for (const r of required) {
+              if (!html.includes(r)) {
+                console.error('Missing in HTML:', r);
+                ok = false;
+              }
+            }
+            if (!ok) process.exit(1);
+            console.log('HTML structure: OK');
+          "
+
+      - name: Check server security headers
+        run: |
+          node -e "
+            const src = require('fs').readFileSync('server.js','utf8');
+            const headers = ['X-Content-Type-Options','X-Frame-Options','Content-Security-Policy','Referrer-Policy','X-App-Version'];
+            let ok = true;
+            for (const h of headers) {
+              if (!src.includes(h)) { console.error('Missing header:', h); ok = false; }
+            }
+            if (!ok) process.exit(1);
+            console.log('Security headers: OK');
+          "
+
+      - name: Verify no secrets in codebase
+        run: |
+          echo "Scanning for potential secrets..."
+          if grep -rn "github_pat_\|ghp_\|sk-\|password\s*=" --include="*.js" --include="*.json" --include="*.html" . \
+             --exclude-dir=node_modules --exclude-dir=.git; then
+            echo "::error::Potential secrets found in codebase"
+            exit 1
+          fi
+          echo "No secrets found: OK"
+
+      - name: Server boot test
+        run: |
+          PORT=4999 timeout 8 node server.js &
+          sleep 4
+          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4999/healthz)
+          if [ "$STATUS" != "200" ]; then
+            echo "::error::Healthcheck failed (status $STATUS)"
+            exit 1
+          fi
+          VERSION=$(curl -s http://localhost:4999/api/version | node -e "process.stdin.on('data',d=>{const v=JSON.parse(d);console.log(v.version)})")
+          echo "Server boots OK · version $VERSION"
+          kill %1 2>/dev/null || true
