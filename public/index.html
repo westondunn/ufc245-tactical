@@ -1131,6 +1131,186 @@ body.spotlight-blue .fill-red{
 .scorecard-table tbody tr:hover{background:rgba(45,220,255,.04)}
 
 /* =============================================================
+   FIGHT RECREATION · AUDIENCE-POV STICK FIGURE PLAYBACK
+============================================================= */
+.recreation-panel{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:0;
+  margin-top:24px;
+  position:relative;
+  overflow:hidden;
+}
+.recreation-head{
+  padding:20px 28px 16px;
+  display:flex;justify-content:space-between;align-items:center;
+  border-bottom:1px solid var(--border);
+}
+.rec-stage{
+  position:relative;
+  background:linear-gradient(180deg,#04050A 0%,#08091A 40%,#0A0C14 100%);
+  height:440px;
+  overflow:hidden;
+}
+.rec-stage-svg{width:100%;height:100%;display:block}
+
+.rec-chapter{
+  position:absolute;top:20px;left:28px;
+  font-family:var(--f-disp);
+  font-size:26px;font-weight:700;
+  letter-spacing:.12em;text-transform:uppercase;
+  color:var(--fg);
+  pointer-events:none;
+  opacity:.95;
+}
+.rec-chapter-sub{
+  display:block;
+  font-family:var(--f-mono);
+  font-size:10px;font-weight:500;
+  letter-spacing:.18em;
+  color:var(--muted);
+  margin-top:4px;
+}
+.rec-round-pill{
+  position:absolute;top:24px;right:28px;
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.2em;
+  color:var(--cyan);
+  text-transform:uppercase;
+  padding:6px 12px;
+  border:1px solid var(--cyan);
+  background:rgba(4,5,10,.6);
+  pointer-events:none;
+}
+.rec-caption{
+  position:absolute;bottom:28px;left:50%;
+  transform:translateX(-50%);
+  font-family:var(--f-mono);
+  font-size:12px;letter-spacing:.18em;
+  color:var(--fg);
+  text-transform:uppercase;
+  background:rgba(4,5,10,.85);
+  padding:8px 18px;
+  border:1px solid var(--muted-dim);
+  pointer-events:none;
+  max-width:80%;text-align:center;
+  transition:opacity .25s ease;
+}
+.rec-corner-r,.rec-corner-b{
+  position:absolute;bottom:22px;
+  font-family:var(--f-mono);
+  font-size:9px;letter-spacing:.18em;
+  text-transform:uppercase;
+  pointer-events:none;
+}
+.rec-corner-r{left:24px;color:#FF5965}
+.rec-corner-b{right:24px;color:#5EC2FF;text-align:right}
+
+.rec-controls{
+  display:flex;align-items:center;gap:14px;
+  padding:14px 24px;
+  border-top:1px solid var(--border);
+  background:var(--bg-card-soft);
+  flex-wrap:wrap;
+}
+.rec-btn{
+  background:transparent;
+  border:1px solid var(--muted-dim);
+  color:var(--fg-dim);
+  padding:7px 14px;
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.14em;
+  cursor:pointer;
+  transition:all .2s ease;
+  text-transform:uppercase;
+}
+.rec-btn:hover{border-color:var(--cyan);color:var(--cyan)}
+.rec-btn.active{border-color:var(--cyan);color:var(--cyan);background:rgba(45,220,255,.06)}
+.rec-btn--play{min-width:90px;font-weight:600;color:var(--fg)}
+.rec-btn--play.paused{border-color:var(--amber);color:var(--amber)}
+.rec-progress{
+  flex:1;min-width:160px;
+  height:5px;
+  background:var(--faint);
+  position:relative;
+  cursor:pointer;
+  border-radius:0;
+}
+.rec-progress-fill{
+  position:absolute;top:0;bottom:0;left:0;
+  background:linear-gradient(90deg,var(--red),var(--purple),var(--blue));
+  width:0%;
+}
+.rec-progress-marks{
+  position:absolute;top:-6px;bottom:-6px;width:100%;
+  pointer-events:none;
+}
+.rec-progress-mark{
+  position:absolute;width:1px;top:0;bottom:0;
+  background:var(--muted-dim);
+}
+.rec-progress-mark::after{
+  content:attr(data-label);
+  position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+  font-family:var(--f-mono);
+  font-size:8px;letter-spacing:.15em;
+  color:var(--muted-dim);
+}
+.rec-time{
+  font-family:var(--f-mono);
+  font-size:12px;
+  color:var(--cyan);
+  letter-spacing:.1em;
+  min-width:140px;
+  text-align:right;
+  font-feature-settings:"tnum";
+}
+.rec-round-btns{display:flex;gap:6px}
+.rec-speed{
+  font-family:var(--f-mono);
+  font-size:11px;color:var(--muted);
+  letter-spacing:.1em;
+}
+
+/* Stick figure styling */
+.rec-stage-svg .limb{stroke-linejoin:round;stroke-linecap:round;fill:none}
+.rec-stage-svg .floor-line{stroke:#151B28;stroke-width:1}
+.rec-stage-svg .cage-post{stroke:#2A3045;stroke-width:1}
+.rec-stage-svg .cage-mesh{stroke:#12182A;stroke-width:1;opacity:.4}
+.rec-stage-svg .shadow{fill:#000;opacity:.35}
+.rec-stage-svg .ring-red{fill:none;stroke:#FF2D3F;stroke-width:1;opacity:.3}
+.rec-stage-svg .ring-blue{fill:none;stroke:#2DB4FF;stroke-width:1;opacity:.3}
+
+.rec-hit{
+  opacity:0;
+  pointer-events:none;
+}
+.rec-hit.show{
+  animation:recHitFlash 1.2s ease-out forwards;
+}
+@keyframes recHitFlash{
+  0%{opacity:0;transform:scale(.3)}
+  20%{opacity:1;transform:scale(1.15)}
+  60%{opacity:.8;transform:scale(1.35)}
+  100%{opacity:0;transform:scale(1.8)}
+}
+
+.rec-finish-overlay{
+  position:absolute;inset:0;
+  background:radial-gradient(ellipse at center,rgba(255,45,63,.08) 0%,rgba(4,5,10,.7) 70%);
+  display:flex;align-items:center;justify-content:center;
+  opacity:0;
+  pointer-events:none;
+  transition:opacity .6s ease;
+  font-family:var(--f-disp);
+  font-weight:700;font-size:72px;
+  letter-spacing:.2em;
+  color:#FFFFFF;
+  text-shadow:0 0 24px rgba(255,45,63,.8);
+}
+.rec-finish-overlay.show{opacity:1}
+
+/* =============================================================
    AFTERMATH
 ============================================================= */
 .aftermath-grid{
@@ -2370,6 +2550,148 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
         </div>
         <div class="force-item__meta">Walilko et al. 2005 · Reference max · 58g head acceleration</div>
       </div>
+    </div>
+  </div>
+
+  <!-- ============ FIGHT RECREATION (within biomech section) ============ -->
+  <div class="recreation-panel">
+    <div class="recreation-head">
+      <div>
+        <div class="panel-title">Live Recreation · Audience Perspective</div>
+        <div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--muted);margin-top:6px;text-transform:uppercase">Stick figure playback · 24:10 compressed to ~100s · keyframe reconstruction</div>
+      </div>
+      <div class="panel-meta" id="recModel">MODEL · 15× REAL TIME</div>
+    </div>
+
+    <div class="rec-stage">
+      <svg class="rec-stage-svg" id="recStage" viewBox="0 0 1200 440" preserveAspectRatio="xMidYMid meet">
+        <defs>
+          <radialGradient id="recShadow" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#000" stop-opacity=".5"/>
+            <stop offset="100%" stop-color="#000" stop-opacity="0"/>
+          </radialGradient>
+          <linearGradient id="recFloorGrad" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="#0A0E1A"/>
+            <stop offset="100%" stop-color="#04050A"/>
+          </linearGradient>
+        </defs>
+
+        <!-- Floor -->
+        <rect x="0" y="340" width="1200" height="100" fill="url(#recFloorGrad)"/>
+        <line class="floor-line" x1="0" y1="340" x2="1200" y2="340"/>
+        <!-- Perspective floor grid -->
+        <g opacity="0.35">
+          <line class="floor-line" x1="0" y1="370" x2="1200" y2="370"/>
+          <line class="floor-line" x1="0" y1="395" x2="1200" y2="395"/>
+          <line class="floor-line" x1="0" y1="420" x2="1200" y2="420"/>
+        </g>
+
+        <!-- Cage hint left (Red corner) -->
+        <g opacity="0.5">
+          <line class="cage-post" x1="60" y1="80" x2="60" y2="340"/>
+          <line class="cage-post" x1="60" y1="80" x2="20" y2="80"/>
+          <line class="cage-post" x1="60" y1="340" x2="20" y2="340"/>
+          <g>
+            <line class="cage-mesh" x1="60" y1="100" x2="20" y2="100"/>
+            <line class="cage-mesh" x1="60" y1="140" x2="20" y2="140"/>
+            <line class="cage-mesh" x1="60" y1="180" x2="20" y2="180"/>
+            <line class="cage-mesh" x1="60" y1="220" x2="20" y2="220"/>
+            <line class="cage-mesh" x1="60" y1="260" x2="20" y2="260"/>
+            <line class="cage-mesh" x1="60" y1="300" x2="20" y2="300"/>
+          </g>
+        </g>
+        <!-- Cage hint right (Blue corner) -->
+        <g opacity="0.5">
+          <line class="cage-post" x1="1140" y1="80" x2="1140" y2="340"/>
+          <line class="cage-post" x1="1140" y1="80" x2="1180" y2="80"/>
+          <line class="cage-post" x1="1140" y1="340" x2="1180" y2="340"/>
+          <g>
+            <line class="cage-mesh" x1="1140" y1="100" x2="1180" y2="100"/>
+            <line class="cage-mesh" x1="1140" y1="140" x2="1180" y2="140"/>
+            <line class="cage-mesh" x1="1140" y1="180" x2="1180" y2="180"/>
+            <line class="cage-mesh" x1="1140" y1="220" x2="1180" y2="220"/>
+            <line class="cage-mesh" x1="1140" y1="260" x2="1180" y2="260"/>
+            <line class="cage-mesh" x1="1140" y1="300" x2="1180" y2="300"/>
+          </g>
+        </g>
+
+        <!-- Shadows under fighters (updated by JS) -->
+        <ellipse id="recShadowR" cx="420" cy="342" rx="40" ry="5" fill="url(#recShadow)"/>
+        <ellipse id="recShadowB" cx="680" cy="342" rx="40" ry="5" fill="url(#recShadow)"/>
+
+        <!-- Fighter groups (lines set by JS) -->
+        <g id="recFighterR">
+          <circle class="ring-red" cx="420" cy="345" r="35"/>
+          <line class="limb" id="rR-rearShin" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-rearThigh" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-leadShin" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-leadThigh" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-torso" stroke="#FF2D3F" stroke-width="5"/>
+          <line class="limb" id="rR-shoulders" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-rearUpper" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-rearFore" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-leadUpper" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-leadFore" stroke="#FF2D3F" stroke-width="4"/>
+          <line class="limb" id="rR-neck" stroke="#FF2D3F" stroke-width="4"/>
+          <circle id="rR-head" fill="rgba(255,45,63,.25)" stroke="#FF2D3F" stroke-width="3.5" r="22"/>
+        </g>
+
+        <g id="recFighterB">
+          <circle class="ring-blue" cx="680" cy="345" r="35"/>
+          <line class="limb" id="rB-rearShin" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-rearThigh" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-leadShin" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-leadThigh" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-torso" stroke="#2DB4FF" stroke-width="5"/>
+          <line class="limb" id="rB-shoulders" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-rearUpper" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-rearFore" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-leadUpper" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-leadFore" stroke="#2DB4FF" stroke-width="4"/>
+          <line class="limb" id="rB-neck" stroke="#2DB4FF" stroke-width="4"/>
+          <circle id="rB-head" fill="rgba(45,180,255,.25)" stroke="#2DB4FF" stroke-width="3.5" r="22"/>
+        </g>
+
+        <!-- Hit flash layer (populated by JS) -->
+        <g id="recHitLayer"></g>
+
+        <!-- Fighter name labels -->
+        <text id="recLabelR" x="420" y="70" text-anchor="middle" font-family="JetBrains Mono" font-size="11" font-weight="700" letter-spacing=".18em" fill="#FF5965">USMAN</text>
+        <text id="recLabelB" x="680" y="70" text-anchor="middle" font-family="JetBrains Mono" font-size="11" font-weight="700" letter-spacing=".18em" fill="#5EC2FF">COVINGTON</text>
+      </svg>
+
+      <div class="rec-chapter">
+        <span id="recChapter">ROUND 01</span>
+        <span class="rec-chapter-sub" id="recChapterSub">Audience perspective</span>
+      </div>
+      <div class="rec-round-pill"><span id="recTc">0:00</span> / 24:10</div>
+      <div class="rec-caption" id="recCaption">Ready · Press play</div>
+      <div class="rec-corner-r">● RED CORNER<br>West side</div>
+      <div class="rec-corner-b">BLUE CORNER ●<br>East side</div>
+      <div class="rec-finish-overlay" id="recFinishOverlay">TKO · 4:10</div>
+    </div>
+
+    <div class="rec-controls">
+      <button class="rec-btn rec-btn--play" id="recPlayBtn">▶ PLAY</button>
+      <div class="rec-progress" id="recProgress">
+        <div class="rec-progress-fill" id="recProgressFill"></div>
+        <div class="rec-progress-marks">
+          <div class="rec-progress-mark" data-label="R1" style="left:0%"></div>
+          <div class="rec-progress-mark" data-label="R2" style="left:20%"></div>
+          <div class="rec-progress-mark" data-label="R3" style="left:40%"></div>
+          <div class="rec-progress-mark" data-label="R4" style="left:60%"></div>
+          <div class="rec-progress-mark" data-label="R5" style="left:80%"></div>
+        </div>
+      </div>
+      <span class="rec-time" id="recTime">00:00 / 01:40</span>
+      <div class="rec-round-btns">
+        <button class="rec-btn" data-recjump="0">R1</button>
+        <button class="rec-btn" data-recjump="1">R2</button>
+        <button class="rec-btn" data-recjump="2">R3</button>
+        <button class="rec-btn" data-recjump="3">R4</button>
+        <button class="rec-btn" data-recjump="4">R5</button>
+      </div>
+      <button class="rec-btn" id="recSpeedBtn">1.0×</button>
     </div>
   </div>
 </section>
@@ -3666,6 +3988,463 @@ function setupCrossLinks(){
 /* -----------------------------------------------------------
    INIT
 ----------------------------------------------------------- */
+/* -----------------------------------------------------------
+   FIGHT RECREATION · AUDIENCE-POV STICK-FIGURE PLAYBACK
+----------------------------------------------------------- */
+const REC_GROUND_Y = 340;
+const REC_SCALE = 1.35;
+
+/**
+ * Fighter param abbreviations:
+ *   x   base x position (ground contact midpoint)
+ *   le  lead arm extension (0 guard → 1 full punch)
+ *   re  rear arm extension
+ *   ln  forward lean radians
+ *   ws  weight shift (-1 back to +1 forward)
+ *   hox head x offset (slips)
+ *   dn  downness (0 standing, 1 fully horizontal)
+ */
+const FIGHT_KEYFRAMES = [
+  // ROUND 1 · 0–20s
+  { t: 0.0,  r:{x:420,le:.2,re:.3,ln:0,ws:0,hox:0,dn:0},           b:{x:680,le:.2,re:.3,ln:0,ws:0,hox:0,dn:0},             cap:'R1 · Opening · Center control',                     rd:1, tc:'0:00' },
+  { t: 2.0,  r:{x:430,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},         b:{x:670,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},            cap:'Feeling out · no commitment',                        rd:1, tc:'0:30' },
+  { t: 4.0,  r:{x:440,le:.85,re:.2,ln:.1,ws:.2,hox:0,dn:0},        b:{x:680,le:.1,re:.3,ln:-.08,ws:-.15,hox:-6,dn:0},       cap:'Usman · lead jab · Cov slips',                       rd:1, tc:'1:00', ev:{color:'#FF2D3F', x:570, y:200, label:'JAB'} },
+  { t: 6.0,  r:{x:450,le:.2,re:.2,ln:-.08,ws:-.2,hox:8,dn:0},      b:{x:680,le:.8,re:.1,ln:.1,ws:.25,hox:0,dn:0},           cap:'Cov · return jab',                                    rd:1, tc:'1:30' },
+  { t: 8.0,  r:{x:470,le:.15,re:.1,ln:-.3,ws:-.5,hox:16,dn:0},     b:{x:660,le:.2,re:.95,ln:.25,ws:.55,hox:0,dn:0},         cap:'💥 Cov · BIG LEFT · Usman staggered',                  rd:1, tc:'2:30', ev:{color:'#2DB4FF', x:570, y:180, label:'💥 BIG LEFT', big:true} },
+  { t:10.0,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:4,dn:0},         b:{x:670,le:.2,re:.3,ln:.05,ws:.1,hox:0,dn:0},           cap:'Usman recovers · clinches briefly',                  rd:1, tc:'3:00' },
+  { t:12.0,  r:{x:460,le:.2,re:.88,ln:.2,ws:.45,hox:0,dn:0},       b:{x:660,le:.2,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},        cap:'Usman · body shot · Cov visibly feels it',           rd:1, tc:'3:30', ev:{color:'#FFB020', x:600, y:250, label:'BODY'} },
+  { t:14.0,  r:{x:450,le:.4,re:.4,ln:.1,ws:.1,hox:0,dn:0},         b:{x:660,le:.4,re:.4,ln:.05,ws:0,hox:0,dn:0},            cap:'Trading in center · both landing',                   rd:1, tc:'4:00' },
+  { t:16.0,  r:{x:440,le:.2,re:.3,ln:.05,ws:0,hox:0,dn:0},         b:{x:670,le:.3,re:.2,ln:.05,ws:0,hox:0,dn:0},            cap:'Round 1 ending',                                      rd:1, tc:'4:45' },
+  { t:18.0,  r:{x:430,le:.2,re:.2,ln:0,ws:0,hox:0,dn:0},           b:{x:680,le:.2,re:.2,ln:0,ws:0,hox:0,dn:0},              cap:'R1 · Covington 3-0 on the cards',                    rd:1, tc:'5:00' },
+
+  // ROUND 2 · 20–40s
+  { t:20.0,  r:{x:440,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},         b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},            cap:'R2 · both aggressive out of the bell',               rd:2, tc:'5:00' },
+  { t:22.0,  r:{x:450,le:.85,re:.2,ln:.1,ws:.2,hox:0,dn:0},        b:{x:680,le:.2,re:.3,ln:-.08,ws:-.15,hox:-8,dn:0},       cap:'Usman · jabs · Cov right eye damaged',               rd:2, tc:'5:30', ev:{color:'#FF2D3F', x:565, y:195, label:'JAB'} },
+  { t:24.5,  r:{x:460,le:.2,re:.2,ln:-.18,ws:-.3,hox:14,dn:0},     b:{x:670,le:.3,re:.88,ln:.18,ws:.4,hox:0,dn:0},          cap:'Cov · overhand left lands',                            rd:2, tc:'6:30', ev:{color:'#2DB4FF', x:570, y:190, label:'OVERHAND'} },
+  { t:26.5,  r:{x:450,le:.2,re:.2,ln:.25,ws:-.1,hox:0,dn:0},       b:{x:670,le:.3,re:.2,ln:.1,ws:.1,hox:0,dn:0},            cap:'⚠ Cov · LOW KICK to cup · action halt',               rd:2, tc:'7:30', ev:{color:'#8A5EF5', x:565, y:290, label:'⚠ LOW'} },
+  { t:29.0,  r:{x:440,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},           b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},            cap:'Action resumes',                                      rd:2, tc:'7:45' },
+  { t:31.5,  r:{x:450,le:.2,re:.82,ln:.18,ws:.4,hox:0,dn:0},       b:{x:670,le:.2,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},        cap:'Usman · heavy body shot',                             rd:2, tc:'9:00', ev:{color:'#FFB020', x:600, y:235, label:'BODY'} },
+  { t:34.0,  r:{x:460,le:.3,re:.3,ln:.1,ws:0,hox:0,dn:0},          b:{x:660,le:.8,re:.3,ln:.1,ws:.15,hox:0,dn:0},           cap:'Cov · uppercut fires',                                 rd:2, tc:'9:30' },
+  { t:37.0,  r:{x:460,le:.3,re:.88,ln:.2,ws:.45,hox:0,dn:0},       b:{x:670,le:.2,re:.2,ln:-.1,ws:-.15,hox:10,dn:0},        cap:'Usman · closing body shot at bell',                   rd:2, tc:'9:50', ev:{color:'#FFB020', x:600, y:235, label:'BODY'} },
+  { t:39.5,  r:{x:450,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},           b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},            cap:'R2 · split · Cov 2 · Usman 1 · Colon 38-38',         rd:2, tc:'10:00' },
+
+  // ROUND 3 · 40–60s · TURNING POINT
+  { t:40.0,  r:{x:460,le:.3,re:.3,ln:.1,ws:.1,hox:0,dn:0},         b:{x:680,le:.3,re:.3,ln:0,ws:-.05,hox:0,dn:0},           cap:'R3 · Usman takes center',                             rd:3, tc:'10:00' },
+  { t:42.5,  r:{x:470,le:.9,re:.2,ln:.12,ws:.3,hox:0,dn:0},        b:{x:690,le:.2,re:.3,ln:-.1,ws:-.18,hox:-10,dn:0},       cap:'Usman · right hand · Cov backing up',                 rd:3, tc:'11:00', ev:{color:'#FF2D3F', x:580, y:195, label:'RIGHT'} },
+  { t:45.0,  r:{x:480,le:.15,re:.3,ln:.1,ws:.2,hox:0,dn:0},        b:{x:695,le:.2,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},         cap:'Usman · front kick to body',                          rd:3, tc:'12:00', ev:{color:'#FFB020', x:590, y:245, label:'KICK'} },
+  { t:47.0,  r:{x:480,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},        b:{x:690,le:.3,re:.4,ln:0,ws:0,hox:0,dn:0},              cap:'Trading · Usman slowing the pace',                    rd:3, tc:'13:00' },
+  { t:50.0,  r:{x:470,le:.2,re:.2,ln:-.1,ws:-.15,hox:14,dn:0},     b:{x:680,le:.8,re:.2,ln:.15,ws:.25,hox:0,dn:0},          cap:'⚠ Cov · EYE POKE · physician check',                  rd:3, tc:'14:15', ev:{color:'#8A5EF5', x:570, y:175, label:'⚠ EYE POKE'} },
+  { t:52.5,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},         b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},            cap:'Action resumes · Usman cleared',                      rd:3, tc:'14:30' },
+  { t:54.5,  r:{x:470,le:.3,re:.3,ln:.15,ws:.2,hox:0,dn:0},        b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},            cap:'Usman sets up · subtle weight load',                  rd:3, tc:'14:45' },
+  { t:56.5,  r:{x:480,le:.3,re:.97,ln:.35,ws:.65,hox:0,dn:0},      b:{x:680,le:.1,re:.1,ln:-.45,ws:-.6,hox:24,dn:0},        cap:'💥 💥 USMAN · RIGHT CROSS · MANDIBLE FRACTURE',          rd:3, tc:'14:50', ev:{color:'#FF2D3F', x:595, y:175, label:'💥 JAW BREAK', big:true} },
+  { t:59.0,  r:{x:475,le:.3,re:.3,ln:.1,ws:.1,hox:0,dn:0},         b:{x:685,le:.1,re:.1,ln:-.15,ws:-.2,hox:15,dn:0},        cap:'Round ends · Cov covers face · corner: "I broke my jaw"', rd:3, tc:'15:00', ev:{color:'#FFB020', x:685, y:120, label:'🎙 AUDIO'} },
+
+  // ROUND 4 · 60–80s
+  { t:60.0,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},         b:{x:680,le:.3,re:.3,ln:0,ws:-.05,hox:0,dn:0},           cap:'R4 · tentative · Cov fighting through broken jaw',    rd:4, tc:'15:00' },
+  { t:62.5,  r:{x:470,le:.2,re:.85,ln:.2,ws:.4,hox:0,dn:0},        b:{x:670,le:.2,re:.2,ln:-.12,ws:-.2,hox:10,dn:0},        cap:'Usman · body work · 14 body shots this round',       rd:4, tc:'15:40', ev:{color:'#FFB020', x:600, y:240, label:'BODY'} },
+  { t:65.0,  r:{x:465,le:.3,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},     b:{x:670,le:.82,re:.82,ln:.2,ws:.35,hox:0,dn:0},         cap:'Cov · uppercut combo',                                rd:4, tc:'16:30', ev:{color:'#2DB4FF', x:575, y:185, label:'UPPERCUT'} },
+  { t:68.0,  r:{x:460,le:.2,re:.2,ln:-.3,ws:-.55,hox:18,dn:0},     b:{x:665,le:.92,re:.92,ln:.28,ws:.5,hox:0,dn:0},         cap:'💥 Cov · 3-PUNCH COMBO · Usman legs buckle',           rd:4, tc:'18:00', ev:{color:'#2DB4FF', x:570, y:190, label:'💥 STAGGER', big:true} },
+  { t:70.5,  r:{x:470,le:.2,re:.3,ln:.3,ws:.4,hox:0,dn:0},         b:{x:680,le:.3,re:.3,ln:.1,ws:0,hox:0,dn:0},             cap:'Usman walks forward · body kick answers',             rd:4, tc:'18:40' },
+  { t:73.0,  r:{x:475,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},        b:{x:675,le:.85,re:.4,ln:.25,ws:.35,hox:0,dn:0},         cap:'Cov · Superman · Usman · catches with knee',         rd:4, tc:'19:15', ev:{color:'#FFB020', x:580, y:195, label:'KNEE'} },
+  { t:75.5,  r:{x:465,le:.45,re:.45,ln:.1,ws:0,hox:0,dn:0},        b:{x:680,le:.45,re:.45,ln:.1,ws:.05,hox:0,dn:0},         cap:'Heavy trading · both jawing at each other',           rd:4, tc:'19:45' },
+  { t:78.0,  r:{x:460,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},           b:{x:680,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},              cap:'R4 ends · fight is dead even entering R5',           rd:4, tc:'20:00' },
+
+  // ROUND 5 · 80–100s · TKO
+  { t:80.0,  r:{x:450,le:.3,re:.3,ln:0,ws:-.1,hox:0,dn:0},         b:{x:690,le:.4,re:.4,ln:.1,ws:.25,hox:0,dn:0},           cap:'R5 · Cov aggressive · lands early',                   rd:5, tc:'20:00' },
+  { t:83.0,  r:{x:460,le:.85,re:.85,ln:.2,ws:.4,hox:0,dn:0},       b:{x:680,le:.2,re:.2,ln:-.1,ws:-.15,hox:12,dn:0},        cap:'Usman · 3-2 combo near the fence',                    rd:5, tc:'22:30', ev:{color:'#FF2D3F', x:580, y:190, label:'3-2'} },
+  { t:86.0,  r:{x:475,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},        b:{x:680,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},         cap:'Wild trade · Cov nearly falls',                       rd:5, tc:'23:15' },
+  { t:88.5,  r:{x:482,le:.2,re:.97,ln:.4,ws:.7,hox:0,dn:0},        b:{x:675,le:.1,re:.1,ln:-.55,ws:-.75,hox:22,dn:.55},     cap:'💥 💥 KD #1 · Usman fakes 2-3 · right hand drops Cov',  rd:5, tc:'23:30', ev:{color:'#FF2D3F', x:595, y:180, label:'💥 KD 1', big:true} },
+  { t:90.0,  r:{x:485,le:.3,re:.3,ln:.2,ws:.3,hox:0,dn:0},         b:{x:660,le:.3,re:.3,ln:-.25,ws:-.35,hox:10,dn:0},       cap:'Cov pops up · defiant · Usman stalks',                rd:5, tc:'23:40' },
+  { t:91.5,  r:{x:495,le:.2,re:.97,ln:.45,ws:.8,hox:0,dn:0},       b:{x:650,le:.1,re:.1,ln:-.7,ws:-.85,hox:26,dn:.95},      cap:'💥 💥 KD #2 · "right into the jaw"',                      rd:5, tc:'23:45', ev:{color:'#FF2D3F', x:590, y:200, label:'💥 KD 2', big:true} },
+  { t:93.0,  r:{x:515,le:.2,re:.3,ln:.4,ws:.6,hox:0,dn:.15},       b:{x:630,le:.2,re:.1,ln:0,ws:0,hox:0,dn:1},              cap:'Cov · desperate TD shot · Usman sprawls',             rd:5, tc:'23:55' },
+  { t:95.5,  r:{x:550,le:.3,re:.88,ln:.35,ws:.35,hox:0,dn:.2},     b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                cap:'Ground & pound · hammerfists begin',                 rd:5, tc:'24:00', ev:{color:'#FFB020', x:620, y:305, label:'GP'} },
+  { t:98.0,  r:{x:555,le:.3,re:.95,ln:.3,ws:.3,hox:0,dn:.2},       b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                cap:'14 of 15 hammerfists in 11 seconds',                  rd:5, tc:'24:08', ev:{color:'#FFB020', x:620, y:305, label:'GP'} },
+  { t:100.0, r:{x:555,le:.3,re:.3,ln:0,ws:0,hox:0,dn:.2},          b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                cap:'🏁 TKO · 4:10 · GODDARD DIVES IN',                       rd:5, tc:'24:10', ev:{color:'#FFFFFF', x:590, y:180, label:'🏁 TKO 4:10', big:true} }
+];
+const REC_TOTAL = FIGHT_KEYFRAMES[FIGHT_KEYFRAMES.length - 1].t;
+const REC_ROUND_STARTS = [0, 20, 40, 60, 80];
+
+// Cache stick figure line elements
+function cachePartsFor(prefix){
+  return {
+    rearShin:    document.getElementById(prefix + '-rearShin'),
+    rearThigh:   document.getElementById(prefix + '-rearThigh'),
+    leadShin:    document.getElementById(prefix + '-leadShin'),
+    leadThigh:   document.getElementById(prefix + '-leadThigh'),
+    torso:       document.getElementById(prefix + '-torso'),
+    shoulders:   document.getElementById(prefix + '-shoulders'),
+    rearUpper:   document.getElementById(prefix + '-rearUpper'),
+    rearFore:    document.getElementById(prefix + '-rearFore'),
+    leadUpper:   document.getElementById(prefix + '-leadUpper'),
+    leadFore:    document.getElementById(prefix + '-leadFore'),
+    neck:        document.getElementById(prefix + '-neck'),
+    head:        document.getElementById(prefix + '-head')
+  };
+}
+let _recPartsR = null, _recPartsB = null;
+
+function setLineAttr(line, x1, y1, x2, y2){
+  line.setAttribute('x1', x1); line.setAttribute('y1', y1);
+  line.setAttribute('x2', x2); line.setAttribute('y2', y2);
+}
+
+// Render a standing stick figure from params
+function renderStanding(parts, p, dir){
+  const s = REC_SCALE;
+  const D = dir;
+  const gy = REC_GROUND_Y;
+  const leadFootX = p.x + D * (38 + p.ws*5) * s;
+  const rearFootX = p.x - D * 40 * s;
+  const hipCX     = p.x + D * p.ws * 10 * s;
+  const hipY      = gy - 190 * s;
+  const leadKneeX = leadFootX - D * 14 * s;
+  const leadKneeY = (gy + hipY)/2;
+  const rearKneeX = rearFootX + D * 10 * s;
+  const rearKneeY = (gy + hipY)/2 + 6 * s;
+  const chestX    = hipCX + D * p.ln * 110 * s * 0.7;
+  const chestY    = hipY - 110 * s * Math.cos(p.ln);
+  const shLeadX   = chestX + D * 20 * s;
+  const shLeadY   = chestY;
+  const shRearX   = chestX - D * 25 * s;
+  const shRearY   = chestY - 4 * s;
+
+  const fistLeadDist = (90 + 80 * p.le) * s;
+  const fistLeadX = shLeadX + D * fistLeadDist;
+  const fistLeadY = shLeadY - 8 * s + p.le * 6 * s;
+  const elbowLeadX = (shLeadX + fistLeadX)/2 + D * 10 * (1 - p.le) * s;
+  const elbowLeadY = (shLeadY + fistLeadY)/2 - 6 * s;
+
+  const fistRearDist = (20 + 130 * p.re) * s;
+  const fistRearX = shRearX + D * fistRearDist;
+  const fistRearY = shRearY - 18 * s + p.re * 24 * s;
+  const elbowRearX = (shRearX + fistRearX)/2 + D * 8 * (1 - p.re) * s;
+  const elbowRearY = (shRearY + fistRearY)/2 - 8 * s;
+
+  const headCX = chestX + D * Math.sin(p.ln) * 10 * s + (p.hox || 0);
+  const hr = 16 * s;
+  const headCY = chestY - 18 * s - hr;
+  const neckBottomY = chestY - 2 * s;
+  const neckTopY    = headCY + hr;
+
+  setLineAttr(parts.rearShin, rearFootX, gy, rearKneeX, rearKneeY);
+  setLineAttr(parts.rearThigh, rearKneeX, rearKneeY, hipCX, hipY);
+  setLineAttr(parts.leadShin, leadFootX, gy, leadKneeX, leadKneeY);
+  setLineAttr(parts.leadThigh, leadKneeX, leadKneeY, hipCX, hipY);
+  setLineAttr(parts.torso, hipCX, hipY, chestX, chestY);
+  setLineAttr(parts.shoulders, shLeadX, shLeadY, shRearX, shRearY);
+  setLineAttr(parts.rearUpper, shRearX, shRearY, elbowRearX, elbowRearY);
+  setLineAttr(parts.rearFore, elbowRearX, elbowRearY, fistRearX, fistRearY);
+  setLineAttr(parts.leadUpper, shLeadX, shLeadY, elbowLeadX, elbowLeadY);
+  setLineAttr(parts.leadFore, elbowLeadX, elbowLeadY, fistLeadX, fistLeadY);
+  setLineAttr(parts.neck, chestX, neckBottomY, headCX, neckTopY);
+  parts.head.setAttribute('cx', headCX);
+  parts.head.setAttribute('cy', headCY);
+  parts.head.setAttribute('r', hr);
+}
+
+// Render a horizontal/lying stick figure
+function renderLying(parts, p, dir){
+  const s = REC_SCALE;
+  const D = dir;
+  const gy = REC_GROUND_Y;
+  const pelvisX = p.x;
+  const pelvisY = gy - 10 * s;
+  const chestX  = p.x + D * 80 * s;
+  const chestY  = gy - 18 * s;
+  const shLeadX = chestX + D * 15 * s;
+  const shLeadY = chestY + 4 * s;
+  const shRearX = chestX - D * 18 * s;
+  const shRearY = chestY - 4 * s;
+  const headCX  = chestX + D * 48 * s;
+  const headCY  = chestY - 4 * s;
+  const hr      = 16 * s;
+
+  const leadKneeX = pelvisX - D * 28 * s;
+  const leadKneeY = gy - 8 * s;
+  const leadFootX = pelvisX - D * 58 * s;
+  const leadFootY = gy;
+  const rearKneeX = pelvisX - D * 42 * s;
+  const rearKneeY = gy;
+  const rearFootX = pelvisX - D * 78 * s;
+  const rearFootY = gy;
+
+  const elbowLeadX = shLeadX + D * 22 * s;
+  const elbowLeadY = shLeadY + 6 * s;
+  const fistLeadX  = shLeadX + D * 48 * s;
+  const fistLeadY  = shLeadY + 2 * s;
+  const elbowRearX = shRearX + D * 2 * s;
+  const elbowRearY = shRearY - 16 * s;
+  const fistRearX  = shRearX + D * 12 * s;
+  const fistRearY  = shRearY - 28 * s;
+
+  setLineAttr(parts.rearShin, rearFootX, rearFootY, rearKneeX, rearKneeY);
+  setLineAttr(parts.rearThigh, rearKneeX, rearKneeY, pelvisX, pelvisY);
+  setLineAttr(parts.leadShin, leadFootX, leadFootY, leadKneeX, leadKneeY);
+  setLineAttr(parts.leadThigh, leadKneeX, leadKneeY, pelvisX, pelvisY);
+  setLineAttr(parts.torso, pelvisX, pelvisY, chestX, chestY);
+  setLineAttr(parts.shoulders, shLeadX, shLeadY, shRearX, shRearY);
+  setLineAttr(parts.rearUpper, shRearX, shRearY, elbowRearX, elbowRearY);
+  setLineAttr(parts.rearFore, elbowRearX, elbowRearY, fistRearX, fistRearY);
+  setLineAttr(parts.leadUpper, shLeadX, shLeadY, elbowLeadX, elbowLeadY);
+  setLineAttr(parts.leadFore, elbowLeadX, elbowLeadY, fistLeadX, fistLeadY);
+  setLineAttr(parts.neck, chestX, chestY - 2 * s, headCX, headCY + hr);
+  parts.head.setAttribute('cx', headCX);
+  parts.head.setAttribute('cy', headCY);
+  parts.head.setAttribute('r', hr);
+}
+
+function renderFighter(parts, p, dir){
+  if (p.dn > 0.5) renderLying(parts, p, dir);
+  else renderStanding(parts, p, dir);
+}
+
+// Lerp between two fighter param objects
+function lerpFighter(f1, f2, t){
+  return {
+    x:   lerp(f1.x,   f2.x,   t),
+    le:  lerp(f1.le,  f2.le,  t),
+    re:  lerp(f1.re,  f2.re,  t),
+    ln:  lerp(f1.ln,  f2.ln,  t),
+    ws:  lerp(f1.ws,  f2.ws,  t),
+    hox: lerp(f1.hox, f2.hox, t),
+    dn:  lerp(f1.dn,  f2.dn,  t)
+  };
+}
+
+function getRecFrameAt(time){
+  let prev = FIGHT_KEYFRAMES[0], next = FIGHT_KEYFRAMES[0];
+  let prevIdx = 0;
+  for (let i = 0; i < FIGHT_KEYFRAMES.length - 1; i++){
+    if (FIGHT_KEYFRAMES[i].t <= time && FIGHT_KEYFRAMES[i+1].t > time){
+      prev = FIGHT_KEYFRAMES[i];
+      next = FIGHT_KEYFRAMES[i+1];
+      prevIdx = i;
+      break;
+    }
+  }
+  if (time >= FIGHT_KEYFRAMES[FIGHT_KEYFRAMES.length-1].t){
+    prev = next = FIGHT_KEYFRAMES[FIGHT_KEYFRAMES.length-1];
+    prevIdx = FIGHT_KEYFRAMES.length - 1;
+  }
+  const span = next.t - prev.t;
+  const tt = span > 0 ? (time - prev.t) / span : 0;
+  return {
+    red: lerpFighter(prev.r, next.r, tt),
+    blue: lerpFighter(prev.b, next.b, tt),
+    caption: prev.cap,
+    round: prev.rd,
+    tc: prev.tc,
+    event: prev.ev,
+    prevIdx
+  };
+}
+
+// Hit flash burst at a given position
+function spawnHitFlash(ev){
+  const layer = document.getElementById('recHitLayer');
+  if (!layer) return;
+  const g = document.createElementNS('http://www.w3.org/2000/svg','g');
+  g.setAttribute('class','rec-hit show');
+  const r1 = document.createElementNS('http://www.w3.org/2000/svg','circle');
+  r1.setAttribute('cx', ev.x); r1.setAttribute('cy', ev.y); r1.setAttribute('r', ev.big ? 26 : 16);
+  r1.setAttribute('fill','none'); r1.setAttribute('stroke', ev.color); r1.setAttribute('stroke-width', ev.big ? 3 : 2);
+  g.appendChild(r1);
+  if (ev.big){
+    const r2 = document.createElementNS('http://www.w3.org/2000/svg','circle');
+    r2.setAttribute('cx', ev.x); r2.setAttribute('cy', ev.y); r2.setAttribute('r', 14);
+    r2.setAttribute('fill','none'); r2.setAttribute('stroke', ev.color); r2.setAttribute('stroke-width', 1.5);
+    g.appendChild(r2);
+  }
+  const label = document.createElementNS('http://www.w3.org/2000/svg','text');
+  label.setAttribute('x', ev.x);
+  label.setAttribute('y', ev.y - (ev.big ? 38 : 28));
+  label.setAttribute('text-anchor','middle');
+  label.setAttribute('font-family','Barlow Condensed');
+  label.setAttribute('font-size', ev.big ? 16 : 12);
+  label.setAttribute('font-weight','700');
+  label.setAttribute('letter-spacing','.18em');
+  label.setAttribute('fill', ev.color);
+  label.textContent = ev.label;
+  g.appendChild(label);
+  layer.appendChild(g);
+  setTimeout(() => g.remove(), 1400);
+}
+
+// Animation state
+let _recPlaying = false;
+let _recTime = 0;
+let _recLastFrameT = 0;
+let _recSpeed = 1.0;
+const REC_SPEEDS = [0.5, 1.0, 1.5, 2.0];
+let _recSpeedIdx = 1;
+let _recLastEventIdx = -1;
+let _recLastCaption = '';
+
+function applyRecFrame(time){
+  const f = getRecFrameAt(time);
+
+  renderFighter(_recPartsR, f.red, 1);
+  renderFighter(_recPartsB, f.blue, -1);
+
+  // Shadows follow fighters
+  const shR = document.getElementById('recShadowR');
+  const shB = document.getElementById('recShadowB');
+  if (shR){
+    shR.setAttribute('cx', f.red.x);
+    shR.setAttribute('cy', REC_GROUND_Y + 2);
+    shR.setAttribute('rx', f.red.dn > 0.5 ? 55 : 40);
+  }
+  if (shB){
+    shB.setAttribute('cx', f.blue.x);
+    shB.setAttribute('cy', REC_GROUND_Y + 2);
+    shB.setAttribute('rx', f.blue.dn > 0.5 ? 55 : 40);
+  }
+
+  // Fighter name labels follow (but clamp to above standing head)
+  const labelR = document.getElementById('recLabelR');
+  const labelB = document.getElementById('recLabelB');
+  if (labelR){
+    labelR.setAttribute('x', f.red.x);
+    labelR.setAttribute('y', f.red.dn > 0.5 ? REC_GROUND_Y - 40 : 70);
+  }
+  if (labelB){
+    labelB.setAttribute('x', f.blue.x);
+    labelB.setAttribute('y', f.blue.dn > 0.5 ? REC_GROUND_Y - 40 : 70);
+  }
+
+  // Caption / round / TC updates
+  if (f.caption !== _recLastCaption){
+    const capEl = document.getElementById('recCaption');
+    capEl.style.opacity = '0';
+    setTimeout(() => {
+      capEl.textContent = f.caption;
+      capEl.style.opacity = '1';
+    }, 120);
+    _recLastCaption = f.caption;
+  }
+  document.getElementById('recChapter').textContent = 'ROUND 0' + f.round;
+  document.getElementById('recChapterSub').textContent = (f.round === 3 ? 'Turning point' : f.round === 5 ? 'The finish' : 'Round ' + f.round);
+  document.getElementById('recTc').textContent = f.tc;
+
+  // Fire event flash once per keyframe crossing
+  if (f.event && f.prevIdx !== _recLastEventIdx){
+    spawnHitFlash(f.event);
+    _recLastEventIdx = f.prevIdx;
+  }
+
+  // Progress bar
+  const frac = clamp(time / REC_TOTAL, 0, 1);
+  document.getElementById('recProgressFill').style.width = (frac * 100) + '%';
+
+  // Time readout (shows real fight time by finding nearest KF)
+  const elapsedMin = Math.floor(time / 60);
+  const elapsedSec = Math.floor(time % 60);
+  const elapsedStr = `${String(elapsedMin).padStart(2,'0')}:${String(elapsedSec).padStart(2,'0')}`;
+  document.getElementById('recTime').textContent = `${elapsedStr} / 01:40`;
+
+  // Finish overlay when done
+  const fin = document.getElementById('recFinishOverlay');
+  if (fin){
+    if (time >= REC_TOTAL - 0.3) fin.classList.add('show');
+    else fin.classList.remove('show');
+  }
+
+  // Active round button
+  document.querySelectorAll('[data-recjump]').forEach(btn => {
+    btn.classList.toggle('active', parseInt(btn.dataset.recjump, 10) === (f.round - 1));
+  });
+}
+
+function recTick(){
+  if (!_recPlaying) return;
+  const now = performance.now() / 1000;
+  const dt = now - _recLastFrameT;
+  _recLastFrameT = now;
+  _recTime += dt * _recSpeed;
+  if (_recTime >= REC_TOTAL){
+    _recTime = REC_TOTAL;
+    applyRecFrame(_recTime);
+    recPause();
+    return;
+  }
+  applyRecFrame(_recTime);
+  requestAnimationFrame(recTick);
+}
+
+function recPlay(){
+  if (_recTime >= REC_TOTAL) _recTime = 0;
+  _recPlaying = true;
+  _recLastFrameT = performance.now() / 1000;
+  const btn = document.getElementById('recPlayBtn');
+  btn.textContent = '❚❚ PAUSE';
+  btn.classList.add('paused');
+  requestAnimationFrame(recTick);
+}
+function recPause(){
+  _recPlaying = false;
+  const btn = document.getElementById('recPlayBtn');
+  btn.textContent = '▶ PLAY';
+  btn.classList.remove('paused');
+}
+function recToggle(){ _recPlaying ? recPause() : recPlay(); }
+
+function recSeek(fraction){
+  _recTime = clamp(fraction, 0, 1) * REC_TOTAL;
+  _recLastEventIdx = -1;  // allow re-firing if scrubbed backward
+  applyRecFrame(_recTime);
+  // Reset last-event tracker to match current keyframe
+  const f = getRecFrameAt(_recTime);
+  _recLastEventIdx = f.prevIdx;
+}
+
+function recJumpToRound(roundIdx){
+  const start = REC_ROUND_STARTS[roundIdx] || 0;
+  recSeek(start / REC_TOTAL);
+  if (!_recPlaying) recPlay();
+}
+
+function recCycleSpeed(){
+  _recSpeedIdx = (_recSpeedIdx + 1) % REC_SPEEDS.length;
+  _recSpeed = REC_SPEEDS[_recSpeedIdx];
+  document.getElementById('recSpeedBtn').textContent = _recSpeed.toFixed(1) + '×';
+}
+
+function setupRecreation(){
+  _recPartsR = cachePartsFor('rR');
+  _recPartsB = cachePartsFor('rB');
+
+  // Render initial frame
+  applyRecFrame(0);
+
+  document.getElementById('recPlayBtn').addEventListener('click', recToggle);
+  document.getElementById('recSpeedBtn').addEventListener('click', recCycleSpeed);
+
+  // Progress bar click/drag
+  const prog = document.getElementById('recProgress');
+  prog.addEventListener('click', e => {
+    const rect = prog.getBoundingClientRect();
+    const frac = (e.clientX - rect.left) / rect.width;
+    recSeek(frac);
+  });
+
+  // Round jump buttons
+  document.querySelectorAll('[data-recjump]').forEach(btn => {
+    btn.addEventListener('click', () => recJumpToRound(parseInt(btn.dataset.recjump, 10)));
+  });
+
+  // Auto-play when scrolled into view for first time
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting && !_recPlaying && _recTime < 1){
+        recPlay();
+        obs.disconnect();
+      }
+    });
+  }, { threshold: 0.3 });
+  const stage = document.querySelector('.rec-stage');
+  if (stage) obs.observe(stage);
+}
+
 renderPaceChart();
 setupNav();
 setupOctPhaseButtons();
@@ -3673,6 +4452,7 @@ octLoopStart();
 setupSpotlight();
 setupOctControls();
 setupCrossLinks();
+setupRecreation();
 startTicker();
 document.getElementById('renderTime').textContent = Math.round(performance.now() - __t0);
 })();
