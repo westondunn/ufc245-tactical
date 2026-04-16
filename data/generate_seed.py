@@ -532,6 +532,161 @@ FIGHT(e, makhachev, poirier, 'Lightweight', True, True, 1, 'Submission', 'D\'Arc
 FIGHT(e, strickland, costa, 'Middleweight', False, False, 2, 'Decision', 'Unanimous', 5, '5:00', strickland)
 
 # ============================================================
+# MISSING EVENTS (UFC 279-327) — fill gaps to reach 50
+# ============================================================
+
+# New fighters needed for missing events
+chimaev = F('Khamzat Chimaev', 'Borz', 188, 191, 'Orthodox', 'Middleweight', 'Russia')
+ankalaev= F('Magomed Ankalaev', 'Storm', 191, 188, 'Orthodox', 'Light Heavyweight', 'Russia')
+jdm     = F('Jack Della Maddalena', 'JDM', 183, 188, 'Orthodox', 'Welterweight', 'Australia')
+moicano = F('Renato Moicano', 'Money', 180, 183, 'Orthodox', 'Lightweight', 'Brazil')
+asakura = F('Kai Asakura', 'Kaiborg', 170, 175, 'Orthodox', 'Flyweight', 'Japan')
+erceg   = F('Steve Erceg', '', 170, 178, 'Orthodox', 'Flyweight', 'Australia')
+rountree= F('Khalil Rountree Jr.', 'The War Horse', 185, 191, 'Orthodox', 'Light Heavyweight', 'USA')
+vera    = F('Marlon Vera', 'Chito', 175, 183, 'Southpaw', 'Bantamweight', 'Ecuador')
+ulberg  = F('Carlos Ulberg', '', 191, 196, 'Southpaw', 'Light Heavyweight', 'New Zealand')
+pimblett= F('Paddy Pimblett', 'The Baddy', 175, 183, 'Orthodox', 'Lightweight', 'UK')
+lopes   = F('Diego Lopes', '', 175, 183, 'Orthodox', 'Featherweight', 'Brazil')
+fiorot2 = fiorot  # already defined
+
+# UFC 279 (Sep 10, 2022)
+e = E(279, 'UFC 279: Diaz vs. Ferguson', '2022-09-10', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, diaz, ferguson, 'Welterweight', False, True, 1, 'Submission', 'Guillotine Choke', 4, '2:18', diaz)
+
+# UFC 282 (Dec 10, 2022)
+e = E(282, 'UFC 282: Blachowicz vs. Ankalaev', '2022-12-10', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, jan, ankalaev, 'Light Heavyweight', True, True, 1, 'Decision', 'Split Draw', 5, '5:00', None)
+
+# UFC 285 (Mar 4, 2023)
+e = E(285, 'UFC 285: Jones vs. Gane', '2023-03-04', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, jones, gane, 'Heavyweight', True, True, 1, 'Submission', 'Guillotine Choke', 1, '2:04', jones)
+FIGHT(e, shevchenko, grasso := F('Alexa Grasso', 'Quetzalli', 163, 163, 'Orthodox', 'W-Flyweight', 'Mexico'), 'W-Flyweight', True, False, 2, 'Submission', 'Rear Naked Choke', 4, '4:34', grasso)
+
+# UFC 286 (Mar 18, 2023)
+e = E(286, 'UFC 286: Edwards vs. Usman 3', '2023-03-18', 'The O2 Arena', 'London', 'UK')
+FIGHT(e, edwards, usman, 'Welterweight', True, True, 1, 'Decision', 'Majority', 5, '5:00', edwards)
+
+# UFC 289 (Jun 10, 2023)
+e = E(289, 'UFC 289: Nunes vs. Aldana', '2023-06-10', 'Rogers Arena', 'Vancouver', 'Canada')
+aldana = F('Irene Aldana', 'Robles', 173, 175, 'Orthodox', 'W-Bantamweight', 'Mexico')
+FIGHT(e, nunes, aldana, 'W-Bantamweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', nunes)
+
+# UFC 291 (Jul 29, 2023)
+e = E(291, 'UFC 291: Poirier vs. Gaethje 2', '2023-07-29', 'Delta Center', 'Salt Lake City, UT')
+FIGHT(e, poirier, gaethje, 'BMF Title', True, True, 1, 'KO', 'Head Kick', 2, '4:17', gaethje)
+
+# UFC 293 (Sep 9, 2023)
+e = E(293, 'UFC 293: Adesanya vs. Strickland', '2023-09-09', 'Qudos Bank Arena', 'Sydney', 'Australia')
+FIGHT(e, izzy, strickland, 'Middleweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', strickland)
+
+# UFC 296 (Dec 16, 2023)
+e = E(296, 'UFC 296: Edwards vs. Covington', '2023-12-16', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, edwards, covington, 'Welterweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', edwards)
+FIGHT(e, shevchenko, grasso, 'W-Flyweight', True, False, 2, 'Decision', 'Unanimous', 5, '5:00', shevchenko)
+
+# UFC 297 (Jan 20, 2024)
+e = E(297, 'UFC 297: Strickland vs. Du Plessis', '2024-01-20', 'Scotiabank Arena', 'Toronto', 'Canada')
+FIGHT(e, strickland, du_plessis, 'Middleweight', True, True, 1, 'Decision', 'Split', 5, '5:00', du_plessis)
+
+# UFC 299 (Mar 9, 2024)
+e = E(299, 'UFC 299: O\'Malley vs. Vera 2', '2024-03-09', 'Kaseya Center', 'Miami, FL')
+FIGHT(e, omalley, vera, 'Bantamweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', omalley)
+FIGHT(e, poirier, saint_denis := F('Benoit Saint Denis', 'God of War', 183, 188, 'Orthodox', 'Lightweight', 'France'), 'Lightweight', False, False, 2, 'TKO', 'Punches', 2, '2:09', poirier)
+
+# UFC 301 (May 4, 2024)
+e = E(301, 'UFC 301: Pantoja vs. Erceg', '2024-05-04', 'Farmasi Arena', 'Rio de Janeiro', 'Brazil')
+FIGHT(e, pantoja, erceg, 'Flyweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', pantoja)
+
+# UFC 304 (Jul 27, 2024)
+e = E(304, 'UFC 304: Edwards vs. Muhammad 2', '2024-07-27', 'Co-op Live', 'Manchester', 'UK')
+FIGHT(e, edwards, belal, 'Welterweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', belal)
+FIGHT(e, aspinall, blaydes, 'Heavyweight', True, False, 2, 'KO', 'Punches', 1, '0:60', aspinall)
+
+# UFC 305 (Aug 17, 2024)
+e = E(305, 'UFC 305: Du Plessis vs. Adesanya', '2024-08-17', 'RAC Arena', 'Perth', 'Australia')
+FIGHT(e, du_plessis, izzy, 'Middleweight', True, True, 1, 'Submission', 'Rear Naked Choke', 4, '2:30', du_plessis)
+
+# UFC 307 (Oct 5, 2024)
+e = E(307, 'UFC 307: Pereira vs. Rountree Jr.', '2024-10-05', 'Delta Center', 'Salt Lake City, UT')
+FIGHT(e, alex_p, rountree, 'Light Heavyweight', True, True, 1, 'TKO', 'Punches', 4, '0:44', alex_p)
+
+# UFC 308 (Oct 26, 2024)
+e = E(308, 'UFC 308: Topuria vs. Holloway', '2024-10-26', 'Etihad Arena', 'Abu Dhabi', 'UAE')
+FIGHT(e, topuria, holloway, 'Featherweight', True, True, 1, 'KO', 'Punches', 3, '4:32', topuria)
+
+# UFC 310 (Dec 7, 2024)
+e = E(310, 'UFC 310: Pantoja vs. Asakura', '2024-12-07', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, pantoja, asakura, 'Flyweight', True, True, 1, 'Submission', 'Rear Naked Choke', 2, '2:49', pantoja)
+
+# UFC 311 (Jan 18, 2025)
+e = E(311, 'UFC 311: Makhachev vs. Moicano', '2025-01-18', 'Intuit Dome', 'Inglewood, CA')
+FIGHT(e, makhachev, moicano, 'Lightweight', True, True, 1, 'Submission', "D'Arce Choke", 1, '4:01', makhachev)
+
+# UFC 312 (Feb 8, 2025)
+e = E(312, 'UFC 312: Du Plessis vs. Strickland 2', '2025-02-08', 'Qudos Bank Arena', 'Sydney', 'Australia')
+FIGHT(e, du_plessis, strickland, 'Middleweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', du_plessis)
+
+# UFC 313 (Mar 8, 2025)
+e = E(313, 'UFC 313: Pereira vs. Ankalaev', '2025-03-08', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, alex_p, ankalaev, 'Light Heavyweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', ankalaev)
+
+# UFC 314 (Apr 12, 2025)
+e = E(314, 'UFC 314: Volkanovski vs. Lopes', '2025-04-12', 'Kaseya Center', 'Miami, FL')
+FIGHT(e, volk, lopes, 'Featherweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', volk)
+
+# UFC 315 (May 10, 2025)
+e = E(315, 'UFC 315: Muhammad vs. Della Maddalena', '2025-05-10', 'Bell Centre', 'Montreal', 'Canada')
+FIGHT(e, belal, jdm, 'Welterweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', jdm)
+
+# UFC 316 (Jun 7, 2025)
+e = E(316, 'UFC 316: Dvalishvili vs. O\'Malley 2', '2025-06-07', 'Prudential Center', 'Newark, NJ')
+FIGHT(e, merab, omalley, 'Bantamweight', True, True, 1, 'Submission', 'Rear Naked Choke', 3, '3:42', merab)
+
+# UFC 317 (Jun 28, 2025)
+e = E(317, 'UFC 317: Topuria vs. Oliveira', '2025-06-28', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, topuria, oliveira, 'Lightweight', True, True, 1, 'KO', 'Punches', 1, '2:31', topuria)
+
+# UFC 318 (Jul 19, 2025)
+e = E(318, 'UFC 318: Holloway vs. Poirier 3', '2025-07-19', 'Smoothie King Center', 'New Orleans, LA')
+FIGHT(e, holloway, poirier, 'BMF Title', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', holloway)
+
+# UFC 319 (Aug 16, 2025)
+e = E(319, 'UFC 319: Du Plessis vs. Chimaev', '2025-08-16', 'United Center', 'Chicago, IL')
+FIGHT(e, du_plessis, chimaev, 'Middleweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', chimaev)
+
+# UFC 320 (Oct 4, 2025)
+e = E(320, 'UFC 320: Ankalaev vs. Pereira 2', '2025-10-04', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, ankalaev, alex_p, 'Light Heavyweight', True, True, 1, 'TKO', 'Punches', 1, '3:18', alex_p)
+
+# UFC 321 (Oct 25, 2025)
+e = E(321, 'UFC 321: Aspinall vs. Gane', '2025-10-25', 'Etihad Arena', 'Abu Dhabi', 'UAE')
+FIGHT(e, aspinall, gane, 'Heavyweight', True, True, 1, 'No Contest', 'Eye Poke', 1, '1:12', None)
+
+# UFC 322 (Nov 15, 2025)
+e = E(322, 'UFC 322: Della Maddalena vs. Makhachev', '2025-11-15', 'Madison Square Garden', 'New York, NY')
+FIGHT(e, jdm, makhachev, 'Welterweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', makhachev)
+
+# UFC 323 (Dec 6, 2025)
+e = E(323, 'UFC 323: Dvalishvili vs. Yan 2', '2025-12-06', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, merab, yan, 'Bantamweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', yan)
+
+# UFC 324 (Jan 24, 2026)
+e = E(324, 'UFC 324: Gaethje vs. Pimblett', '2026-01-24', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, gaethje, pimblett, 'Lightweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', gaethje)
+
+# UFC 325 (Jan 31, 2026)
+e = E(325, 'UFC 325: Volkanovski vs. Lopes 2', '2026-01-31', 'Qudos Bank Arena', 'Sydney', 'Australia')
+FIGHT(e, volk, lopes, 'Featherweight', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', volk)
+
+# UFC 326 (Mar 7, 2026)
+e = E(326, 'UFC 326: Holloway vs. Oliveira 2', '2026-03-07', 'T-Mobile Arena', 'Las Vegas, NV')
+FIGHT(e, holloway, oliveira, 'BMF Title', True, True, 1, 'Decision', 'Unanimous', 5, '5:00', oliveira)
+
+# UFC 327 (Apr 11, 2026)
+e = E(327, 'UFC 327: Prochazka vs. Ulberg', '2026-04-11', 'Kaseya Center', 'Miami, FL')
+FIGHT(e, prochazka, ulberg, 'Light Heavyweight', True, True, 1, 'KO', 'Punch', 1, '3:52', ulberg)
+
+# ============================================================
 # OUTPUT
 # ============================================================
 # Load existing biomechanics templates
