@@ -1,0 +1,2433 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UFC 245 · Usman vs. Covington · Tactical Analysis</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<style>
+/* =============================================================
+   TOKENS
+============================================================= */
+:root{
+  --bg:#04050A;
+  --bg-deep:#02030 7;
+  --bg-card:#0A0C14;
+  --bg-card-soft:#10131D;
+  --fg:#E8ECF5;
+  --fg-dim:#B0B8C9;
+  --muted:#7A8394;
+  --muted-dim:#464E5C;
+  --faint:#242A36;
+  --border:#1A2030;
+  --border-soft:#151B28;
+  --red:#FF2D3F;
+  --red-soft:#FF5965;
+  --red-deep:#B41E2D;
+  --red-dim:#3E1116;
+  --blue:#2DB4FF;
+  --blue-soft:#5EC2FF;
+  --blue-deep:#1E78C8;
+  --blue-dim:#0E2E4D;
+  --green:#7CFFC8;
+  --amber:#FFB020;
+  --cyan:#2DDCFF;
+  --purple:#8A5EF5;
+  --f-disp:'Barlow Condensed',system-ui,sans-serif;
+  --f-mono:'JetBrains Mono',ui-monospace,monospace;
+}
+
+*,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
+html{scroll-behavior:smooth}
+body{
+  font-family:var(--f-disp);
+  background:var(--bg);
+  color:var(--fg);
+  min-height:100vh;
+  overflow-x:hidden;
+  font-feature-settings:"ss01","ss02";
+  -webkit-font-smoothing:antialiased;
+  line-height:1.3;
+  letter-spacing:.01em;
+}
+body::before{
+  content:'';
+  position:fixed;inset:0;
+  background:radial-gradient(ellipse at center,transparent 0%,rgba(0,0,0,.55) 100%);
+  pointer-events:none;z-index:1;
+}
+body::after{
+  content:'';
+  position:fixed;inset:0;
+  background-image:
+    repeating-linear-gradient(0deg,rgba(255,255,255,.012) 0 1px,transparent 1px 3px),
+    repeating-linear-gradient(90deg,rgba(255,255,255,.008) 0 1px,transparent 1px 2px);
+  pointer-events:none;z-index:2;
+  mix-blend-mode:overlay;
+}
+
+/* =============================================================
+   TOP BAR
+============================================================= */
+.top-bar{
+  position:fixed;top:0;left:0;right:0;
+  height:44px;
+  background:linear-gradient(180deg,rgba(4,5,10,.92) 0%,rgba(4,5,10,.78) 100%);
+  backdrop-filter:blur(12px);
+  -webkit-backdrop-filter:blur(12px);
+  border-bottom:1px solid var(--border);
+  z-index:100;
+  display:flex;align-items:center;
+  padding:0 28px;
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.12em;
+  text-transform:uppercase;
+  color:var(--muted);
+}
+.top-bar__brand{
+  display:flex;align-items:center;gap:10px;
+}
+.top-bar__dot{
+  width:8px;height:8px;border-radius:50%;
+  background:var(--red);
+  box-shadow:0 0 10px var(--red-soft);
+  animation:pulse 1.6s ease-in-out infinite;
+}
+@keyframes pulse{
+  0%,100%{opacity:.45}
+  50%{opacity:1}
+}
+.top-bar__name{
+  color:var(--fg);
+  font-weight:600;
+  font-family:var(--f-disp);
+  font-size:14px;letter-spacing:.18em;
+}
+.top-bar__sep{margin:0 14px;color:var(--muted-dim)}
+.top-bar__right{
+  margin-left:auto;display:flex;align-items:center;gap:22px;
+}
+.top-bar__tc{
+  color:var(--fg);
+}
+.top-bar__live{
+  color:var(--cyan);
+  display:flex;align-items:center;gap:8px;
+}
+.top-bar__live::before{
+  content:'';width:6px;height:6px;border-radius:50%;
+  background:var(--cyan);
+  box-shadow:0 0 8px var(--cyan);
+}
+
+/* =============================================================
+   DOT NAV
+============================================================= */
+.dot-nav{
+  position:fixed;
+  right:22px;top:50%;transform:translateY(-50%);
+  z-index:80;
+  display:flex;flex-direction:column;gap:14px;
+}
+.dot-nav a{
+  width:9px;height:9px;border-radius:50%;
+  border:1px solid var(--muted-dim);
+  background:transparent;
+  transition:all .25s ease;
+  display:block;
+  position:relative;
+}
+.dot-nav a:hover{
+  background:var(--cyan);
+  border-color:var(--cyan);
+}
+.dot-nav a.active{
+  background:var(--cyan);
+  border-color:var(--cyan);
+  box-shadow:0 0 10px var(--cyan);
+}
+.dot-nav a::after{
+  content:attr(data-label);
+  position:absolute;right:18px;top:50%;transform:translateY(-50%);
+  font-family:var(--f-mono);
+  font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;
+  color:var(--fg-dim);
+  white-space:nowrap;
+  opacity:0;pointer-events:none;
+  transition:opacity .25s ease;
+  background:rgba(4,5,10,.85);
+  padding:3px 8px;
+  border-radius:2px;
+}
+.dot-nav a:hover::after{opacity:1}
+
+/* =============================================================
+   SECTIONS
+============================================================= */
+section{
+  padding:96px 48px 72px;
+  max-width:1600px;
+  margin:0 auto;
+  position:relative;
+  z-index:3;
+}
+section.full-h{min-height:100vh;display:flex;flex-direction:column;justify-content:center}
+.section-head{margin-bottom:40px}
+.section-tag{
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.2em;
+  color:var(--cyan);
+  text-transform:uppercase;
+  display:inline-flex;align-items:center;gap:12px;
+  margin-bottom:10px;
+}
+.section-tag::before{
+  content:'';width:22px;height:1px;background:var(--cyan);
+}
+.section-title{
+  font-size:54px;
+  font-weight:700;
+  letter-spacing:.02em;
+  text-transform:uppercase;
+  line-height:1;
+}
+.section-sub{
+  margin-top:14px;
+  font-family:var(--f-mono);
+  font-size:12px;
+  color:var(--muted);
+  letter-spacing:.06em;
+}
+
+/* =============================================================
+   HERO
+============================================================= */
+#hero{
+  min-height:100vh;
+  display:flex;flex-direction:column;
+  padding-top:44px;
+  max-width:none;
+  margin:0;
+  padding-left:0;padding-right:0;
+  justify-content:center;
+}
+.hero-inner{
+  max-width:1600px;margin:0 auto;padding:0 48px;width:100%;
+  display:grid;
+  grid-template-columns:1fr 1.2fr 1fr;
+  gap:48px;align-items:center;
+}
+.hero-fighter{position:relative}
+.hero-fighter--red{text-align:right}
+.hero-fighter--blue{text-align:left}
+.hero-fighter__tag{
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.2em;
+  text-transform:uppercase;
+  margin-bottom:10px;
+  display:flex;align-items:center;gap:8px;
+}
+.hero-fighter--red .hero-fighter__tag{
+  justify-content:flex-end;
+  color:var(--red);
+}
+.hero-fighter--blue .hero-fighter__tag{
+  color:var(--blue);
+}
+.hero-fighter__tag .dot{
+  width:8px;height:8px;border-radius:50%;
+}
+.hero-fighter--red .dot{background:var(--red);box-shadow:0 0 10px var(--red)}
+.hero-fighter--blue .dot{background:var(--blue);box-shadow:0 0 10px var(--blue)}
+.hero-fighter__nickname{
+  font-family:var(--f-mono);
+  font-size:13px;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  margin-bottom:12px;
+}
+.hero-fighter__name{
+  font-size:62px;
+  font-weight:700;
+  letter-spacing:.02em;
+  line-height:.95;
+  text-transform:uppercase;
+  margin-bottom:18px;
+}
+.hero-fighter--red .hero-fighter__name{color:var(--fg)}
+.hero-fighter--blue .hero-fighter__name{color:var(--fg)}
+.hero-fighter__record{
+  font-family:var(--f-mono);
+  font-size:14px;
+  color:var(--fg-dim);
+  letter-spacing:.08em;
+}
+.hero-fighter__record strong{
+  color:var(--fg);font-weight:600;
+}
+.hero-fighter__style{
+  margin-top:12px;
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.1em;
+  color:var(--muted);
+  text-transform:uppercase;
+}
+.hero-center{
+  text-align:center;position:relative;
+}
+.hero-vs{
+  font-size:120px;
+  font-weight:300;
+  letter-spacing:0;
+  line-height:1;
+  background:linear-gradient(90deg,var(--red) 0%,var(--fg) 50%,var(--blue) 100%);
+  -webkit-background-clip:text;
+  background-clip:text;
+  color:transparent;
+  margin-bottom:16px;
+}
+.hero-event{
+  font-family:var(--f-mono);
+  font-size:13px;letter-spacing:.2em;
+  color:var(--cyan);
+  text-transform:uppercase;
+  margin-bottom:8px;
+}
+.hero-venue{
+  font-family:var(--f-mono);
+  font-size:11px;
+  color:var(--muted);
+  letter-spacing:.12em;
+}
+.hero-result{
+  margin-top:28px;
+  display:inline-flex;align-items:stretch;
+  border:1px solid var(--red);
+  background:rgba(255,45,63,.06);
+  font-family:var(--f-mono);
+  font-size:12px;letter-spacing:.14em;
+  text-transform:uppercase;
+}
+.hero-result__cell{
+  padding:8px 14px;
+  border-right:1px solid var(--red-deep);
+}
+.hero-result__cell:last-child{border-right:none}
+.hero-result__cell--method{color:var(--red);font-weight:600}
+.hero-result__cell--time{color:var(--fg)}
+.hero-result__cell--bonus{color:var(--amber)}
+
+.hero-scroll{
+  position:absolute;
+  bottom:32px;left:50%;transform:translateX(-50%);
+  font-family:var(--f-mono);
+  font-size:10px;letter-spacing:.3em;
+  color:var(--muted-dim);
+  text-transform:uppercase;
+  text-align:center;
+}
+.hero-scroll::after{
+  content:'';display:block;
+  width:1px;height:32px;
+  background:linear-gradient(180deg,var(--muted-dim),transparent);
+  margin:10px auto 0;
+}
+
+/* HERO SILHOUETTE */
+.hero-silhouette{width:100%;height:280px;margin:auto}
+
+/* =============================================================
+   CARDS & PANELS
+============================================================= */
+.panel{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:28px;
+  position:relative;
+}
+.panel::before,.panel::after{
+  content:'';position:absolute;width:16px;height:16px;
+  border:1px solid var(--muted);
+}
+.panel::before{top:-1px;left:-1px;border-right:none;border-bottom:none}
+.panel::after{bottom:-1px;right:-1px;border-left:none;border-top:none}
+.panel-head{
+  display:flex;align-items:center;justify-content:space-between;
+  margin-bottom:20px;
+  padding-bottom:14px;
+  border-bottom:1px solid var(--border);
+}
+.panel-title{
+  font-size:20px;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  color:var(--fg);
+  font-weight:600;
+}
+.panel-meta{
+  font-family:var(--f-mono);
+  font-size:10px;letter-spacing:.14em;
+  color:var(--cyan);
+  text-transform:uppercase;
+}
+
+/* =============================================================
+   TALE OF THE TAPE
+============================================================= */
+.tape-grid{
+  display:grid;
+  grid-template-columns:1fr 1.8fr 1fr;
+  gap:0;
+  border:1px solid var(--border);
+  background:var(--bg-card);
+}
+.tape-col{
+  padding:32px;
+  position:relative;
+}
+.tape-col--red{border-right:1px solid var(--border)}
+.tape-col--blue{border-left:1px solid var(--border)}
+.tape-col__title{
+  font-size:22px;
+  font-weight:600;
+  text-transform:uppercase;
+  letter-spacing:.08em;
+  margin-bottom:6px;
+}
+.tape-col--red .tape-col__title{color:var(--red);text-align:right}
+.tape-col--blue .tape-col__title{color:var(--blue)}
+.tape-col__subtitle{
+  font-family:var(--f-mono);
+  font-size:11px;
+  color:var(--muted);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  margin-bottom:28px;
+}
+.tape-col--red .tape-col__subtitle{text-align:right}
+.tape-row{
+  display:flex;justify-content:space-between;
+  padding:10px 0;
+  border-bottom:1px dashed var(--border);
+  font-family:var(--f-mono);font-size:13px;
+}
+.tape-row:last-child{border-bottom:none}
+.tape-row__label{color:var(--muted);letter-spacing:.1em;text-transform:uppercase;font-size:10px}
+.tape-row__value{color:var(--fg);font-weight:500}
+.tape-col--red .tape-row{flex-direction:row-reverse}
+.tape-col--red .tape-row__label{text-align:left}
+.tape-col--red .tape-row__value{text-align:right}
+
+.tape-col--center{
+  background:var(--bg-card-soft);
+  display:flex;flex-direction:column;justify-content:center;
+  padding:40px 24px;
+}
+.tape-meta{
+  font-family:var(--f-mono);font-size:10px;
+  color:var(--cyan);letter-spacing:.2em;
+  text-transform:uppercase;
+  text-align:center;margin-bottom:10px;
+}
+.tape-compare{
+  margin-bottom:32px;
+}
+.tape-compare:last-child{margin-bottom:0}
+.tape-compare__label{
+  font-family:var(--f-mono);
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  text-align:center;
+  margin-bottom:10px;
+}
+.tape-compare__vals{
+  display:grid;grid-template-columns:1fr auto 1fr;
+  gap:12px;
+  align-items:center;
+  font-family:var(--f-mono);
+  font-size:14px;
+}
+.tape-compare__red{color:var(--red);text-align:right;font-weight:600}
+.tape-compare__blue{color:var(--blue);text-align:left;font-weight:600}
+.tape-compare__delta{
+  font-size:11px;color:var(--amber);
+  letter-spacing:.1em;
+  padding:2px 6px;
+  border:1px solid var(--amber);
+  border-radius:2px;
+  text-transform:uppercase;
+}
+
+.tape-compare__bar{
+  margin-top:8px;
+  height:4px;position:relative;
+  background:var(--faint);
+}
+.tape-compare__bar-red,
+.tape-compare__bar-blue{
+  position:absolute;top:0;bottom:0;
+  background:linear-gradient(90deg,var(--red),var(--red-soft));
+}
+.tape-compare__bar-blue{
+  background:linear-gradient(90deg,var(--blue-soft),var(--blue));
+  right:0;
+}
+
+/* =============================================================
+   RESULT / SCORECARDS
+============================================================= */
+.result-grid{
+  display:grid;grid-template-columns:1fr 1.4fr;
+  gap:24px;
+}
+.result-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:28px;
+}
+.result-big{
+  font-family:var(--f-mono);
+  font-size:42px;
+  font-weight:500;
+  color:var(--red);
+  letter-spacing:.02em;
+  margin:10px 0;
+  font-feature-settings:"tnum";
+}
+.result-line{
+  display:flex;gap:24px;margin-bottom:8px;
+  font-family:var(--f-mono);font-size:12px;
+}
+.result-line dt{color:var(--muted);letter-spacing:.12em;text-transform:uppercase;min-width:110px}
+.result-line dd{color:var(--fg);font-weight:500}
+
+.scorecard-table{
+  width:100%;
+  border-collapse:collapse;
+  font-family:var(--f-mono);
+}
+.scorecard-table th,
+.scorecard-table td{
+  text-align:center;
+  padding:12px 8px;
+  font-size:13px;
+  border:1px solid var(--border-soft);
+}
+.scorecard-table th{
+  color:var(--muted);
+  font-weight:500;
+  letter-spacing:.12em;
+  font-size:10px;
+  text-transform:uppercase;
+  background:var(--bg-card-soft);
+}
+.scorecard-table th.judge{text-align:left;padding-left:14px;color:var(--fg)}
+.scorecard-table td.judge{text-align:left;padding-left:14px;color:var(--fg-dim);font-size:12px}
+.scorecard-table td.total{font-weight:600;font-size:14px;color:var(--fg)}
+.cell-red{background:rgba(255,45,63,.14);color:var(--red-soft);font-weight:600}
+.cell-blue{background:rgba(45,180,255,.14);color:var(--blue-soft);font-weight:600}
+.cell-tko{background:rgba(255,45,63,.3);color:#fff;font-weight:700}
+
+/* =============================================================
+   BIG STATS
+============================================================= */
+.stats-grid{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:20px;
+  margin-bottom:36px;
+}
+.stat-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:20px 22px;
+  position:relative;
+}
+.stat-card__label{
+  font-family:var(--f-mono);
+  font-size:10px;
+  letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+  margin-bottom:12px;
+}
+.stat-card__numbers{
+  display:flex;align-items:baseline;justify-content:space-between;
+  margin-bottom:10px;
+}
+.stat-card__red,.stat-card__blue{
+  font-family:var(--f-mono);
+  font-size:28px;
+  font-weight:600;
+  letter-spacing:-.01em;
+  font-feature-settings:"tnum";
+}
+.stat-card__red{color:var(--red)}
+.stat-card__blue{color:var(--blue)}
+.stat-card__vs{
+  font-family:var(--f-mono);
+  font-size:10px;color:var(--muted-dim);
+  letter-spacing:.2em;
+}
+.stat-card__bar{
+  height:3px;
+  position:relative;
+  background:var(--faint);
+}
+.stat-card__bar-red,
+.stat-card__bar-blue{
+  position:absolute;top:0;bottom:0;
+}
+.stat-card__bar-red{background:var(--red);left:0}
+.stat-card__bar-blue{background:var(--blue);right:0}
+.stat-card__meta{
+  margin-top:8px;
+  font-family:var(--f-mono);
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:.1em;
+  text-transform:uppercase;
+}
+
+/* =============================================================
+   ROUND-BY-ROUND
+============================================================= */
+.rounds-wrapper{display:grid;grid-template-columns:1fr;gap:24px}
+.rounds-svg{width:100%;height:auto;max-height:580px}
+
+.round-detail-grid{
+  margin-top:28px;
+  display:grid;grid-template-columns:repeat(5,1fr);
+  gap:12px;
+}
+.round-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:16px 18px;
+  cursor:pointer;
+  transition:border-color .2s;
+  position:relative;
+}
+.round-card:hover{border-color:var(--cyan)}
+.round-card.active{border-color:var(--cyan);background:var(--bg-card-soft)}
+.round-card__num{
+  font-family:var(--f-mono);
+  font-size:10px;
+  color:var(--muted);
+  letter-spacing:.2em;
+  text-transform:uppercase;
+  margin-bottom:8px;
+}
+.round-card__winner{
+  font-size:16px;
+  font-weight:600;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  margin-bottom:10px;
+}
+.round-card__winner--red{color:var(--red)}
+.round-card__winner--blue{color:var(--blue)}
+.round-card__winner--split{color:var(--amber);font-size:14px}
+.round-card__winner--tko{color:#fff}
+.round-card__stats{
+  font-family:var(--f-mono);
+  font-size:11px;
+  color:var(--fg-dim);
+  letter-spacing:.05em;
+}
+.round-card__stats span.red{color:var(--red-soft)}
+.round-card__stats span.blue{color:var(--blue-soft)}
+
+.round-narrative{
+  margin-top:20px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:24px 28px;
+  font-size:14px;
+  color:var(--fg-dim);
+  line-height:1.55;
+  min-height:160px;
+}
+.round-narrative h4{
+  font-size:14px;
+  font-weight:600;
+  color:var(--cyan);
+  letter-spacing:.12em;
+  text-transform:uppercase;
+  margin-bottom:12px;
+  font-family:var(--f-mono);
+}
+.round-narrative p{margin-bottom:8px;font-family:var(--f-mono);font-size:12.5px}
+.round-narrative strong{color:var(--fg);font-weight:600}
+.round-narrative .ts{
+  color:var(--amber);
+  font-family:var(--f-mono);font-size:11px;
+  font-weight:600;margin-right:8px;
+}
+
+/* =============================================================
+   TARGET DISTRIBUTION
+============================================================= */
+.targets-grid{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:28px;
+}
+.body-viz{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:28px;
+  display:flex;gap:28px;align-items:flex-start;
+}
+.body-viz__svg{flex-shrink:0}
+.body-viz__data{flex:1;padding-top:12px}
+.body-viz__name{
+  font-size:22px;
+  font-weight:600;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  margin-bottom:18px;
+}
+.body-viz--red .body-viz__name{color:var(--red)}
+.body-viz--blue .body-viz__name{color:var(--blue)}
+.body-viz__row{
+  padding:10px 0;
+  border-bottom:1px dashed var(--border);
+}
+.body-viz__row:last-child{border-bottom:none}
+.body-viz__row-head{
+  display:flex;justify-content:space-between;
+  font-family:var(--f-mono);
+  margin-bottom:6px;
+}
+.body-viz__zone{
+  font-size:10px;color:var(--muted);letter-spacing:.2em;
+  text-transform:uppercase;
+}
+.body-viz__val{
+  font-size:14px;color:var(--fg);font-weight:600;
+}
+.body-viz__bar{
+  height:3px;background:var(--faint);position:relative;
+}
+.body-viz__bar-fill{
+  position:absolute;top:0;bottom:0;left:0;
+}
+.body-viz--red .body-viz__bar-fill{background:var(--red)}
+.body-viz--blue .body-viz__bar-fill{background:var(--blue)}
+
+/* =============================================================
+   CHARTS GENERIC
+============================================================= */
+.chart-panel{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:28px;
+  position:relative;
+}
+.chart-svg{width:100%;height:auto;display:block}
+.chart-legend{
+  display:flex;gap:20px;margin-top:16px;
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.chart-legend__item{
+  display:flex;align-items:center;gap:8px;
+  color:var(--fg-dim);
+}
+.chart-legend__swatch{
+  width:12px;height:3px;
+}
+.chart-legend__swatch--red{background:var(--red)}
+.chart-legend__swatch--blue{background:var(--blue)}
+
+/* =============================================================
+   TIMELINE
+============================================================= */
+.timeline-wrap{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:40px 36px 28px;
+  position:relative;
+}
+.timeline-svg{width:100%;height:380px}
+
+/* =============================================================
+   BIOMECHANICS
+============================================================= */
+.biomech-grid{
+  display:grid;grid-template-columns:1.2fr 1fr;
+  gap:24px;
+}
+.gauge-wrap{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:28px;
+}
+.force-list{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:28px;
+}
+.force-item{
+  padding:14px 0;
+  border-bottom:1px dashed var(--border);
+}
+.force-item:last-child{border-bottom:none}
+.force-item__head{
+  display:flex;justify-content:space-between;
+  margin-bottom:8px;
+}
+.force-item__name{
+  font-size:14px;letter-spacing:.08em;text-transform:uppercase;
+  font-weight:600;color:var(--fg);
+}
+.force-item__value{
+  font-family:var(--f-mono);
+  font-size:13px;color:var(--amber);font-weight:600;
+}
+.force-item__bar{
+  height:6px;background:var(--faint);
+  position:relative;overflow:visible;
+}
+.force-item__bar-fill{
+  position:absolute;top:0;bottom:0;left:0;
+  background:linear-gradient(90deg,var(--red-deep),var(--red),var(--amber));
+}
+.force-item__threshold{
+  position:absolute;top:-4px;bottom:-4px;
+  width:1px;background:var(--red-soft);
+}
+.force-item__threshold::after{
+  content:'MANDIBLE FRACTURE ≈ 2,151 N';
+  position:absolute;top:-16px;right:-2px;
+  font-family:var(--f-mono);
+  font-size:8px;letter-spacing:.14em;
+  color:var(--red-soft);
+  white-space:nowrap;
+  transform:translateX(50%);
+}
+.force-item__meta{
+  font-family:var(--f-mono);
+  font-size:10px;color:var(--muted);
+  letter-spacing:.1em;margin-top:6px;
+}
+
+/* =============================================================
+   AFTERMATH
+============================================================= */
+.aftermath-grid{
+  display:grid;grid-template-columns:1fr 1fr;
+  gap:24px;
+}
+.damage-card{
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:28px;
+}
+.damage-card--red{border-left:3px solid var(--red)}
+.damage-card--blue{border-left:3px solid var(--blue)}
+.damage-card__fighter{
+  font-size:20px;
+  font-weight:600;
+  letter-spacing:.08em;
+  text-transform:uppercase;
+  margin-bottom:16px;
+}
+.damage-card--red .damage-card__fighter{color:var(--red)}
+.damage-card--blue .damage-card__fighter{color:var(--blue)}
+.damage-list{list-style:none}
+.damage-list li{
+  padding:10px 0 10px 22px;
+  border-bottom:1px dashed var(--border);
+  font-family:var(--f-mono);
+  font-size:12px;
+  color:var(--fg-dim);
+  position:relative;
+  line-height:1.55;
+}
+.damage-list li:last-child{border-bottom:none}
+.damage-list li::before{
+  content:'';position:absolute;left:0;top:16px;
+  width:10px;height:1px;background:var(--cyan);
+}
+.damage-list li strong{color:var(--amber)}
+
+/* =============================================================
+   FOOTER
+============================================================= */
+footer{
+  padding:48px 48px 80px;
+  max-width:1600px;margin:0 auto;
+  position:relative;z-index:3;
+  border-top:1px solid var(--border);
+  margin-top:40px;
+}
+.footer-grid{
+  display:flex;justify-content:space-between;align-items:flex-end;
+  gap:32px;
+}
+.footer-brand{
+  font-family:var(--f-disp);
+  font-size:16px;font-weight:600;
+  letter-spacing:.12em;text-transform:uppercase;
+  color:var(--fg);
+  margin-bottom:8px;
+}
+.footer-meta{
+  font-family:var(--f-mono);
+  font-size:10px;letter-spacing:.14em;
+  text-transform:uppercase;
+  color:var(--muted);
+  line-height:1.6;
+}
+.footer-sources{
+  font-family:var(--f-mono);
+  font-size:10px;
+  color:var(--muted-dim);
+  letter-spacing:.08em;
+  max-width:400px;
+  text-align:right;
+}
+
+/* =============================================================
+   RESPONSIVE
+============================================================= */
+@media (max-width:1200px){
+  .tape-grid{grid-template-columns:1fr;}
+  .tape-col{border-right:none!important;border-left:none!important;border-bottom:1px solid var(--border)}
+  .hero-inner{grid-template-columns:1fr}
+  .hero-fighter--red,.hero-fighter--blue{text-align:center}
+  .hero-fighter--red .hero-fighter__tag{justify-content:center}
+  .targets-grid,.biomech-grid,.aftermath-grid,.result-grid{grid-template-columns:1fr}
+  .stats-grid{grid-template-columns:repeat(2,1fr)}
+  .round-detail-grid{grid-template-columns:repeat(5,1fr);gap:6px}
+  .round-card{padding:10px 12px}
+  .round-card__winner{font-size:13px}
+  .dot-nav{display:none}
+}
+@media (max-width:720px){
+  section{padding:72px 20px 48px}
+  .section-title{font-size:34px}
+  .hero-vs{font-size:72px}
+  .hero-fighter__name{font-size:42px}
+  .stats-grid{grid-template-columns:1fr}
+  .body-viz{flex-direction:column}
+}
+
+/* =============================================================
+   ANIMATIONS
+============================================================= */
+@keyframes fadeUp{
+  from{opacity:0;transform:translateY(14px)}
+  to{opacity:1;transform:translateY(0)}
+}
+.reveal{
+  opacity:0;animation:fadeUp .7s cubic-bezier(.2,.9,.2,1) forwards;
+}
+.reveal[data-d="1"]{animation-delay:.08s}
+.reveal[data-d="2"]{animation-delay:.16s}
+.reveal[data-d="3"]{animation-delay:.24s}
+.reveal[data-d="4"]{animation-delay:.32s}
+
+/* Tooltip */
+.tip{
+  position:absolute;z-index:50;
+  background:rgba(4,5,10,.96);
+  border:1px solid var(--cyan);
+  padding:10px 14px;
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.08em;
+  color:var(--fg);
+  pointer-events:none;
+  transform:translate(-50%,-100%) translateY(-8px);
+  opacity:0;transition:opacity .15s ease;
+  white-space:nowrap;
+}
+.tip.show{opacity:1}
+.tip strong{color:var(--cyan)}
+
+svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
+</style>
+</head>
+<body>
+
+<!-- ============================================================
+     TOP BAR
+============================================================ -->
+<header class="top-bar">
+  <div class="top-bar__brand">
+    <span class="top-bar__dot"></span>
+    <span class="top-bar__name">Octagon Tactical Model</span>
+    <span class="top-bar__sep">·</span>
+    <span>v4.6 · Biomechanics Lab</span>
+  </div>
+  <div class="top-bar__right">
+    <span class="top-bar__tc">TC <span id="tc">00:00.00</span></span>
+    <span class="top-bar__live">Data · Live</span>
+  </div>
+</header>
+
+<!-- ============================================================
+     DOT NAV
+============================================================ -->
+<nav class="dot-nav">
+  <a href="#hero" data-label="Overview"></a>
+  <a href="#tape" data-label="Tale of the Tape"></a>
+  <a href="#result" data-label="Result & Scorecards"></a>
+  <a href="#totals" data-label="Striking Totals"></a>
+  <a href="#rounds" data-label="Round-by-Round"></a>
+  <a href="#targets" data-label="Target Distribution"></a>
+  <a href="#accuracy" data-label="Accuracy Trends"></a>
+  <a href="#positions" data-label="Position"></a>
+  <a href="#timeline" data-label="Fight Timeline"></a>
+  <a href="#biomech" data-label="Biomechanics"></a>
+  <a href="#pace" data-label="Pace & Cardio"></a>
+  <a href="#aftermath" data-label="Aftermath"></a>
+</nav>
+
+<!-- ============================================================
+     HERO
+============================================================ -->
+<section id="hero" class="full-h">
+  <div class="hero-inner">
+    <div class="hero-fighter hero-fighter--red reveal" data-d="1">
+      <div class="hero-fighter__tag">
+        Red Corner · Champion
+        <span class="dot"></span>
+      </div>
+      <div class="hero-fighter__nickname">"The Nigerian Nightmare"</div>
+      <div class="hero-fighter__name">Kamaru<br>Usman</div>
+      <div class="hero-fighter__record"><strong>15 – 1 – 0</strong> · 10-0 UFC</div>
+      <div class="hero-fighter__style">Pressure Wrestler · Power Striker</div>
+    </div>
+
+    <div class="hero-center reveal" data-d="2">
+      <div class="hero-event">UFC 245 · Welterweight Title</div>
+      <div class="hero-vs">VS</div>
+      <div class="hero-venue">14 Dec 2019 · T-Mobile Arena · Las Vegas</div>
+      <div class="hero-result">
+        <span class="hero-result__cell hero-result__cell--method">TKO · Punches</span>
+        <span class="hero-result__cell hero-result__cell--time">R5 · 4:10</span>
+        <span class="hero-result__cell hero-result__cell--bonus">★ Fight of the Night</span>
+      </div>
+    </div>
+
+    <div class="hero-fighter hero-fighter--blue reveal" data-d="3">
+      <div class="hero-fighter__tag">
+        <span class="dot"></span>
+        Blue Corner · Challenger
+      </div>
+      <div class="hero-fighter__nickname">"Chaos"</div>
+      <div class="hero-fighter__name">Colby<br>Covington</div>
+      <div class="hero-fighter__record"><strong>15 – 1 – 0</strong> · 10-1 UFC</div>
+      <div class="hero-fighter__style">Volume Striker · Elite Wrestler</div>
+    </div>
+  </div>
+
+  <div class="hero-scroll">Scroll · Tactical Report</div>
+</section>
+
+<!-- ============================================================
+     TALE OF THE TAPE
+============================================================ -->
+<section id="tape">
+  <div class="section-head">
+    <div class="section-tag">Section 01</div>
+    <h2 class="section-title">Tale of the Tape</h2>
+    <div class="section-sub">Physical profiles · Career metrics · Physical matchup vectors</div>
+  </div>
+
+  <div class="tape-grid">
+    <!-- RED -->
+    <div class="tape-col tape-col--red">
+      <div class="tape-col__title">Usman</div>
+      <div class="tape-col__subtitle">Switch · Orthodox primary</div>
+      <div class="tape-row"><span class="tape-row__label">Age</span><span class="tape-row__value">32</span></div>
+      <div class="tape-row"><span class="tape-row__label">DOB</span><span class="tape-row__value">11 May 1987</span></div>
+      <div class="tape-row"><span class="tape-row__label">Height</span><span class="tape-row__value">6'0" · 183 cm</span></div>
+      <div class="tape-row"><span class="tape-row__label">Reach</span><span class="tape-row__value">76" · 193 cm</span></div>
+      <div class="tape-row"><span class="tape-row__label">Leg Reach</span><span class="tape-row__value">41" · 104 cm</span></div>
+      <div class="tape-row"><span class="tape-row__label">Nationality</span><span class="tape-row__value">Nigerian-American</span></div>
+      <div class="tape-row"><span class="tape-row__label">Camp</span><span class="tape-row__value">Sanford MMA · FL</span></div>
+      <div class="tape-row"><span class="tape-row__label">Sig. Strike Acc.</span><span class="tape-row__value">51%</span></div>
+      <div class="tape-row"><span class="tape-row__label">TD Defense</span><span class="tape-row__value">89%</span></div>
+    </div>
+
+    <!-- CENTER -->
+    <div class="tape-col tape-col--center">
+      <div class="tape-meta">Physical Matchup Vectors</div>
+      <div class="tape-compare">
+        <div class="tape-compare__label">Height</div>
+        <div class="tape-compare__vals">
+          <span class="tape-compare__red">6'0" · 183</span>
+          <span class="tape-compare__delta">+1" Usman</span>
+          <span class="tape-compare__blue">180 · 5'11"</span>
+        </div>
+        <div class="tape-compare__bar">
+          <div class="tape-compare__bar-red" style="width:50.5%"></div>
+          <div class="tape-compare__bar-blue" style="width:49.5%"></div>
+        </div>
+      </div>
+      <div class="tape-compare">
+        <div class="tape-compare__label">Reach (critical)</div>
+        <div class="tape-compare__vals">
+          <span class="tape-compare__red">76" · 193</span>
+          <span class="tape-compare__delta">+4" Usman</span>
+          <span class="tape-compare__blue">183 · 72"</span>
+        </div>
+        <div class="tape-compare__bar">
+          <div class="tape-compare__bar-red" style="width:52.7%"></div>
+          <div class="tape-compare__bar-blue" style="width:47.3%"></div>
+        </div>
+      </div>
+      <div class="tape-compare">
+        <div class="tape-compare__label">Age</div>
+        <div class="tape-compare__vals">
+          <span class="tape-compare__red">32</span>
+          <span class="tape-compare__delta">Cov -1</span>
+          <span class="tape-compare__blue">31</span>
+        </div>
+        <div class="tape-compare__bar">
+          <div class="tape-compare__bar-red" style="width:50.8%"></div>
+          <div class="tape-compare__bar-blue" style="width:49.2%"></div>
+        </div>
+      </div>
+      <div class="tape-compare">
+        <div class="tape-compare__label">Record</div>
+        <div class="tape-compare__vals">
+          <span class="tape-compare__red">15-1</span>
+          <span class="tape-compare__delta">Mirror</span>
+          <span class="tape-compare__blue">15-1</span>
+        </div>
+        <div class="tape-compare__bar">
+          <div class="tape-compare__bar-red" style="width:50%"></div>
+          <div class="tape-compare__bar-blue" style="width:50%"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BLUE -->
+    <div class="tape-col tape-col--blue">
+      <div class="tape-col__title">Covington</div>
+      <div class="tape-col__subtitle">Orthodox</div>
+      <div class="tape-row"><span class="tape-row__label">Age</span><span class="tape-row__value">31</span></div>
+      <div class="tape-row"><span class="tape-row__label">DOB</span><span class="tape-row__value">22 Feb 1988</span></div>
+      <div class="tape-row"><span class="tape-row__label">Height</span><span class="tape-row__value">5'11" · 180 cm</span></div>
+      <div class="tape-row"><span class="tape-row__label">Reach</span><span class="tape-row__value">72" · 183 cm</span></div>
+      <div class="tape-row"><span class="tape-row__label">Leg Reach</span><span class="tape-row__value">41" · 104 cm</span></div>
+      <div class="tape-row"><span class="tape-row__label">Nationality</span><span class="tape-row__value">American</span></div>
+      <div class="tape-row"><span class="tape-row__label">Camp</span><span class="tape-row__value">MMA Masters · FL</span></div>
+      <div class="tape-row"><span class="tape-row__label">Sig. Strike Acc.</span><span class="tape-row__value">38%</span></div>
+      <div class="tape-row"><span class="tape-row__label">TD Defense</span><span class="tape-row__value">68%</span></div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     RESULT & SCORECARDS
+============================================================ -->
+<section id="result">
+  <div class="section-head">
+    <div class="section-tag">Section 02</div>
+    <h2 class="section-title">Result & Scorecards</h2>
+    <div class="section-sub">Method · Time · Official judges' scoring at time of stoppage</div>
+  </div>
+
+  <div class="result-grid">
+    <div class="result-card">
+      <div class="panel-meta" style="margin-bottom:6px">Outcome</div>
+      <div class="result-big">TKO · R5 · 4:10</div>
+      <dl>
+        <div class="result-line"><dt>Winner</dt><dd style="color:var(--red)">Kamaru Usman</dd></div>
+        <div class="result-line"><dt>Method</dt><dd>Punches (2 KDs → GNP)</dd></div>
+        <div class="result-line"><dt>Referee</dt><dd>Marc Goddard</dd></div>
+        <div class="result-line"><dt>Duration</dt><dd>24:10 of 25:00</dd></div>
+        <div class="result-line"><dt>Title</dt><dd>UFC Welterweight Championship</dd></div>
+        <div class="result-line"><dt>Bonus</dt><dd style="color:var(--amber)">Fight of the Night ($50K)</dd></div>
+        <div class="result-line"><dt>Attendance</dt><dd>16,811</dd></div>
+        <div class="result-line"><dt>Gate</dt><dd>$4,041,119</dd></div>
+      </dl>
+    </div>
+
+    <div class="result-card">
+      <div class="panel-head">
+        <div class="panel-title">Judges' Scorecards</div>
+        <div class="panel-meta">Through R4 · Dead even</div>
+      </div>
+      <table class="scorecard-table">
+        <thead>
+          <tr>
+            <th class="judge">Judge</th>
+            <th>R1</th><th>R2</th><th>R3</th><th>R4</th><th>R5</th>
+            <th>Total</th>
+          </tr>
+        </thead>
+        <tbody>
+          <tr>
+            <td class="judge">Derek Cleary</td>
+            <td class="cell-blue">10-9</td>
+            <td class="cell-red">10-9</td>
+            <td class="cell-red">10-9</td>
+            <td class="cell-red">10-9</td>
+            <td class="cell-tko">TKO</td>
+            <td class="total" style="color:var(--red)">39-37 U</td>
+          </tr>
+          <tr>
+            <td class="judge">Eric Colon</td>
+            <td class="cell-blue">10-9</td>
+            <td class="cell-blue">10-9</td>
+            <td class="cell-red">10-9</td>
+            <td class="cell-red">10-9</td>
+            <td class="cell-tko">TKO</td>
+            <td class="total" style="color:var(--amber)">38-38 ÷</td>
+          </tr>
+          <tr>
+            <td class="judge">Sal D'Amato</td>
+            <td class="cell-blue">10-9</td>
+            <td class="cell-blue">10-9</td>
+            <td class="cell-red">10-9</td>
+            <td class="cell-blue">10-9</td>
+            <td class="cell-tko">TKO</td>
+            <td class="total" style="color:var(--blue)">39-37 C</td>
+          </tr>
+        </tbody>
+      </table>
+      <div style="margin-top:14px;font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.08em;line-height:1.55">
+        <span style="color:var(--amber)">→</span> Entering R5: <strong style="color:var(--fg)">1 judge U · 1 judge ÷ · 1 judge C</strong>. Without the R5 TKO, this fight decides on a split decision. The finish — with &lt;50s remaining — settles everything.
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     STRIKING TOTALS
+============================================================ -->
+<section id="totals">
+  <div class="section-head">
+    <div class="section-tag">Section 03</div>
+    <h2 class="section-title">Striking Totals</h2>
+    <div class="section-sub">24:10 of action · 97% at distance · 755 combined significant strike attempts</div>
+  </div>
+
+  <div class="stats-grid">
+    <div class="stat-card reveal" data-d="1">
+      <div class="stat-card__label">Sig. Strikes Landed</div>
+      <div class="stat-card__numbers">
+        <span class="stat-card__red">175</span>
+        <span class="stat-card__vs">vs</span>
+        <span class="stat-card__blue">143</span>
+      </div>
+      <div class="stat-card__bar">
+        <div class="stat-card__bar-red" style="width:55%"></div>
+        <div class="stat-card__bar-blue" style="width:45%"></div>
+      </div>
+      <div class="stat-card__meta">Usman +32 differential</div>
+    </div>
+
+    <div class="stat-card reveal" data-d="2">
+      <div class="stat-card__label">Accuracy %</div>
+      <div class="stat-card__numbers">
+        <span class="stat-card__red">48%</span>
+        <span class="stat-card__vs">vs</span>
+        <span class="stat-card__blue">36%</span>
+      </div>
+      <div class="stat-card__bar">
+        <div class="stat-card__bar-red" style="width:57%"></div>
+        <div class="stat-card__bar-blue" style="width:43%"></div>
+      </div>
+      <div class="stat-card__meta">360 vs 395 attempted</div>
+    </div>
+
+    <div class="stat-card reveal" data-d="3">
+      <div class="stat-card__label">Knockdowns</div>
+      <div class="stat-card__numbers">
+        <span class="stat-card__red">2</span>
+        <span class="stat-card__vs">vs</span>
+        <span class="stat-card__blue">0</span>
+      </div>
+      <div class="stat-card__bar">
+        <div class="stat-card__bar-red" style="width:100%"></div>
+      </div>
+      <div class="stat-card__meta">Both in R5 · Right cross</div>
+    </div>
+
+    <div class="stat-card reveal" data-d="4">
+      <div class="stat-card__label">Takedowns Attempted</div>
+      <div class="stat-card__numbers">
+        <span class="stat-card__red">0</span>
+        <span class="stat-card__vs">vs</span>
+        <span class="stat-card__blue">0</span>
+      </div>
+      <div class="stat-card__bar">
+        <div class="stat-card__bar-red" style="width:50%"></div>
+        <div class="stat-card__bar-blue" style="width:50%"></div>
+      </div>
+      <div class="stat-card__meta">Anomaly · Two D1 wrestlers</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     ROUND-BY-ROUND
+============================================================ -->
+<section id="rounds">
+  <div class="section-head">
+    <div class="section-tag">Section 04</div>
+    <h2 class="section-title">Round-by-Round Differential</h2>
+    <div class="section-sub">Significant strike counts per round · Covington's R3 collapse · Usman's R5 closeout</div>
+  </div>
+
+  <div class="chart-panel">
+    <div class="panel-head">
+      <div class="panel-title">Significant Strikes Landed · Diverging Bars</div>
+      <div class="panel-meta">Hover for detail</div>
+    </div>
+    <svg id="roundsChart" class="chart-svg" viewBox="0 0 1200 480" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="chart-legend">
+      <div class="chart-legend__item"><span class="chart-legend__swatch chart-legend__swatch--red"></span>Usman</div>
+      <div class="chart-legend__item"><span class="chart-legend__swatch chart-legend__swatch--blue"></span>Covington</div>
+      <div class="chart-legend__item" style="color:var(--amber);margin-left:auto">★ Knockdowns · Round winner shown above bar</div>
+    </div>
+  </div>
+
+  <div class="round-detail-grid" id="roundCards"></div>
+  <div class="round-narrative" id="roundNarrative"></div>
+</section>
+
+<!-- ============================================================
+     TARGET DISTRIBUTION
+============================================================ -->
+<section id="targets">
+  <div class="section-head">
+    <div class="section-tag">Section 05</div>
+    <h2 class="section-title">Target Distribution · Body Heat</h2>
+    <div class="section-sub">Strike targeting by zone · Usman's body work was the strategic accumulator</div>
+  </div>
+
+  <div class="targets-grid">
+    <!-- USMAN -->
+    <div class="body-viz body-viz--red">
+      <svg class="body-viz__svg" width="180" height="360" viewBox="0 0 180 360">
+        <!-- Body silhouette -->
+        <defs>
+          <radialGradient id="heatHeadR" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#FF2D3F" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#FF2D3F" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="heatBodyR" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#FFB020" stop-opacity="1"/>
+            <stop offset="100%" stop-color="#FFB020" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="heatLegR" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#FF5965" stop-opacity=".3"/>
+            <stop offset="100%" stop-color="#FF5965" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <!-- silhouette -->
+        <g stroke="#FF2D3F" stroke-width="2" fill="none" stroke-linejoin="round">
+          <circle cx="90" cy="44" r="22"/>
+          <line x1="90" y1="66" x2="90" y2="82"/>
+          <line x1="54" y1="98" x2="126" y2="98"/>
+          <line x1="54" y1="98" x2="40" y2="170"/>
+          <line x1="40" y1="170" x2="34" y2="210"/>
+          <line x1="126" y1="98" x2="140" y2="170"/>
+          <line x1="140" y1="170" x2="146" y2="210"/>
+          <line x1="90" y1="82" x2="90" y2="200"/>
+          <line x1="90" y1="200" x2="66" y2="200"/>
+          <line x1="90" y1="200" x2="114" y2="200"/>
+          <line x1="66" y1="200" x2="54" y2="270"/>
+          <line x1="54" y1="270" x2="50" y2="340"/>
+          <line x1="114" y1="200" x2="126" y2="270"/>
+          <line x1="126" y1="270" x2="130" y2="340"/>
+        </g>
+        <!-- heat blobs -->
+        <ellipse cx="90" cy="44" rx="46" ry="40" fill="url(#heatHeadR)"/>
+        <ellipse cx="90" cy="140" rx="56" ry="44" fill="url(#heatBodyR)"/>
+        <ellipse cx="90" cy="280" rx="40" ry="46" fill="url(#heatLegR)"/>
+        <!-- count markers -->
+        <g font-family="JetBrains Mono" font-size="11" fill="#E8ECF5" font-weight="700">
+          <text x="90" y="48" text-anchor="middle">116</text>
+          <text x="90" y="146" text-anchor="middle">53</text>
+          <text x="90" y="284" text-anchor="middle">6</text>
+        </g>
+      </svg>
+      <div class="body-viz__data">
+        <div class="body-viz__name">Usman · Targeting</div>
+        <div class="body-viz__row">
+          <div class="body-viz__row-head">
+            <span class="body-viz__zone">Head</span>
+            <span class="body-viz__val">116 / 279 <span style="color:var(--muted);font-size:11px">· 41%</span></span>
+          </div>
+          <div class="body-viz__bar"><div class="body-viz__bar-fill" style="width:66%"></div></div>
+        </div>
+        <div class="body-viz__row">
+          <div class="body-viz__row-head">
+            <span class="body-viz__zone">Body</span>
+            <span class="body-viz__val">53 / 74 <span style="color:var(--amber);font-size:11px">· 72% ★</span></span>
+          </div>
+          <div class="body-viz__bar"><div class="body-viz__bar-fill" style="width:30%"></div></div>
+        </div>
+        <div class="body-viz__row">
+          <div class="body-viz__row-head">
+            <span class="body-viz__zone">Leg</span>
+            <span class="body-viz__val">6 / 7 <span style="color:var(--muted);font-size:11px">· 86%</span></span>
+          </div>
+          <div class="body-viz__bar"><div class="body-viz__bar-fill" style="width:4%"></div></div>
+        </div>
+        <div class="body-viz__row" style="border:none">
+          <div style="font-family:var(--f-mono);font-size:11px;color:var(--amber);letter-spacing:.08em;margin-top:8px;line-height:1.55">
+            <strong style="color:var(--fg)">TACTICAL:</strong> Double-digit body shots in 4 of 5 rounds (11/11/10/14). Body investment at 72% accuracy accumulated damage that slowed Covington entering the championship rounds.
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- COVINGTON -->
+    <div class="body-viz body-viz--blue">
+      <svg class="body-viz__svg" width="180" height="360" viewBox="0 0 180 360">
+        <defs>
+          <radialGradient id="heatHeadB" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#2DB4FF" stop-opacity=".9"/>
+            <stop offset="100%" stop-color="#2DB4FF" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="heatBodyB" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#2DB4FF" stop-opacity=".6"/>
+            <stop offset="100%" stop-color="#2DB4FF" stop-opacity="0"/>
+          </radialGradient>
+          <radialGradient id="heatLegB" cx="50%" cy="50%" r="50%">
+            <stop offset="0%" stop-color="#5EC2FF" stop-opacity=".45"/>
+            <stop offset="100%" stop-color="#5EC2FF" stop-opacity="0"/>
+          </radialGradient>
+        </defs>
+        <g stroke="#2DB4FF" stroke-width="2" fill="none" stroke-linejoin="round">
+          <circle cx="90" cy="44" r="22"/>
+          <line x1="90" y1="66" x2="90" y2="82"/>
+          <line x1="54" y1="98" x2="126" y2="98"/>
+          <line x1="54" y1="98" x2="40" y2="170"/>
+          <line x1="40" y1="170" x2="34" y2="210"/>
+          <line x1="126" y1="98" x2="140" y2="170"/>
+          <line x1="140" y1="170" x2="146" y2="210"/>
+          <line x1="90" y1="82" x2="90" y2="200"/>
+          <line x1="90" y1="200" x2="66" y2="200"/>
+          <line x1="90" y1="200" x2="114" y2="200"/>
+          <line x1="66" y1="200" x2="54" y2="270"/>
+          <line x1="54" y1="270" x2="50" y2="340"/>
+          <line x1="114" y1="200" x2="126" y2="270"/>
+          <line x1="126" y1="270" x2="130" y2="340"/>
+        </g>
+        <ellipse cx="90" cy="44" rx="46" ry="40" fill="url(#heatHeadB)"/>
+        <ellipse cx="90" cy="140" rx="42" ry="34" fill="url(#heatBodyB)"/>
+        <ellipse cx="90" cy="280" rx="42" ry="42" fill="url(#heatLegB)"/>
+        <g font-family="JetBrains Mono" font-size="11" fill="#E8ECF5" font-weight="700">
+          <text x="90" y="48" text-anchor="middle">103</text>
+          <text x="90" y="146" text-anchor="middle">28</text>
+          <text x="90" y="284" text-anchor="middle">12</text>
+        </g>
+      </svg>
+      <div class="body-viz__data">
+        <div class="body-viz__name">Covington · Targeting</div>
+        <div class="body-viz__row">
+          <div class="body-viz__row-head">
+            <span class="body-viz__zone">Head</span>
+            <span class="body-viz__val">103 / 341 <span style="color:var(--muted);font-size:11px">· 30%</span></span>
+          </div>
+          <div class="body-viz__bar"><div class="body-viz__bar-fill" style="width:72%"></div></div>
+        </div>
+        <div class="body-viz__row">
+          <div class="body-viz__row-head">
+            <span class="body-viz__zone">Body</span>
+            <span class="body-viz__val">28 / 39 <span style="color:var(--muted);font-size:11px">· 72%</span></span>
+          </div>
+          <div class="body-viz__bar"><div class="body-viz__bar-fill" style="width:20%"></div></div>
+        </div>
+        <div class="body-viz__row">
+          <div class="body-viz__row-head">
+            <span class="body-viz__zone">Leg</span>
+            <span class="body-viz__val">12 / 15 <span style="color:var(--muted);font-size:11px">· 80%</span></span>
+          </div>
+          <div class="body-viz__bar"><div class="body-viz__bar-fill" style="width:8%"></div></div>
+        </div>
+        <div class="body-viz__row" style="border:none">
+          <div style="font-family:var(--f-mono);font-size:11px;color:var(--cyan);letter-spacing:.08em;margin-top:8px;line-height:1.55">
+            <strong style="color:var(--fg)">TACTICAL:</strong> 72% of output directed at head · only 19% at body. High-volume head-hunting with 30% accuracy exposed him to harder, more targeted counter-fire.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     ACCURACY TRENDS
+============================================================ -->
+<section id="accuracy">
+  <div class="section-head">
+    <div class="section-tag">Section 06</div>
+    <h2 class="section-title">Accuracy Trends · The Crossover</h2>
+    <div class="section-sub">Sig. strike accuracy % per round · Usman rises · Covington collapses in R3 then partially recovers</div>
+  </div>
+
+  <div class="chart-panel">
+    <div class="panel-head">
+      <div class="panel-title">Accuracy % · Per Round</div>
+      <div class="panel-meta">R3 is the narrative inflection</div>
+    </div>
+    <svg id="accuracyChart" class="chart-svg" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="chart-legend">
+      <div class="chart-legend__item"><span class="chart-legend__swatch chart-legend__swatch--red"></span>Usman accuracy</div>
+      <div class="chart-legend__item"><span class="chart-legend__swatch chart-legend__swatch--blue"></span>Covington accuracy</div>
+      <div class="chart-legend__item" style="color:var(--amber);margin-left:auto">R3 collapse: 42% → 15% (Covington)</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     POSITION BREAKDOWN
+============================================================ -->
+<section id="positions">
+  <div class="section-head">
+    <div class="section-tag">Section 07</div>
+    <h2 class="section-title">Position · Where the Strikes Landed</h2>
+    <div class="section-sub">97% at distance · Zero takedowns · Ground strikes only during R5 finish sequence</div>
+  </div>
+
+  <div class="chart-panel">
+    <div class="panel-head">
+      <div class="panel-title">Strike Position Breakdown · Stacked</div>
+      <div class="panel-meta">Distance · Clinch · Ground</div>
+    </div>
+    <svg id="positionChart" class="chart-svg" viewBox="0 0 1200 340" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="chart-legend">
+      <div class="chart-legend__item"><span class="chart-legend__swatch" style="background:var(--red)"></span>Distance</div>
+      <div class="chart-legend__item"><span class="chart-legend__swatch" style="background:var(--amber)"></span>Clinch</div>
+      <div class="chart-legend__item"><span class="chart-legend__swatch" style="background:var(--green)"></span>Ground</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     FIGHT TIMELINE
+============================================================ -->
+<section id="timeline">
+  <div class="section-head">
+    <div class="section-tag">Section 08</div>
+    <h2 class="section-title">Fight Timeline · 24:10</h2>
+    <div class="section-sub">Key moments · Knockdowns · Fouls · Corner audio · The jaw-breaking right cross</div>
+  </div>
+
+  <div class="timeline-wrap">
+    <div class="panel-head">
+      <div class="panel-title">Event Timeline</div>
+      <div class="panel-meta">Hover markers for detail</div>
+    </div>
+    <svg id="timelineChart" class="timeline-svg" viewBox="0 0 1600 380" preserveAspectRatio="xMidYMid meet"></svg>
+  </div>
+</section>
+
+<!-- ============================================================
+     BIOMECHANICS
+============================================================ -->
+<section id="biomech">
+  <div class="section-head">
+    <div class="section-tag">Section 09</div>
+    <h2 class="section-title">Biomechanics · Force Analysis</h2>
+    <div class="section-sub">Estimated punch forces vs. published mandible fracture threshold · Covington sustained a non-displaced midline mandible fracture</div>
+  </div>
+
+  <div class="biomech-grid">
+    <div class="gauge-wrap">
+      <div class="panel-head">
+        <div class="panel-title">Force Gauge · Welterweight Estimates</div>
+        <div class="panel-meta">N · Newtons</div>
+      </div>
+      <svg id="gaugeChart" class="chart-svg" viewBox="0 0 600 440" preserveAspectRatio="xMidYMid meet"></svg>
+      <div style="margin-top:16px;font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.06em;line-height:1.6">
+        <strong style="color:var(--fg)">Method:</strong> Values scaled from Walilko et al. 2005 (Olympic boxers, 3,427 N straight), Kacprzak et al. 2025 (30 trained boxers at ~86 kg), and Dunn et al. 2023 (elite amateurs) to the welterweight (~77 kg) cohort. Fracture threshold from cadaver impact study (PubMed 18227031).
+      </div>
+    </div>
+
+    <div class="force-list">
+      <div class="panel-head">
+        <div class="panel-title">Strike Force Spectrum</div>
+        <div class="panel-meta">Fracture threshold at 2,151 N</div>
+      </div>
+
+      <div class="force-item">
+        <div class="force-item__head">
+          <span class="force-item__name">Jab</span>
+          <span class="force-item__value">900 – 1,300 N</span>
+        </div>
+        <div class="force-item__bar">
+          <div class="force-item__bar-fill" style="width:40%"></div>
+          <div class="force-item__threshold" style="left:78%"></div>
+        </div>
+        <div class="force-item__meta">Effective mass ~2.9 kg · v ≈ 6–8 m/s · Safe below threshold</div>
+      </div>
+
+      <div class="force-item">
+        <div class="force-item__head">
+          <span class="force-item__name">Cross / Right Straight</span>
+          <span class="force-item__value">1,400 – 2,200 N</span>
+        </div>
+        <div class="force-item__bar">
+          <div class="force-item__bar-fill" style="width:65%"></div>
+          <div class="force-item__threshold" style="left:78%"></div>
+        </div>
+        <div class="force-item__meta" style="color:var(--amber)">★ Peaks overlap fracture threshold · Likely jaw-break vector</div>
+      </div>
+
+      <div class="force-item">
+        <div class="force-item__head">
+          <span class="force-item__name">Hook</span>
+          <span class="force-item__value">2,000 – 2,800 N</span>
+        </div>
+        <div class="force-item__bar">
+          <div class="force-item__bar-fill" style="width:88%;background:linear-gradient(90deg,var(--red),var(--red-soft))"></div>
+          <div class="force-item__threshold" style="left:78%"></div>
+        </div>
+        <div class="force-item__meta" style="color:var(--red-soft)">Routinely exceeds threshold · Rotational acceleration vector</div>
+      </div>
+
+      <div class="force-item">
+        <div class="force-item__head">
+          <span class="force-item__name">Body Kick</span>
+          <span class="force-item__value">2,000 – 4,500 N</span>
+        </div>
+        <div class="force-item__bar">
+          <div class="force-item__bar-fill" style="width:95%;background:linear-gradient(90deg,var(--red-deep),var(--red),var(--amber))"></div>
+        </div>
+        <div class="force-item__meta">Roundhouse kinetic range (Corcoran et al. 2024 meta-review)</div>
+      </div>
+
+      <div class="force-item">
+        <div class="force-item__head">
+          <span class="force-item__name">Olympic Boxer Straight (measured)</span>
+          <span class="force-item__value">3,427 ± 811 N</span>
+        </div>
+        <div class="force-item__bar">
+          <div class="force-item__bar-fill" style="width:100%;background:linear-gradient(90deg,var(--amber),var(--green))"></div>
+        </div>
+        <div class="force-item__meta">Walilko et al. 2005 · Reference max · 58g head acceleration</div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     PACE & CARDIO
+============================================================ -->
+<section id="pace">
+  <div class="section-head">
+    <div class="section-tag">Section 10</div>
+    <h2 class="section-title">Pace · Output Per Minute</h2>
+    <div class="section-sub">Strikes thrown per minute by round · Covington's fade tells the fight in three acts</div>
+  </div>
+
+  <div class="chart-panel">
+    <div class="panel-head">
+      <div class="panel-title">Strikes Attempted Per Minute</div>
+      <div class="panel-meta">Volume trend · The broken-jaw tax</div>
+    </div>
+    <svg id="paceChart" class="chart-svg" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet"></svg>
+    <div class="chart-legend">
+      <div class="chart-legend__item"><span class="chart-legend__swatch chart-legend__swatch--red"></span>Usman · Attempted/min</div>
+      <div class="chart-legend__item"><span class="chart-legend__swatch chart-legend__swatch--blue"></span>Covington · Attempted/min</div>
+      <div class="chart-legend__item" style="color:var(--amber);margin-left:auto">★ R3 jaw fracture · 50% output drop</div>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     AFTERMATH
+============================================================ -->
+<section id="aftermath">
+  <div class="section-head">
+    <div class="section-tag">Section 11</div>
+    <h2 class="section-title">Aftermath · Damage & Medicals</h2>
+    <div class="section-sub">Injuries sustained · NSAC medical suspensions · The biomechanical evidence</div>
+  </div>
+
+  <div class="aftermath-grid">
+    <div class="damage-card damage-card--red">
+      <div class="damage-card__fighter">Kamaru Usman</div>
+      <ul class="damage-list">
+        <li><strong>Left thumb injury.</strong> Likely from right-hand impact in R5 finishing sequence. Required X-ray clearance.</li>
+        <li><strong>Eye poke absorbed (R3 14:15).</strong> Covington's fingers extended during a kick-jab combination. Cleared by Octagonside physician.</li>
+        <li><strong>Brief wobble absorbed in R4.</strong> Covington's three-punch combination staggered legs; no knockdown.</li>
+        <li><strong>Facial blood.</strong> Cuts minor. No stitches documented.</li>
+        <li><strong>Medical suspension:</strong> 180 days or until thumb X-ray cleared. Minimum 30 days no contact.</li>
+      </ul>
+    </div>
+
+    <div class="damage-card damage-card--blue">
+      <div class="damage-card__fighter">Colby Covington</div>
+      <ul class="damage-list">
+        <li><strong>Non-displaced midline mandible fracture.</strong> Confirmed by UFC medical staff and NSAC. Most likely caused by Usman's right cross in the final 1–2 min of R3. Dana White confirmed at post-fight presser.</li>
+        <li><strong>Corner audio captured:</strong> "I think I broke my jaw." Broadcast live on ESPN between R3 and R4.</li>
+        <li><strong>Two knockdowns in R5.</strong> Both from Usman's right hand to the (already fractured) jaw.</li>
+        <li><strong>14 ground strikes absorbed</strong> in 11 seconds before TKO stoppage.</li>
+        <li><strong>Hospital transport post-fight.</strong> Full facial evaluation. Bloodied, swollen face.</li>
+        <li><strong>Medical suspension:</strong> 180 days or until mandibular fracture cleared by oral & maxillofacial surgeon. Min 60 days no contact.</li>
+        <li><strong>Resilience note:</strong> Fought ~10 minutes (R4 + R5) with a broken jaw · absorbed 59 head strikes post-fracture · matched Usman's output 36-to-35 in R4.</li>
+      </ul>
+    </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     FOOTER
+============================================================ -->
+<footer>
+  <div class="footer-grid">
+    <div>
+      <div class="footer-brand">Octagon Tactical Model · v4.6</div>
+      <div class="footer-meta">
+        Data · UFCStats.com · ESPN · Sherdog · NSAC · UFC medical staff<br>
+        Biomechanics · Walilko et al. 2005 · Kacprzak et al. 2025 · Dunn et al. 2023 · Corcoran et al. 2024<br>
+        Corner audio · ESPN PPV broadcast · 14 Dec 2019
+      </div>
+    </div>
+    <div class="footer-sources">
+      Estimated values marked as such. Fighter-specific force data not publicly available — all force figures scaled from peer-reviewed cohorts. Render time: <span id="renderTime">0</span>ms
+    </div>
+  </div>
+</footer>
+
+<!-- ============================================================
+     DATA & RENDERING
+============================================================ -->
+<script>
+(()=>{
+const __t0=performance.now();
+
+/* -----------------------------------------------------------
+   DATA MODEL — all verified from UFCStats.com
+----------------------------------------------------------- */
+const DATA = {
+  rounds: [
+    {
+      n: 1,
+      usman: { sig:[34,91], head:[20,72], body:[11,16], leg:[3,3], dist:[30,87], clinch:[4,4], ground:[0,0], kd:0 },
+      covington: { sig:[39,111], head:[27,95], body:[7,11], leg:[5,5], dist:[39,111], clinch:[0,0], ground:[0,0], kd:0 },
+      winner: 'C',
+      judges: ['C','C','C'],
+      summary: "Covington wins 3-0 on cards. Explosive opening — no feel-out. Both men come out throwing fire.",
+      events: [
+        { t:'0:10', text:"Usman slips to the canvas after a kick exchange · recovers before Covington can capitalize.", cat:'neutral' },
+        { t:'1:30', text:"Covington lands a hard knee in a combination exchange.", cat:'blue' },
+        { t:'2:30', text:"Covington lands a huge left hand that briefly buzzes Usman. Biggest strike of the round.", cat:'blue' },
+        { t:'3:30', text:"Usman begins targeting the body · nasty body shot Covington visibly feels. Straight + uppercut follow.", cat:'red' }
+      ]
+    },
+    {
+      n: 2,
+      usman: { sig:[40,79], head:[27,59], body:[11,17], leg:[2,3], dist:[40,79], clinch:[0,0], ground:[0,0], kd:0 },
+      covington: { sig:[41,97], head:[32,88], body:[8,8], leg:[1,1], dist:[41,97], clinch:[0,0], ground:[0,0], kd:0 },
+      winner: '÷',
+      judges: ['U','C','C'],
+      summary: "Split round · Cleary sees Usman · Colon & D'Amato see Covington. Usman's jab bloodies Covington's nose.",
+      events: [
+        { t:'5:00', text:"Usman opens with a head kick. Jabs cause damage around Covington's right eye.", cat:'red' },
+        { t:'6:30', text:"Covington's overhand left and right hook appear to buzz Usman. Usman responds with a straight right.", cat:'blue' },
+        { t:'7:30', text:"⚠ Covington's body kick lands on Usman's cup. Borderline low blow. Goddard briefly halts action.", cat:'foul' },
+        { t:'9:00', text:"Usman lands hard body shots · cracks Covington with an uppercut. Heavy body shot closes round.", cat:'red' }
+      ]
+    },
+    {
+      n: 3,
+      usman: { sig:[29,50], head:[19,37], body:[10,13], leg:[0,0], dist:[28,49], clinch:[1,1], ground:[0,0], kd:0 },
+      covington: { sig:[8,51], head:[5,46], body:[3,5], leg:[0,0], dist:[8,51], clinch:[0,0], ground:[0,0], kd:0 },
+      winner: 'U',
+      judges: ['U','U','U'],
+      summary: "TURNING POINT. Covington's output collapses 97→51 attempts · landed only 8 at 15% accuracy. Jaw fracture likely occurs here.",
+      events: [
+        { t:'11:00', text:"Usman uses right hand and front kicks to the body effectively · pace deliberately slowed.", cat:'red' },
+        { t:'13:00', text:"Usman lands 1-2, right cross, left hook. Covington momentarily rallies with head kick + straight left.", cat:'red' },
+        { t:'14:15', text:"⚠ Eye poke by Covington during kick-jab combo. Goddard stops action · Octagonside physician clears Usman.", cat:'foul' },
+        { t:'14:50', text:"💥 Usman cracks Covington with a massive right cross to close the round · almost certainly the jaw-breaking punch.", cat:'critical' },
+        { t:'R3/R4 corner', text:'🎙 Broadcast captures Covington: "I think I broke my jaw." Aired live on ESPN.', cat:'critical' }
+      ]
+    },
+    {
+      n: 4,
+      usman: { sig:[35,68], head:[20,50], body:[14,17], leg:[1,1], dist:[35,68], clinch:[0,0], ground:[0,0], kd:0 },
+      covington: { sig:[36,76], head:[25,59], body:[7,12], leg:[4,5], dist:[36,76], clinch:[0,0], ground:[0,0], kd:0 },
+      winner: '÷',
+      judges: ['U','U','C'],
+      summary: "Toss-up. Covington's resilience is extraordinary — matches Usman output fighting through a broken jaw.",
+      events: [
+        { t:'15:30', text:"Tentative opening — both cautious after intense R3.", cat:'neutral' },
+        { t:'16:30', text:"Covington lands uppercuts. Usman digs body shots. Trading rights in center.", cat:'neutral' },
+        { t:'18:00', text:"Covington's left staggers Usman briefly. 3-punch combo nearly buckles Usman's legs — he walks forward with a body kick.", cat:'blue' },
+        { t:'19:15', text:"Covington throws Superman punch → Usman catches him with a knee. Both fighters laugh and trash-talk mid-round.", cat:'neutral' },
+        { t:'19:30', text:"They trade heavy blows to close the round.", cat:'neutral' }
+      ]
+    },
+    {
+      n: 5,
+      usman: { sig:[37,72], head:[30,61], body:[7,11], leg:[0,0], dist:[23,57], clinch:[0,0], ground:[14,15], kd:2 },
+      covington: { sig:[19,60], head:[14,53], body:[3,3], leg:[2,4], dist:[19,60], clinch:[0,0], ground:[0,0], kd:0 },
+      winner: 'TKO',
+      judges: ['TKO','TKO','TKO'],
+      summary: "THE FINISH. Usman drops Covington twice with right hands · unleashes 14 hammerfists in 11s. Goddard stops at 4:10.",
+      events: [
+        { t:'20:00', text:"Covington comes out aggressive, landing combinations early. Appears to be winning opening 2 min.", cat:'blue' },
+        { t:'22:30', text:"Usman begins pushing back. Hard 3-2 combination near fence.", cat:'red' },
+        { t:'3:30 R5', text:"💥 FIRST KNOCKDOWN. Usman fakes 2-3, adjusts, lands devastating right hand. Covington rolls out, pops up.", cat:'critical' },
+        { t:'3:45 R5', text:"💥 SECOND KNOCKDOWN. Second right straight sends Covington crashing. \"Right into the jaw.\"", cat:'critical' },
+        { t:'4:10 R5', text:"🏁 TKO. Covington desperate TD attempt · Usman sprawls · 14 of 15 hammerfists in 11s · Goddard dives in.", cat:'critical' }
+      ]
+    }
+  ],
+  totals: {
+    usman:     { sig:[175,360], head:[116,279], body:[53,74], leg:[6,7], dist:[156,340], clinch:[5,5], ground:[14,15], kd:2 },
+    covington: { sig:[143,395], head:[103,341], body:[28,39], leg:[12,15], dist:[143,395], clinch:[0,0], ground:[0,0], kd:0 }
+  },
+  durations: [5, 5, 5, 5, 4.1667],  // minutes per round (R5 = 4:10)
+};
+
+/* -----------------------------------------------------------
+   SVG UTILITIES
+----------------------------------------------------------- */
+const SVG_NS = 'http://www.w3.org/2000/svg';
+const el = (name, attrs={}, parent) => {
+  const n = document.createElementNS(SVG_NS, name);
+  for (const k in attrs) n.setAttribute(k, attrs[k]);
+  if (parent) parent.appendChild(n);
+  return n;
+};
+
+const tip = document.createElement('div');
+tip.className = 'tip';
+document.body.appendChild(tip);
+function showTip(x, y, html){
+  tip.innerHTML = html;
+  tip.style.left = x + 'px';
+  tip.style.top = y + 'px';
+  tip.classList.add('show');
+}
+function hideTip(){ tip.classList.remove('show'); }
+
+/* -----------------------------------------------------------
+   CHART 1: ROUND-BY-ROUND DIVERGING BARS
+----------------------------------------------------------- */
+function renderRoundsChart(){
+  const svg = document.getElementById('roundsChart');
+  const W = 1200, H = 480;
+  const M = { t:40, r:80, b:60, l:80 };
+  const CX = W / 2;
+  const rowH = (H - M.t - M.b) / 5;
+  const barH = 28;
+  const maxVal = 45;
+  const plotW = (W - M.r - M.l) / 2 - 20;
+
+  // Center axis
+  el('line', { x1:CX, y1:M.t, x2:CX, y2:H-M.b, stroke:'#1A2030', 'stroke-width':1 }, svg);
+
+  // Header labels
+  const headA = el('g', {}, svg);
+  el('text', { x:CX - plotW - 4, y:M.t - 14, 'text-anchor':'end', 'font-size':10, 'letter-spacing':'.15em', fill:'#FF2D3F' }, headA).textContent = 'USMAN ←';
+  el('text', { x:CX + plotW + 4, y:M.t - 14, 'text-anchor':'start', 'font-size':10, 'letter-spacing':'.15em', fill:'#2DB4FF' }, headA).textContent = '→ COVINGTON';
+  el('text', { x:CX, y:M.t - 14, 'text-anchor':'middle', 'font-size':10, 'letter-spacing':'.15em', fill:'#7A8394' }, headA).textContent = 'SIG. STRIKES LANDED';
+
+  // Scale ticks
+  for (let v = 10; v <= maxVal; v += 10){
+    const dx = v / maxVal * plotW;
+    el('line', { x1:CX-dx, y1:M.t, x2:CX-dx, y2:H-M.b, stroke:'#151B28', 'stroke-dasharray':'2 3' }, svg);
+    el('line', { x1:CX+dx, y1:M.t, x2:CX+dx, y2:H-M.b, stroke:'#151B28', 'stroke-dasharray':'2 3' }, svg);
+    el('text', { x:CX-dx, y:H-M.b+16, 'text-anchor':'middle', 'font-size':9, fill:'#464E5C' }, svg).textContent = v;
+    el('text', { x:CX+dx, y:H-M.b+16, 'text-anchor':'middle', 'font-size':9, fill:'#464E5C' }, svg).textContent = v;
+  }
+  el('text', { x:CX, y:H-M.b+16, 'text-anchor':'middle', 'font-size':9, fill:'#464E5C' }, svg).textContent = '0';
+
+  DATA.rounds.forEach((r, i) => {
+    const y = M.t + i * rowH + rowH / 2 - barH / 2;
+    const cy = y + barH / 2;
+    const uVal = r.usman.sig[0];
+    const cVal = r.covington.sig[0];
+    const uAttempt = r.usman.sig[1];
+    const cAttempt = r.covington.sig[1];
+    const uW = uVal / maxVal * plotW;
+    const cW = cVal / maxVal * plotW;
+
+    // Round label
+    el('text', { x:20, y:cy + 4, 'text-anchor':'start', 'font-size':11, 'letter-spacing':'.15em', fill:'#7A8394' }, svg).textContent = 'R' + r.n;
+
+    // Red bar (left, growing toward center FROM center LEFT)
+    const uBar = el('rect', {
+      x: CX - uW, y: y, width: uW, height: barH,
+      fill: 'url(#gradRed)', stroke:'#FF2D3F', 'stroke-width':0.5
+    }, svg);
+    uBar.style.cursor = 'pointer';
+    uBar.addEventListener('mousemove', e => {
+      showTip(e.pageX, e.pageY, `<strong>USMAN · R${r.n}</strong><br>Landed: ${uVal} / ${uAttempt}<br>Accuracy: ${(uVal/uAttempt*100).toFixed(0)}%<br>Head ${r.usman.head[0]} · Body ${r.usman.body[0]} · Leg ${r.usman.leg[0]}`);
+    });
+    uBar.addEventListener('mouseleave', hideTip);
+
+    // Blue bar (right)
+    const cBar = el('rect', {
+      x: CX, y: y, width: cW, height: barH,
+      fill: 'url(#gradBlue)', stroke:'#2DB4FF', 'stroke-width':0.5
+    }, svg);
+    cBar.style.cursor = 'pointer';
+    cBar.addEventListener('mousemove', e => {
+      showTip(e.pageX, e.pageY, `<strong>COVINGTON · R${r.n}</strong><br>Landed: ${cVal} / ${cAttempt}<br>Accuracy: ${(cVal/cAttempt*100).toFixed(0)}%<br>Head ${r.covington.head[0]} · Body ${r.covington.body[0]} · Leg ${r.covington.leg[0]}`);
+    });
+    cBar.addEventListener('mouseleave', hideTip);
+
+    // Values
+    el('text', { x:CX - uW - 8, y:cy + 4, 'text-anchor':'end', 'font-size':14, 'font-weight':700, fill:'#FF2D3F' }, svg).textContent = uVal;
+    el('text', { x:CX + cW + 8, y:cy + 4, 'text-anchor':'start', 'font-size':14, 'font-weight':700, fill:'#2DB4FF' }, svg).textContent = cVal;
+
+    // Round winner marker above
+    const wLabel = { 'U':'USMAN', 'C':'COVINGTON', '÷':'SPLIT', 'TKO':'TKO · USMAN' }[r.winner] || r.winner;
+    const wColor = { 'U':'#FF2D3F', 'C':'#2DB4FF', '÷':'#FFB020', 'TKO':'#FFFFFF' }[r.winner] || '#FFFFFF';
+    el('text', {
+      x:CX, y:y - 4, 'text-anchor':'middle', 'font-size':10,
+      'letter-spacing':'.15em', fill:wColor, 'font-weight':600
+    }, svg).textContent = wLabel;
+
+    // Knockdown markers
+    if (r.usman.kd > 0){
+      for (let k = 0; k < r.usman.kd; k++){
+        const star = el('g', { transform: `translate(${CX - uW - 22 - k*14}, ${cy + 4})` }, svg);
+        el('path', { d:'M0,-6L1.8,-2L6,-2L2.5,1L4,6L0,3L-4,6L-2.5,1L-6,-2L-1.8,-2Z', fill:'#FFB020' }, star);
+      }
+    }
+
+    // Differential annotation
+    const diff = uVal - cVal;
+    if (Math.abs(diff) >= 10){
+      const sign = diff > 0 ? '+' : '−';
+      el('text', {
+        x: CX + Math.max(uW, cW) + 28, y: cy + 4,
+        'text-anchor':'start', 'font-size':10,
+        fill: diff > 0 ? '#FF5965' : '#5EC2FF', 'letter-spacing':'.12em'
+      }, svg).textContent = `${sign}${Math.abs(diff)} diff`;
+    }
+  });
+
+  // Gradient defs
+  const defs = el('defs', {}, svg);
+  const gR = el('linearGradient', { id:'gradRed', x1:'1', y1:'0', x2:'0', y2:'0' }, defs);
+  el('stop', { offset:'0%', 'stop-color':'#FF2D3F', 'stop-opacity':'1' }, gR);
+  el('stop', { offset:'100%', 'stop-color':'#B41E2D', 'stop-opacity':'0.6' }, gR);
+  const gB = el('linearGradient', { id:'gradBlue', x1:'0', y1:'0', x2:'1', y2:'0' }, defs);
+  el('stop', { offset:'0%', 'stop-color':'#1E78C8', 'stop-opacity':'0.6' }, gB);
+  el('stop', { offset:'100%', 'stop-color':'#2DB4FF', 'stop-opacity':'1' }, gB);
+}
+
+/* -----------------------------------------------------------
+   ROUND CARDS & NARRATIVE
+----------------------------------------------------------- */
+function renderRoundCards(){
+  const container = document.getElementById('roundCards');
+  DATA.rounds.forEach((r, i) => {
+    const card = document.createElement('div');
+    card.className = 'round-card' + (i === 2 ? ' active' : '');
+    card.dataset.round = r.n;
+
+    const winnerClass = { 'U':'red', 'C':'blue', '÷':'split', 'TKO':'tko' }[r.winner];
+    const winnerLabel = { 'U':'USMAN', 'C':'COVINGTON', '÷':'SPLIT', 'TKO':'TKO · U' }[r.winner];
+
+    card.innerHTML = `
+      <div class="round-card__num">Round 0${r.n}</div>
+      <div class="round-card__winner round-card__winner--${winnerClass}">${winnerLabel}</div>
+      <div class="round-card__stats"><span class="red">${r.usman.sig[0]}</span> <span style="color:var(--muted-dim)">·</span> <span class="blue">${r.covington.sig[0]}</span></div>
+      <div class="round-card__stats" style="margin-top:4px;color:var(--muted);font-size:10px">${r.usman.kd ? '★ '+r.usman.kd+' KD · ' : ''}${Math.round(r.usman.sig[0]/r.usman.sig[1]*100)}% / ${Math.round(r.covington.sig[0]/r.covington.sig[1]*100)}%</div>
+    `;
+    card.addEventListener('click', () => {
+      document.querySelectorAll('.round-card').forEach(c => c.classList.remove('active'));
+      card.classList.add('active');
+      showNarrative(r);
+    });
+    container.appendChild(card);
+  });
+  showNarrative(DATA.rounds[2]);
+}
+
+function showNarrative(r){
+  const n = document.getElementById('roundNarrative');
+  const catColor = { 'red':'#FF5965', 'blue':'#5EC2FF', 'critical':'#FFB020', 'foul':'#8A5EF5', 'neutral':'#B0B8C9' };
+  const events = r.events.map(e =>
+    `<p><span class="ts">${e.t}</span><span style="color:${catColor[e.cat]||'#B0B8C9'}">${e.text}</span></p>`
+  ).join('');
+  n.innerHTML = `
+    <h4>Round ${r.n} · Play-by-Play</h4>
+    <p style="color:var(--fg);font-weight:500;margin-bottom:14px;font-family:var(--f-disp);font-size:14px;letter-spacing:.02em">${r.summary}</p>
+    ${events}
+  `;
+}
+
+/* -----------------------------------------------------------
+   CHART 2: ACCURACY TRENDS
+----------------------------------------------------------- */
+function renderAccuracyChart(){
+  const svg = document.getElementById('accuracyChart');
+  const W = 1200, H = 400;
+  const M = { t:40, r:50, b:60, l:60 };
+  const pw = W - M.l - M.r;
+  const ph = H - M.t - M.b;
+
+  const usmanAcc = DATA.rounds.map(r => r.usman.sig[0] / r.usman.sig[1] * 100);
+  const covAcc = DATA.rounds.map(r => r.covington.sig[0] / r.covington.sig[1] * 100);
+
+  // Y-axis (accuracy %)
+  for (let v = 0; v <= 60; v += 20){
+    const y = M.t + ph - (v / 60 * ph);
+    el('line', { x1:M.l, y1:y, x2:W-M.r, y2:y, stroke:'#151B28', 'stroke-dasharray':'2 3' }, svg);
+    el('text', { x:M.l - 10, y:y+3, 'text-anchor':'end', 'font-size':9, fill:'#7A8394' }, svg).textContent = v + '%';
+  }
+
+  // X-axis (rounds)
+  DATA.rounds.forEach((r, i) => {
+    const x = M.l + (i / 4) * pw;
+    el('line', { x1:x, y1:M.t, x2:x, y2:H-M.b, stroke:'#151B28', 'stroke-dasharray':'2 3' }, svg);
+    el('text', { x:x, y:H-M.b+20, 'text-anchor':'middle', 'font-size':10, fill:'#B0B8C9' }, svg).textContent = 'R'+r.n;
+  });
+
+  // Annotation: R3 collapse
+  const r3x = M.l + (2/4) * pw;
+  el('rect', { x:r3x-60, y:M.t, width:120, height:ph, fill:'#FFB020', opacity:0.05 }, svg);
+  el('line', { x1:r3x, y1:M.t+10, x2:r3x, y2:H-M.b, stroke:'#FFB020', 'stroke-width':1, 'stroke-dasharray':'4 3' }, svg);
+  el('text', { x:r3x, y:M.t-2, 'text-anchor':'middle', 'font-size':9, fill:'#FFB020', 'letter-spacing':'.1em' }, svg).textContent = 'JAW BREAK ZONE';
+
+  function drawLine(data, color){
+    let pathD = '';
+    data.forEach((v, i) => {
+      const x = M.l + (i/4) * pw;
+      const y = M.t + ph - (v / 60 * ph);
+      pathD += (i === 0 ? 'M' : 'L') + x + ',' + y;
+    });
+    // Line
+    el('path', { d:pathD, stroke:color, 'stroke-width':2.5, fill:'none', 'stroke-linejoin':'round' }, svg);
+    // Points
+    data.forEach((v, i) => {
+      const x = M.l + (i/4) * pw;
+      const y = M.t + ph - (v / 60 * ph);
+      el('circle', { cx:x, cy:y, r:6, fill:'#04050A', stroke:color, 'stroke-width':2 }, svg);
+      el('circle', { cx:x, cy:y, r:2.5, fill:color }, svg);
+      el('text', { x:x, y:y-14, 'text-anchor':'middle', 'font-size':11, 'font-weight':700, fill:color }, svg).textContent = v.toFixed(0) + '%';
+    });
+  }
+  drawLine(covAcc, '#2DB4FF');
+  drawLine(usmanAcc, '#FF2D3F');
+
+  // Y-axis title
+  el('text', { x:M.l-36, y:M.t+ph/2, 'text-anchor':'middle', 'font-size':10, fill:'#7A8394', 'letter-spacing':'.15em', transform:`rotate(-90 ${M.l-36} ${M.t+ph/2})` }, svg).textContent = 'ACCURACY %';
+}
+
+/* -----------------------------------------------------------
+   CHART 3: POSITION BREAKDOWN
+----------------------------------------------------------- */
+function renderPositionChart(){
+  const svg = document.getElementById('positionChart');
+  const W = 1200, H = 340;
+  const M = { t:40, r:60, b:60, l:60 };
+  const pw = W - M.l - M.r;
+  const ph = H - M.t - M.b;
+  const groupH = 16;
+  const gap = 4;
+  const maxTotal = 45;
+
+  DATA.rounds.forEach((r, i) => {
+    const yBase = M.t + (i / 4) * ph;
+
+    // R label
+    el('text', { x:M.l-14, y:yBase+24, 'text-anchor':'end', 'font-size':11, fill:'#B0B8C9', 'letter-spacing':'.1em' }, svg).textContent = 'R'+r.n;
+
+    // Usman group (upper)
+    const usmanGroup = [
+      { val: r.usman.dist[0], color:'#FF2D3F', name:'distance' },
+      { val: r.usman.clinch[0], color:'#FFB020', name:'clinch' },
+      { val: r.usman.ground[0], color:'#7CFFC8', name:'ground' }
+    ];
+    let cumU = 0;
+    usmanGroup.forEach(g => {
+      if (g.val <= 0) return;
+      const w = g.val / maxTotal * pw;
+      const rect = el('rect', { x:M.l + cumU, y:yBase, width:w, height:groupH, fill:g.color, opacity:.85 }, svg);
+      rect.style.cursor = 'pointer';
+      rect.addEventListener('mousemove', e => showTip(e.pageX, e.pageY, `<strong>USMAN R${r.n} · ${g.name.toUpperCase()}</strong><br>${g.val} landed`));
+      rect.addEventListener('mouseleave', hideTip);
+      cumU += w;
+    });
+    // Usman total
+    el('text', { x:M.l + cumU + 8, y:yBase+12, 'text-anchor':'start', 'font-size':10, fill:'#FF2D3F', 'font-weight':600 }, svg).textContent = r.usman.sig[0];
+
+    // Covington group (lower)
+    const covGroup = [
+      { val: r.covington.dist[0], color:'#2DB4FF', name:'distance' },
+      { val: r.covington.clinch[0], color:'#FFB020', name:'clinch' },
+      { val: r.covington.ground[0], color:'#7CFFC8', name:'ground' }
+    ];
+    let cumC = 0;
+    const yC = yBase + groupH + gap;
+    covGroup.forEach(g => {
+      if (g.val <= 0) return;
+      const w = g.val / maxTotal * pw;
+      const rect = el('rect', { x:M.l + cumC, y:yC, width:w, height:groupH, fill:g.color, opacity:.85 }, svg);
+      rect.style.cursor = 'pointer';
+      rect.addEventListener('mousemove', e => showTip(e.pageX, e.pageY, `<strong>COVINGTON R${r.n} · ${g.name.toUpperCase()}</strong><br>${g.val} landed`));
+      rect.addEventListener('mouseleave', hideTip);
+      cumC += w;
+    });
+    el('text', { x:M.l + cumC + 8, y:yC+12, 'text-anchor':'start', 'font-size':10, fill:'#2DB4FF', 'font-weight':600 }, svg).textContent = r.covington.sig[0];
+  });
+
+  // Scale
+  for (let v = 10; v <= maxTotal; v += 10){
+    const x = M.l + v/maxTotal * pw;
+    el('line', { x1:x, y1:M.t-10, x2:x, y2:H-M.b+4, stroke:'#151B28', 'stroke-dasharray':'2 3' }, svg);
+    el('text', { x:x, y:H-M.b+20, 'text-anchor':'middle', 'font-size':9, fill:'#464E5C' }, svg).textContent = v;
+  }
+
+  // R5 ground annotation
+  const y5 = M.t + (4/4) * ph;
+  el('text', { x:W-M.r+4, y:y5+12, 'text-anchor':'start', 'font-size':9, fill:'#7CFFC8', 'letter-spacing':'.08em' }, svg).textContent = '← 14 GND';
+}
+
+/* -----------------------------------------------------------
+   CHART 4: TIMELINE
+----------------------------------------------------------- */
+function renderTimelineChart(){
+  const svg = document.getElementById('timelineChart');
+  const W = 1600, H = 380;
+  const M = { t:120, r:60, b:100, l:80 };
+  const pw = W - M.l - M.r;
+  const mainY = H / 2;
+  const totalSec = 24 * 60 + 10; // 24:10
+
+  const events = [
+    { sec: 10, round:1, label:'Usman slip', text:'Loses footing on kick exchange · recovers', color:'#7A8394', cat:'neutral' },
+    { sec: 150, round:1, label:'Big Left (Cov)', text:'Covington lands huge left · briefly buzzes Usman', color:'#2DB4FF', cat:'blue' },
+    { sec: 210, round:1, label:'Body work opens', text:'Usman begins targeting the body', color:'#FF2D3F', cat:'red' },
+    { sec: 450, round:2, label:'Cup shot', text:'Covington body kick lands low · action halted', color:'#8A5EF5', cat:'foul' },
+    { sec: 855, round:3, label:'Eye Poke', text:'Covington\'s fingers in Usman\'s eye · physician check', color:'#8A5EF5', cat:'foul' },
+    { sec: 890, round:3, label:'💥 Jaw Break', text:'Massive right cross · likely mandible fracture point', color:'#FFB020', cat:'critical', major:true },
+    { sec: 900, round:3, label:'🎙 "I broke my jaw"', text:'Corner audio captured between R3 & R4', color:'#FFB020', cat:'critical', major:true },
+    { sec: 1080, round:4, label:'Cov stagger combo', text:'3-punch combination nearly buckles Usman', color:'#2DB4FF', cat:'blue' },
+    { sec: 1155, round:4, label:'Superman / Knee', text:'Cov Superman punch → Usman knee · fighters laugh', color:'#7A8394', cat:'neutral' },
+    { sec: 1410, round:5, label:'💥 KD #1', text:'First knockdown · right hand after 2-3 fake', color:'#FF2D3F', cat:'critical', major:true },
+    { sec: 1425, round:5, label:'💥 KD #2', text:'Second knockdown · "right into the jaw"', color:'#FF2D3F', cat:'critical', major:true },
+    { sec: 1450, round:5, label:'🏁 TKO 4:10', text:'14 of 15 hammerfists in 11s · Goddard stops it', color:'#FFFFFF', cat:'critical', major:true }
+  ];
+
+  // Round backgrounds
+  const roundColors = ['rgba(45,180,255,.06)', 'rgba(45,180,255,.06)', 'rgba(255,45,63,.06)', 'rgba(255,176,32,.06)', 'rgba(255,45,63,.1)'];
+  [0,1,2,3,4].forEach(i => {
+    const x1 = M.l + (i*300/totalSec) * pw;
+    const x2 = M.l + ((i+1)*300/totalSec) * pw;
+    const actualEnd = i === 4 ? M.l + (totalSec/totalSec)*pw : x2;
+    el('rect', {
+      x:x1, y:M.t-30, width:actualEnd-x1, height:H-M.t-M.b+30,
+      fill:roundColors[i]
+    }, svg);
+    el('text', { x:(x1+actualEnd)/2, y:M.t-10, 'text-anchor':'middle', 'font-size':11, fill:'#7A8394', 'letter-spacing':'.15em' }, svg).textContent = 'ROUND 0'+(i+1);
+  });
+
+  // Main timeline spine
+  el('line', {
+    x1:M.l, y1:mainY, x2:W-M.r, y2:mainY,
+    stroke:'url(#tlGrad)', 'stroke-width':3
+  }, svg);
+
+  // Time grid every minute
+  for (let m = 0; m <= 24; m++){
+    const x = M.l + (m*60/totalSec) * pw;
+    el('line', { x1:x, y1:mainY-5, x2:x, y2:mainY+5, stroke:'#464E5C', 'stroke-width': m%5===0 ? 1.5 : 0.5 }, svg);
+    if (m % 5 === 0){
+      el('text', { x:x, y:mainY+22, 'text-anchor':'middle', 'font-size':10, fill:'#7A8394', 'font-weight':500 }, svg).textContent = m + ':00';
+    }
+  }
+  // End marker
+  const xEnd = M.l + pw;
+  el('circle', { cx:xEnd, cy:mainY, r:6, fill:'#FFFFFF', stroke:'#FF2D3F', 'stroke-width':2 }, svg);
+  el('text', { x:xEnd, y:mainY+22, 'text-anchor':'middle', 'font-size':10, fill:'#FFFFFF', 'font-weight':700 }, svg).textContent = '24:10';
+
+  // Gradient
+  const defs = el('defs', {}, svg);
+  const g = el('linearGradient', { id:'tlGrad', x1:'0', y1:'0', x2:'1', y2:'0' }, defs);
+  el('stop', { offset:'0%', 'stop-color':'#2DB4FF' }, g);
+  el('stop', { offset:'50%', 'stop-color':'#8A5EF5' }, g);
+  el('stop', { offset:'100%', 'stop-color':'#FF2D3F' }, g);
+
+  // Events
+  events.forEach((ev, idx) => {
+    const x = M.l + (ev.sec / totalSec) * pw;
+    const above = idx % 2 === 0;
+    const labelY = above ? mainY - 46 - (ev.major ? 12 : 0) : mainY + 46 + (ev.major ? 12 : 0);
+    const lineY2 = above ? mainY - 8 : mainY + 8;
+
+    // Connector
+    el('line', {
+      x1:x, y1:labelY + (above ? 18 : -2), x2:x, y2:lineY2,
+      stroke: ev.color, 'stroke-width':1, opacity: ev.major ? 1 : .6
+    }, svg);
+
+    // Node
+    const nodeR = ev.major ? 7 : 4;
+    const node = el('circle', {
+      cx:x, cy:mainY, r:nodeR,
+      fill:'#04050A', stroke:ev.color, 'stroke-width':2
+    }, svg);
+    node.style.cursor = 'pointer';
+    if (ev.major){
+      el('circle', { cx:x, cy:mainY, r:nodeR+4, fill:'none', stroke:ev.color, 'stroke-width':1, opacity:.4 }, svg);
+    }
+
+    // Inner dot
+    el('circle', { cx:x, cy:mainY, r:ev.major ? 3 : 1.5, fill:ev.color }, svg);
+
+    // Label
+    const textEl = el('text', {
+      x:x, y:labelY, 'text-anchor':'middle',
+      'font-size': ev.major ? 11 : 9,
+      fill:ev.color, 'font-weight': ev.major ? 700 : 500,
+      'letter-spacing':'.05em'
+    }, svg);
+    textEl.textContent = ev.label;
+
+    // Mouse tip
+    node.addEventListener('mousemove', e =>
+      showTip(e.pageX, e.pageY, `<strong>R${ev.round} · ${Math.floor(ev.sec/60)}:${String(ev.sec%60).padStart(2,'0')}</strong><br>${ev.text}`)
+    );
+    node.addEventListener('mouseleave', hideTip);
+  });
+
+  // Axis title
+  el('text', { x:M.l, y:H-M.b+50, 'font-size':10, fill:'#7A8394', 'letter-spacing':'.15em' }, svg).textContent = 'ELAPSED TIME · MIN:SEC';
+}
+
+/* -----------------------------------------------------------
+   CHART 5: GAUGE (BIOMECHANICS)
+----------------------------------------------------------- */
+function renderGaugeChart(){
+  const svg = document.getElementById('gaugeChart');
+  const W = 600, H = 440;
+  const cx = W/2, cy = H * 0.72;
+  const r = 180;
+  const startA = Math.PI * 1.1;
+  const endA = Math.PI * 1.9;  // goes from ~200° to ~340°
+
+  // Gauge arc background
+  function arcPath(rr, a1, a2){
+    const x1 = cx + Math.cos(a1)*rr;
+    const y1 = cy + Math.sin(a1)*rr;
+    const x2 = cx + Math.cos(a2)*rr;
+    const y2 = cy + Math.sin(a2)*rr;
+    const large = Math.abs(a2-a1) > Math.PI ? 1 : 0;
+    return `M ${x1} ${y1} A ${rr} ${rr} 0 ${large} 1 ${x2} ${y2}`;
+  }
+
+  // Scale: 0 → 4000 N
+  const MAX = 4000;
+  const angleFor = v => startA + (v/MAX) * (endA - startA);
+
+  // Ticks
+  for (let v = 0; v <= MAX; v += 500){
+    const a = angleFor(v);
+    const x1 = cx + Math.cos(a) * (r - 12);
+    const y1 = cy + Math.sin(a) * (r - 12);
+    const x2 = cx + Math.cos(a) * (r + 8);
+    const y2 = cy + Math.sin(a) * (r + 8);
+    const major = v % 1000 === 0;
+    el('line', { x1, y1, x2, y2, stroke:major?'#B0B8C9':'#7A8394', 'stroke-width': major ? 1.5 : 1, opacity: major ? 1 : 0.5 }, svg);
+    if (major){
+      const lx = cx + Math.cos(a) * (r + 26);
+      const ly = cy + Math.sin(a) * (r + 26);
+      el('text', { x:lx, y:ly+3, 'text-anchor':'middle', 'font-size':10, fill:'#B0B8C9' }, svg).textContent = v;
+    }
+  }
+
+  // Zones
+  // Green zone (safe) 0-1300
+  el('path', { d:arcPath(r, startA, angleFor(1300)), stroke:'#7CFFC8', 'stroke-width':12, fill:'none', opacity:.3 }, svg);
+  // Amber zone 1300-2151
+  el('path', { d:arcPath(r, angleFor(1300), angleFor(2151)), stroke:'#FFB020', 'stroke-width':12, fill:'none', opacity:.5 }, svg);
+  // Red zone (above threshold) 2151-4000
+  el('path', { d:arcPath(r, angleFor(2151), endA), stroke:'#FF2D3F', 'stroke-width':12, fill:'none', opacity:.6 }, svg);
+
+  // Threshold marker
+  const thA = angleFor(2151);
+  const thX1 = cx + Math.cos(thA) * (r - 20);
+  const thY1 = cy + Math.sin(thA) * (r - 20);
+  const thX2 = cx + Math.cos(thA) * (r + 32);
+  const thY2 = cy + Math.sin(thA) * (r + 32);
+  el('line', { x1:thX1, y1:thY1, x2:thX2, y2:thY2, stroke:'#FFFFFF', 'stroke-width':2 }, svg);
+  el('text', { x:thX2 + 4, y:thY2 - 6, 'text-anchor':'start', 'font-size':10, fill:'#FFFFFF', 'font-weight':700, 'letter-spacing':'.12em' }, svg).textContent = 'FRACTURE';
+  el('text', { x:thX2 + 4, y:thY2 + 6, 'text-anchor':'start', 'font-size':10, fill:'#FFFFFF' }, svg).textContent = '2,151 N';
+
+  // Needles for different strikes (midpoints)
+  const strikes = [
+    { val: 1100, name: 'JAB', color: '#5EC2FF' },
+    { val: 1800, name: 'CROSS', color: '#FF2D3F' },
+    { val: 2400, name: 'HOOK', color: '#FF5965' }
+  ];
+  strikes.forEach((s, i) => {
+    const a = angleFor(s.val);
+    const nx = cx + Math.cos(a) * (r - 30);
+    const ny = cy + Math.sin(a) * (r - 30);
+    el('line', { x1:cx, y1:cy, x2:nx, y2:ny, stroke:s.color, 'stroke-width':2.5, 'stroke-linecap':'round' }, svg);
+    el('circle', { cx:nx, cy:ny, r:5, fill:s.color }, svg);
+    el('circle', { cx:nx, cy:ny, r:2, fill:'#04050A' }, svg);
+  });
+  // Hub
+  el('circle', { cx:cx, cy:cy, r:10, fill:'#04050A', stroke:'#7A8394', 'stroke-width':2 }, svg);
+  el('circle', { cx:cx, cy:cy, r:4, fill:'#2DDCFF' }, svg);
+
+  // Labels below gauge
+  const labelY = H - 40;
+  strikes.forEach((s, i) => {
+    const lx = 80 + i * 180;
+    el('rect', { x:lx-44, y:labelY-24, width:88, height:46, fill:'transparent', stroke:s.color, 'stroke-width':0.5, opacity:.5 }, svg);
+    el('text', { x:lx, y:labelY-6, 'text-anchor':'middle', 'font-size':10, 'letter-spacing':'.15em', fill:s.color, 'font-weight':700 }, svg).textContent = s.name;
+    el('text', { x:lx, y:labelY+12, 'text-anchor':'middle', 'font-size':11, fill:'#E8ECF5', 'font-weight':600 }, svg).textContent = '~' + s.val + ' N';
+  });
+
+  // Title
+  el('text', { x:W/2, y:36, 'text-anchor':'middle', 'font-size':13, fill:'#7A8394', 'letter-spacing':'.2em' }, svg).textContent = 'ESTIMATED PUNCH FORCE';
+  el('text', { x:W/2, y:56, 'text-anchor':'middle', 'font-size':10, fill:'#464E5C', 'letter-spacing':'.15em' }, svg).textContent = 'WELTERWEIGHT · SCALED FROM LITERATURE';
+}
+
+/* -----------------------------------------------------------
+   CHART 6: PACE / CARDIO
+----------------------------------------------------------- */
+function renderPaceChart(){
+  const svg = document.getElementById('paceChart');
+  const W = 1200, H = 400;
+  const M = { t:40, r:60, b:60, l:60 };
+  const pw = W - M.l - M.r;
+  const ph = H - M.t - M.b;
+
+  const usmanPPM = DATA.rounds.map((r, i) => r.usman.sig[1] / DATA.durations[i]);
+  const covPPM = DATA.rounds.map((r, i) => r.covington.sig[1] / DATA.durations[i]);
+
+  const maxPPM = 25;
+
+  // Y-axis
+  for (let v = 0; v <= maxPPM; v += 5){
+    const y = M.t + ph - (v / maxPPM * ph);
+    el('line', { x1:M.l, y1:y, x2:W-M.r, y2:y, stroke:'#151B28', 'stroke-dasharray':'2 3' }, svg);
+    el('text', { x:M.l - 10, y:y+3, 'text-anchor':'end', 'font-size':9, fill:'#7A8394' }, svg).textContent = v;
+  }
+  el('text', { x:M.l-36, y:M.t+ph/2, 'text-anchor':'middle', 'font-size':10, fill:'#7A8394', 'letter-spacing':'.15em', transform:`rotate(-90 ${M.l-36} ${M.t+ph/2})` }, svg).textContent = 'STRIKES / MIN';
+
+  // X-axis
+  DATA.rounds.forEach((r, i) => {
+    const x = M.l + (i / 4) * pw;
+    el('line', { x1:x, y1:M.t, x2:x, y2:H-M.b, stroke:'#151B28', 'stroke-dasharray':'2 3' }, svg);
+    el('text', { x:x, y:H-M.b+20, 'text-anchor':'middle', 'font-size':10, fill:'#B0B8C9' }, svg).textContent = 'R'+r.n;
+  });
+
+  // R3 collapse band
+  const r3x = M.l + (2/4) * pw;
+  el('rect', { x:r3x-36, y:M.t, width:72, height:ph, fill:'#FFB020', opacity:0.05 }, svg);
+  el('line', { x1:r3x, y1:M.t+10, x2:r3x, y2:H-M.b, stroke:'#FFB020', 'stroke-width':1, 'stroke-dasharray':'4 3' }, svg);
+  el('text', { x:r3x, y:M.t-2, 'text-anchor':'middle', 'font-size':9, fill:'#FFB020', 'letter-spacing':'.1em' }, svg).textContent = 'FRACTURE';
+
+  // Fill area under Covington to highlight fade
+  let covPathD = '';
+  covPPM.forEach((v, i) => {
+    const x = M.l + (i/4) * pw;
+    const y = M.t + ph - (v / maxPPM * ph);
+    covPathD += (i === 0 ? 'M' : 'L') + x + ',' + y;
+  });
+  covPathD += ` L ${M.l + pw},${M.t+ph} L ${M.l},${M.t+ph} Z`;
+  el('path', { d:covPathD, fill:'#2DB4FF', opacity:0.08 }, svg);
+
+  function drawLine(data, color, dash){
+    let pathD = '';
+    data.forEach((v, i) => {
+      const x = M.l + (i/4) * pw;
+      const y = M.t + ph - (v / maxPPM * ph);
+      pathD += (i === 0 ? 'M' : 'L') + x + ',' + y;
+    });
+    el('path', { d:pathD, stroke:color, 'stroke-width':2.5, fill:'none', 'stroke-linejoin':'round', 'stroke-dasharray': dash||'' }, svg);
+    data.forEach((v, i) => {
+      const x = M.l + (i/4) * pw;
+      const y = M.t + ph - (v / maxPPM * ph);
+      el('circle', { cx:x, cy:y, r:5, fill:'#04050A', stroke:color, 'stroke-width':2 }, svg);
+      el('text', { x:x, y:y-12, 'text-anchor':'middle', 'font-size':10, 'font-weight':700, fill:color }, svg).textContent = v.toFixed(1);
+    });
+  }
+
+  drawLine(covPPM, '#2DB4FF');
+  drawLine(usmanPPM, '#FF2D3F');
+
+  // Acts annotation
+  const acts = [
+    { x1:0, x2:1, label:'ACT I · COV DOMINANCE', color:'#2DB4FF' },
+    { x1:2, x2:2.2, label:'ACT II · COLLAPSE', color:'#FFB020' },
+    { x1:3, x2:4, label:'ACT III · FINISH', color:'#FF2D3F' }
+  ];
+  acts.forEach(a => {
+    const x1 = M.l + (a.x1/4) * pw;
+    const x2 = M.l + (a.x2/4) * pw;
+    el('line', { x1:x1, y1:H-M.b+35, x2:x2, y2:H-M.b+35, stroke:a.color, 'stroke-width':1 }, svg);
+    el('text', { x:(x1+x2)/2, y:H-M.b+48, 'text-anchor':'middle', 'font-size':9, fill:a.color, 'letter-spacing':'.1em' }, svg).textContent = a.label;
+  });
+}
+
+/* -----------------------------------------------------------
+   DOT NAV SCROLL SPY
+----------------------------------------------------------- */
+function setupNav(){
+  const dots = document.querySelectorAll('.dot-nav a');
+  const sections = Array.from(dots).map(d => document.querySelector(d.getAttribute('href')));
+
+  const obs = new IntersectionObserver((entries) => {
+    entries.forEach(e => {
+      if (e.isIntersecting){
+        const idx = sections.indexOf(e.target);
+        if (idx >= 0){
+          dots.forEach(d => d.classList.remove('active'));
+          dots[idx].classList.add('active');
+        }
+      }
+    });
+  }, { threshold: 0.4 });
+  sections.forEach(s => s && obs.observe(s));
+}
+
+/* -----------------------------------------------------------
+   TC TICKER
+----------------------------------------------------------- */
+function startTicker(){
+  const tc = document.getElementById('tc');
+  const t0 = performance.now();
+  function tick(){
+    const s = (performance.now() - t0) / 1000;
+    const m = Math.floor(s / 60);
+    const ss = Math.floor(s % 60);
+    const cs = Math.floor((s * 100) % 100);
+    tc.textContent = `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
+    requestAnimationFrame(tick);
+  }
+  tick();
+}
+
+/* -----------------------------------------------------------
+   INIT
+----------------------------------------------------------- */
+renderRoundsChart();
+renderRoundCards();
+renderAccuracyChart();
+renderPositionChart();
+renderTimelineChart();
+renderGaugeChart();
+renderPaceChart();
+setupNav();
+startTicker();
+document.getElementById('renderTime').textContent = Math.round(performance.now() - __t0);
+})();
+</script>
+</body>
+</html>
