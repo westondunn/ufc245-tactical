@@ -4595,37 +4595,39 @@ function renderLying(parts, p, dir){
   const s = REC_SCALE;
   const D = dir;
   const gy = REC_GROUND_Y;
+
+  // Body slightly elevated (propped on back, not flat)
   const pelvisX = p.x;
-  const pelvisY = gy - 10 * s;
-  const chestX  = p.x + D * 80 * s;
-  const chestY  = gy - 18 * s;
-  const shLeadX = chestX + D * 15 * s;
-  const shLeadY = chestY + 4 * s;
-  const shRearX = chestX - D * 18 * s;
-  const shRearY = chestY - 4 * s;
-  const headCX  = chestX + D * 48 * s;
-  const headCY  = chestY - 4 * s;
+  const pelvisY = gy - 22 * s;   // raised higher for visibility
+  const chestX  = p.x + D * 70 * s;
+  const chestY  = gy - 40 * s;   // torso propped up (turtle/shell guard)
+  const shLeadX = chestX + D * 14 * s;
+  const shLeadY = chestY + 2 * s;
+  const shRearX = chestX - D * 16 * s;
+  const shRearY = chestY - 6 * s;
+  const headCX  = chestX + D * 38 * s;
+  const headCY  = chestY - 10 * s;
   const hr      = 16 * s;
 
-  // Legs curled beneath / beside body
-  const leadKneeX = pelvisX - D * 28 * s;
-  const leadKneeY = gy - 8 * s;
-  const leadFootX = pelvisX - D * 58 * s;
-  const leadFootY = gy;
-  const rearKneeX = pelvisX - D * 42 * s;
-  const rearKneeY = gy;
-  const rearFootX = pelvisX - D * 78 * s;
-  const rearFootY = gy;
+  // Legs bent / defensive — knees up, feet on ground
+  const leadKneeX = pelvisX - D * 20 * s;
+  const leadKneeY = gy - 40 * s;  // knee raised (guard position)
+  const leadFootX = pelvisX - D * 45 * s;
+  const leadFootY = gy - 5 * s;
+  const rearKneeX = pelvisX - D * 38 * s;
+  const rearKneeY = gy - 30 * s;
+  const rearFootX = pelvisX - D * 65 * s;
+  const rearFootY = gy - 5 * s;
 
   // Arms: one guarding face, one bracing
-  const elbowLeadX = shLeadX + D * 22 * s;
-  const elbowLeadY = shLeadY + 6 * s;
-  const fistLeadX  = shLeadX + D * 48 * s;
-  const fistLeadY  = shLeadY + 2 * s;
-  const elbowRearX = shRearX + D * 2 * s;
-  const elbowRearY = shRearY - 16 * s;
-  const fistRearX  = shRearX + D * 12 * s;
-  const fistRearY  = shRearY - 28 * s;
+  const elbowLeadX = shLeadX + D * 18 * s;
+  const elbowLeadY = shLeadY - 10 * s;  // arm up guarding
+  const fistLeadX  = shLeadX + D * 6 * s;
+  const fistLeadY  = shLeadY - 30 * s;  // fist near face (shell)
+  const elbowRearX = shRearX + D * 4 * s;
+  const elbowRearY = shRearY - 18 * s;
+  const fistRearX  = shRearX + D * 14 * s;
+  const fistRearY  = shRearY - 34 * s;  // other fist also guarding
 
   setLineAttr(parts.rearShin, rearFootX, rearFootY, rearKneeX, rearKneeY);
   setLineAttr(parts.rearThigh, rearKneeX, rearKneeY, pelvisX, pelvisY);
@@ -4802,8 +4804,8 @@ function spawnHitFlash(ev){
   }
 
   // 3D effects
-  const evX3d = (ev.x - 550) * 0.015;
-  const evY3d = (REC_GROUND_Y - ev.y) * 0.015;
+  const evX3d = (ev.x - 550) * 0.01;
+  const evY3d = Math.max((REC_GROUND_Y - ev.y) * 0.01 + 0.06, 0.06);
   spawn3DParticles(evX3d, evY3d, parseInt(ev.color.replace('#',''), 16), ev.big ? 18 : 8);
   trigger3DShake(ev.big ? 1.2 : 0.4);
 }
@@ -5042,9 +5044,9 @@ function init3DScene(){
   scene.background = new THREE.Color(0x04050a);
   scene.fog = new THREE.FogExp2(0x04050a, 0.025);
 
-  const camera = new THREE.PerspectiveCamera(38, W/H, 0.1, 100);
-  camera.position.set(0, 2.4, 10.5);
-  camera.lookAt(0, 1.6, 0);
+  const camera = new THREE.PerspectiveCamera(50, W/H, 0.1, 100);
+  camera.position.set(0, 1.6, 12);
+  camera.lookAt(0, 1.0, 0);
 
   const renderer = new THREE.WebGLRenderer({ canvas, antialias: true });
   renderer.setSize(W, H);
@@ -5077,21 +5079,23 @@ function init3DScene(){
 
   // Ground
   const gMat = new THREE.MeshStandardMaterial({ color: 0x080a12, roughness: 0.92, metalness: 0.05 });
-  const ground = new THREE.Mesh(new THREE.PlaneGeometry(24, 14), gMat);
-  ground.rotation.x = -Math.PI/2; ground.receiveShadow = true;
+  const ground = new THREE.Mesh(new THREE.PlaneGeometry(16, 10), gMat);
+  ground.rotation.x = -Math.PI/2; ground.position.y = -0.08; ground.receiveShadow = true;
   scene.add(ground);
-  scene.add(new THREE.GridHelper(24, 48, 0x151b28, 0x0a0e1a));
+  const grid = new THREE.GridHelper(16, 32, 0x151b28, 0x0a0e1a);
+  grid.position.y = -0.07;
+  scene.add(grid);
 
   // Cage posts + fence hint
   const postMat = new THREE.MeshStandardMaterial({ color: 0x2a3045, metalness: 0.3, roughness: 0.7 });
-  [-7, 7].forEach(x => {
-    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.06, 0.06, 4.5, 8), postMat);
-    post.position.set(x, 2.25, 0); post.castShadow = true;
+  [-4.5, 4.5].forEach(x => {
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 3.5, 8), postMat);
+    post.position.set(x, 1.75, 0); post.castShadow = true;
     scene.add(post);
     // Fence horizontal wires
-    for (let h = 0.4; h < 4.2; h += 0.6){
+    for (let h = 0.3; h < 3.2; h += 0.5){
       const wireMat = new THREE.LineBasicMaterial({ color: 0x12182a, transparent: true, opacity: 0.4 });
-      const pts = [new THREE.Vector3(x, h, -2), new THREE.Vector3(x, h, 2)];
+      const pts = [new THREE.Vector3(x, h, -1.5), new THREE.Vector3(x, h, 1.5)];
       scene.add(new THREE.Line(new THREE.BufferGeometry().setFromPoints(pts), wireMat));
     }
   });
@@ -5130,7 +5134,7 @@ function init3DScene(){
     redF: createFighter(0xff2d3f), blueF: createFighter(0x2db4ff),
     redPt, bluePt,
     particles: [], shakeAmt: 0,
-    baseCamPos: camera.position.clone(), baseCamLook: new THREE.Vector3(0, 1.6, 0),
+    baseCamPos: camera.position.clone(), baseCamLook: new THREE.Vector3(0, 1.0, 0),
     ready: true
   });
 
@@ -5165,26 +5169,34 @@ function posLimb3D(mesh, ax,ay,az, bx,by,bz){
 
 // Read SVG joints → place 3D meshes
 function update3DFighter(prefix, meshes, dir){
-  const S = 0.015;
+  const S = 0.01;
   const CX = 550;
-  const zLead = dir * 0.18;  // lead limbs closer to camera
-  const zRear = dir * -0.15; // rear limbs further
+  const GY_OFFSET = 0.06; // lift everything slightly above ground plane
+  const zLead = dir * 0.22;  // lead limbs closer to camera
+  const zRear = dir * -0.18; // rear limbs further
 
   function sv(id, a){ const e = document.getElementById(id); return e ? parseFloat(e.getAttribute(a))||0 : 0; }
   function toX(svgX){ return (svgX - CX) * S; }
-  function toY(svgY){ return (REC_GROUND_Y - svgY) * S; }
+  function toY(svgY){ return Math.max((REC_GROUND_Y - svgY) * S + GY_OFFSET, GY_OFFSET); }
+
+  // Detect lying state: if hip (torso y1) is very close to ground
+  const hipSvgY = sv(prefix + '-torso', 'y1');
+  const isLying = (REC_GROUND_Y - hipSvgY) < 30;
+
+  // When lying, spread z more for visibility from audience angle
+  const zSpread = isLying ? 1.8 : 1.0;
 
   const limbMap = {
-    rearShin:  { z1: zRear, z2: zRear },
-    rearThigh: { z1: zRear, z2: 0 },
-    leadShin:  { z1: zLead, z2: zLead },
-    leadThigh: { z1: zLead, z2: 0 },
+    rearShin:  { z1: zRear * zSpread, z2: zRear * zSpread },
+    rearThigh: { z1: zRear * zSpread, z2: 0 },
+    leadShin:  { z1: zLead * zSpread, z2: zLead * zSpread },
+    leadThigh: { z1: zLead * zSpread, z2: 0 },
     torso:     { z1: 0, z2: 0 },
-    shoulders: { z1: zLead, z2: zRear },
-    rearUpper: { z1: zRear, z2: zRear },
-    rearFore:  { z1: zRear, z2: zRear },
-    leadUpper: { z1: zLead, z2: zLead },
-    leadFore:  { z1: zLead, z2: zLead },
+    shoulders: { z1: zLead * zSpread * 0.5, z2: zRear * zSpread * 0.5 },
+    rearUpper: { z1: zRear * zSpread * 0.8, z2: zRear * zSpread * 0.8 },
+    rearFore:  { z1: zRear * zSpread * 0.8, z2: zRear * zSpread * 0.8 },
+    leadUpper: { z1: zLead * zSpread * 0.8, z2: zLead * zSpread * 0.8 },
+    leadFore:  { z1: zLead * zSpread * 0.8, z2: zLead * zSpread * 0.8 },
     neck:      { z1: 0, z2: 0 }
   };
 
@@ -5200,14 +5212,14 @@ function update3DFighter(prefix, meshes, dir){
   const setJ = (m, id, a1, a2, z) => m.position.set(toX(sv(id,a1)), toY(sv(id,a2)), z||0);
   setJ(meshes.hip, prefix+'-torso', 'x1','y1', 0);
   setJ(meshes.chest, prefix+'-torso', 'x2','y2', 0);
-  setJ(meshes.rearKnee, prefix+'-rearShin', 'x2','y2', zRear);
-  setJ(meshes.leadKnee, prefix+'-leadShin', 'x2','y2', zLead);
-  setJ(meshes.shLead, prefix+'-leadUpper', 'x1','y1', zLead);
-  setJ(meshes.shRear, prefix+'-rearUpper', 'x1','y1', zRear);
-  setJ(meshes.elbowLead, prefix+'-leadFore', 'x1','y1', zLead);
-  setJ(meshes.elbowRear, prefix+'-rearFore', 'x1','y1', zRear);
-  setJ(meshes.fistLead, prefix+'-leadFore', 'x2','y2', zLead * 1.2);
-  setJ(meshes.fistRear, prefix+'-rearFore', 'x2','y2', zRear * 1.2);
+  setJ(meshes.rearKnee, prefix+'-rearShin', 'x2','y2', zRear * zSpread);
+  setJ(meshes.leadKnee, prefix+'-leadShin', 'x2','y2', zLead * zSpread);
+  setJ(meshes.shLead, prefix+'-leadUpper', 'x1','y1', zLead * zSpread * 0.8);
+  setJ(meshes.shRear, prefix+'-rearUpper', 'x1','y1', zRear * zSpread * 0.8);
+  setJ(meshes.elbowLead, prefix+'-leadFore', 'x1','y1', zLead * zSpread * 0.8);
+  setJ(meshes.elbowRear, prefix+'-rearFore', 'x1','y1', zRear * zSpread * 0.8);
+  setJ(meshes.fistLead, prefix+'-leadFore', 'x2','y2', zLead * zSpread);
+  setJ(meshes.fistRear, prefix+'-rearFore', 'x2','y2', zRear * zSpread);
 
   // Head
   const hx = sv(prefix+'-head','cx'), hy = sv(prefix+'-head','cy');
