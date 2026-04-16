@@ -269,6 +269,19 @@ body::after{
 .add-compare-btn:hover{background:rgba(45,220,255,.1)}
 
 /* =============================================================
+   OFFICIAL SOURCE ATTRIBUTION BADGES
+============================================================= */
+.badge-judge,.badge-ref,.badge-nsac{
+  display:inline-block;
+  font-family:var(--f-mono);font-size:8px;letter-spacing:.15em;
+  text-transform:uppercase;padding:2px 6px;margin-left:6px;
+  vertical-align:middle;
+}
+.badge-judge{border:1px solid var(--amber);color:var(--amber)}
+.badge-ref{border:1px solid var(--cyan);color:var(--cyan)}
+.badge-nsac{border:1px solid var(--green);color:var(--green)}
+
+/* =============================================================
    DOT NAV
 ============================================================= */
 .dot-nav{
@@ -2027,7 +2040,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
   <div class="section-head">
     <div class="section-tag">Section 02</div>
     <h2 class="section-title">Result & Scorecards</h2>
-    <div class="section-sub">Method · Time · Official judges' scoring at time of stoppage</div>
+    <div class="section-sub">Method · Time · Official judges' scoring at time of stoppage <span class="badge-judge">NSAC Judges</span> <span class="badge-ref">Referee</span></div>
   </div>
 
   <div class="result-grid">
@@ -2037,7 +2050,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
       <dl>
         <div class="result-line"><dt>Winner</dt><dd style="color:var(--red)">Kamaru Usman</dd></div>
         <div class="result-line"><dt>Method</dt><dd>Punches (2 KDs → GNP)</dd></div>
-        <div class="result-line"><dt>Referee</dt><dd>Marc Goddard</dd></div>
+        <div class="result-line"><dt>Referee</dt><dd>Marc Goddard <span class="badge-ref">REF</span></dd></div>
         <div class="result-line"><dt>Duration</dt><dd>24:10 of 25:00</dd></div>
         <div class="result-line"><dt>Title</dt><dd>UFC Welterweight Championship</dd></div>
         <div class="result-line"><dt>Bonus</dt><dd style="color:var(--amber)">Fight of the Night ($50K)</dd></div>
@@ -2090,7 +2103,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
         </tbody>
       </table>
       <div style="margin-top:14px;font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.08em;line-height:1.55">
-        <span style="color:var(--amber)">→</span> Entering R5: <strong style="color:var(--fg)">1 judge U · 1 judge ÷ · 1 judge C</strong>. Without the R5 TKO, this fight decides on a split decision. The finish — with &lt;50s remaining — settles everything.
+        <span style="color:var(--amber)">→</span> Entering R5: <strong style="color:var(--fg)">D'Amato 39-37 Covington · Colon 38-38 · Cleary 39-37 Usman</strong> <span style="font-size:10px;color:var(--muted)">(NSAC official scorecards)</span>
       </div>
     </div>
   </div>
@@ -2686,7 +2699,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
   <div class="section-head">
     <div class="section-tag">Section 10</div>
     <h2 class="section-title">Biomechanics · Force Analysis</h2>
-    <div class="section-sub">Estimated punch forces vs. published mandible fracture threshold · Covington sustained a non-displaced midline mandible fracture</div>
+    <div class="section-sub">Estimated punch forces vs. published mandible fracture threshold · Covington sustained a non-displaced midline mandible fracture <span class="badge-nsac">NSAC Medical</span></div>
   </div>
 
   <div class="chain-panel">
@@ -2777,11 +2790,11 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
         <text x="920" y="260" font-family="Barlow Condensed" font-size="14" font-weight="600" fill="#2DDCFF" letter-spacing="0.18em">FIGHT CONTEXT</text>
         <text x="920" y="285" class="value" fill="#E8ECF5">Round 3 · approx 14:50 elapsed</text>
         <text x="920" y="302" class="value">Usman's accuracy this rd: 58%</text>
-        <text x="920" y="319" class="value">Cov accuracy plummets: 42% → 15%</text>
-        <text x="920" y="336" class="value">Cov output drops: 97 → 51 attempts</text>
-        <text x="920" y="353" class="value" fill="#FFB020">Between rds · "I think I broke my jaw"</text>
-        <text x="920" y="370" class="value">Cov fights 9+ min with fractured jaw</text>
-        <text x="920" y="395" class="value" fill="#7CFFC8">R5 4:10 · 2 KDs on same mandible</text>
+        <text x="920" y="319" class="value">Covington accuracy: 42% → 15%</text>
+        <text x="920" y="336" class="value">Covington output: 97 → 51 attempts</text>
+        <text x="920" y="353" class="value" fill="#FFB020">Between rounds · Covington jaw injury apparent</text>
+        <text x="920" y="370" class="value">Covington continues 9+ min with fractured jaw</text>
+        <text x="920" y="395" class="value" fill="#7CFFC8">R5 4:10 · TKO · Ref Goddard stoppage</text>
       </g>
 
       <!-- Left-side stance notes -->
@@ -3056,7 +3069,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
   <div class="chart-panel">
     <div class="panel-head">
       <div class="panel-title">Strikes Attempted Per Minute</div>
-      <div class="panel-meta">Volume trend · The broken-jaw tax</div>
+      <div class="panel-meta">Volume trend by round</div>
     </div>
     <svg id="paceChart" class="chart-svg" viewBox="0 0 1200 400" preserveAspectRatio="xMidYMid meet"></svg>
     <div class="chart-legend">
@@ -3074,7 +3087,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
   <div class="section-head">
     <div class="section-tag">Section 12</div>
     <h2 class="section-title">Aftermath · Damage & Medicals</h2>
-    <div class="section-sub">Injuries sustained · NSAC medical suspensions · The biomechanical evidence</div>
+    <div class="section-sub">Injuries sustained · NSAC medical suspensions <span class="badge-nsac">NSAC</span></div>
   </div>
 
   <div class="aftermath-grid">
@@ -3083,7 +3096,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
       <ul class="damage-list">
         <li><strong>Left thumb injury.</strong> Likely from right-hand impact in R5 finishing sequence. Required X-ray clearance.</li>
         <li><strong>Eye poke absorbed (R3 14:15).</strong> Covington's fingers extended during a kick-jab combination. Cleared by Octagonside physician.</li>
-        <li><strong>Brief wobble absorbed in R4.</strong> Covington's three-punch combination staggered legs; no knockdown.</li>
+        <li><strong>Brief wobble absorbed in R4.</strong> Covington lands three-punch combination; Usman hurt, no knockdown.</li>
         <li><strong>Facial blood.</strong> Cuts minor. No stitches documented.</li>
         <li><strong>Medical suspension:</strong> 180 days or until thumb X-ray cleared. Minimum 30 days no contact.</li>
       </ul>
@@ -3093,7 +3106,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
       <div class="damage-card__fighter">Colby Covington</div>
       <ul class="damage-list">
         <li><strong>Non-displaced midline mandible fracture.</strong> Confirmed by UFC medical staff and NSAC. Most likely caused by Usman's right cross in the final 1–2 min of R3. Dana White confirmed at post-fight presser.</li>
-        <li><strong>Corner audio captured:</strong> "I think I broke my jaw." Broadcast live on ESPN between R3 and R4.</li>
+        <li><strong>Corner audio captured:</strong> Covington jaw fracture apparent between R3 and R4. Confirmed by post-fight NSAC medical report.</li>
         <li><strong>Two knockdowns in R5.</strong> Both from Usman's right hand to the (already fractured) jaw.</li>
         <li><strong>14 ground strikes absorbed</strong> in 11 seconds before TKO stoppage.</li>
         <li><strong>Hospital transport post-fight.</strong> Full facial evaluation. Bloodied, swollen face.</li>
@@ -3153,7 +3166,7 @@ const DATA = {
         { t:'0:10', text:"Usman slips to the canvas after a kick exchange · recovers before Covington can capitalize.", cat:'neutral' },
         { t:'1:30', text:"Covington lands a hard knee in a combination exchange.", cat:'blue' },
         { t:'2:30', text:"Covington lands a huge left hand that briefly buzzes Usman. Biggest strike of the round.", cat:'blue' },
-        { t:'3:30', text:"Usman begins targeting the body · nasty body shot Covington visibly feels. Straight + uppercut follow.", cat:'red' }
+        { t:'3:30', text:"Usman lands body shot. Straight and uppercut follow.", cat:'red' }
       ]
     },
     {
@@ -3162,7 +3175,7 @@ const DATA = {
       covington: { sig:[41,97], head:[32,88], body:[8,8], leg:[1,1], dist:[41,97], clinch:[0,0], ground:[0,0], kd:0 },
       winner: '÷',
       judges: ['U','C','C'],
-      summary: "Split round · Cleary sees Usman · Colon & D'Amato see Covington. Usman's jab bloodies Covington's nose.",
+      summary: "Split round · Cleary 10-9 Usman · Colon 10-9 Covington · D'Amato 10-9 Covington",
       events: [
         { t:'5:00', text:"Usman opens with a head kick. Jabs cause damage around Covington's right eye.", cat:'red' },
         { t:'6:30', text:"Covington's overhand left and right hook appear to buzz Usman. Usman responds with a straight right.", cat:'blue' },
@@ -3182,7 +3195,7 @@ const DATA = {
         { t:'13:00', text:"Usman lands 1-2, right cross, left hook. Covington momentarily rallies with head kick + straight left.", cat:'red' },
         { t:'14:15', text:"⚠ Eye poke by Covington during kick-jab combo. Goddard stops action · Octagonside physician clears Usman.", cat:'foul' },
         { t:'14:50', text:"💥 Usman cracks Covington with a massive right cross to close the round · almost certainly the jaw-breaking punch.", cat:'critical' },
-        { t:'R3/R4 corner', text:'🎙 Broadcast captures Covington: "I think I broke my jaw." Aired live on ESPN.', cat:'critical' }
+        { t:'R3/R4 corner', text:'Covington jaw fracture apparent between rounds. Confirmed by NSAC medical suspension.', cat:'critical' }
       ]
     },
     {
@@ -3195,7 +3208,7 @@ const DATA = {
       events: [
         { t:'15:30', text:"Tentative opening — both cautious after intense R3.", cat:'neutral' },
         { t:'16:30', text:"Covington lands uppercuts. Usman digs body shots. Trading rights in center.", cat:'neutral' },
-        { t:'18:00', text:"Covington's left staggers Usman briefly. 3-punch combo nearly buckles Usman's legs — he walks forward with a body kick.", cat:'blue' },
+        { t:'18:00', text:"Covington lands left hand, Usman hurt. 3-punch combination lands. Usman answers with body kick.", cat:'blue' },
         { t:'19:15', text:"Covington throws Superman punch → Usman catches him with a knee. Both fighters laugh and trash-talk mid-round.", cat:'neutral' },
         { t:'19:30', text:"They trade heavy blows to close the round.", cat:'neutral' }
       ]
@@ -3212,7 +3225,7 @@ const DATA = {
         { t:'22:30', text:"Usman begins pushing back. Hard 3-2 combination near fence.", cat:'red' },
         { t:'3:30 R5', text:"💥 FIRST KNOCKDOWN. Usman fakes 2-3, adjusts, lands devastating right hand. Covington rolls out, pops up.", cat:'critical' },
         { t:'3:45 R5', text:"💥 SECOND KNOCKDOWN. Second right straight sends Covington crashing. \"Right into the jaw.\"", cat:'critical' },
-        { t:'4:10 R5', text:"🏁 TKO. Covington desperate TD attempt · Usman sprawls · 14 of 15 hammerfists in 11s · Goddard dives in.", cat:'critical' }
+        { t:'4:10 R5', text:"🏁 TKO. Covington takedown attempt · Usman defends · ground strikes · Ref Goddard stops fight.", cat:'critical' }
       ]
     }
   ],
@@ -3543,11 +3556,11 @@ function renderTimelineChart(){
     { sec: 855, round:3, label:'Eye Poke', text:'Covington\'s fingers in Usman\'s eye · physician check', color:'#8A5EF5', cat:'foul' },
     { sec: 890, round:3, label:'💥 Jaw Break', text:'Massive right cross · likely mandible fracture point', color:'#FFB020', cat:'critical', major:true },
     { sec: 900, round:3, label:'🎙 "I broke my jaw"', text:'Corner audio captured between R3 & R4', color:'#FFB020', cat:'critical', major:true },
-    { sec: 1080, round:4, label:'Cov stagger combo', text:'3-punch combination nearly buckles Usman', color:'#2DB4FF', cat:'blue' },
+    { sec: 1080, round:4, label:'Cov combination', text:'Covington lands 3-punch combination · Usman hurt', color:'#2DB4FF', cat:'blue' },
     { sec: 1155, round:4, label:'Superman / Knee', text:'Cov Superman punch → Usman knee · fighters laugh', color:'#7A8394', cat:'neutral' },
     { sec: 1410, round:5, label:'💥 KD #1', text:'First knockdown · right hand after 2-3 fake', color:'#FF2D3F', cat:'critical', major:true },
-    { sec: 1425, round:5, label:'💥 KD #2', text:'Second knockdown · "right into the jaw"', color:'#FF2D3F', cat:'critical', major:true },
-    { sec: 1450, round:5, label:'🏁 TKO 4:10', text:'14 of 15 hammerfists in 11s · Goddard stops it', color:'#FFFFFF', cat:'critical', major:true }
+    { sec: 1425, round:5, label:'💥 KD #2', text:'Second knockdown · Usman right hand', color:'#FF2D3F', cat:'critical', major:true },
+    { sec: 1450, round:5, label:'TKO · REF STOPPAGE', text:'14 of 15 hammerfists in 11s · Goddard stops it', color:'#FFFFFF', cat:'critical', major:true }
   ];
 
   // Round backgrounds
@@ -4050,7 +4063,7 @@ function applyOctPhase(idx, isUserClick = false){
   const gnd = document.getElementById('gndStrikes');
   if (gnd) gnd.classList.toggle('on', p.groundStrikes);
 
-  // Event flashes (stagger them within the phase)
+  // Event flashes (space them within the phase)
   ['evtJaw', 'evtKd1', 'evtKd2', 'evtTko'].forEach(id => {
     const evEl = document.getElementById(id);
     if (evEl) evEl.classList.remove('flash');
@@ -4362,77 +4375,77 @@ const FIGHT_KEYFRAMES = [
   // ROUND 1 · 0–20s
   // New params: lk=lead kick, rk=rear kick, ky=kick height(0 calf→1 head), cl=clinch, cr=crouch
   { t: 0.0,  r:{x:420,le:.2,re:.3,ln:0,ws:0,hox:0,dn:0},                                b:{x:680,le:.2,re:.3,ln:0,ws:0,hox:0,dn:0},                                cap:'R1 · Opening · Center control',                           rd:1, tc:'0:00' },
-  { t: 1.5,  r:{x:425,le:.3,re:.2,ln:.03,ws:.05,hox:0,dn:0,lk:.15,ky:.1},               b:{x:675,le:.3,re:.3,ln:.03,ws:-.05,hox:0,dn:0},                             cap:'Usman · calf kick feint',                                  rd:1, tc:'0:15' },
-  { t: 3.0,  r:{x:432,le:.3,re:.3,ln:.05,ws:.05,hox:0,dn:0},                             b:{x:672,le:.15,re:.15,ln:.02,ws:-.05,hox:0,dn:0,rk:.7,ky:.15},             cap:'Cov · inside leg kick',                                     rd:1, tc:'0:40', ev:{color:'#2DB4FF', x:548, y:310, label:'LEG KICK'} },
-  { t: 4.5,  r:{x:440,le:.85,re:.2,ln:.1,ws:.2,hox:0,dn:0},                              b:{x:680,le:.1,re:.3,ln:-.08,ws:-.15,hox:-6,dn:0},                           cap:'Usman · lead jab · Cov slips',                             rd:1, tc:'1:00', ev:{color:'#FF2D3F', x:570, y:200, label:'JAB'} },
-  { t: 6.5,  r:{x:450,le:.2,re:.2,ln:-.08,ws:-.2,hox:8,dn:0},                            b:{x:680,le:.8,re:.1,ln:.1,ws:.25,hox:0,dn:0},                               cap:'Cov · return jab',                                          rd:1, tc:'1:30' },
-  { t: 8.0,  r:{x:470,le:.15,re:.1,ln:-.3,ws:-.5,hox:16,dn:0},                           b:{x:660,le:.2,re:.95,ln:.25,ws:.55,hox:0,dn:0},                             cap:'💥 Cov · BIG LEFT · Usman staggered',                        rd:1, tc:'2:30', ev:{color:'#2DB4FF', x:570, y:180, label:'💥 BIG LEFT', big:true} },
-  { t: 9.5,  r:{x:465,le:.15,re:.15,ln:.1,ws:-.1,hox:6,dn:0,cl:.7},                      b:{x:665,le:.15,re:.15,ln:.05,ws:.1,hox:0,dn:0,cl:.7},                       cap:'Usman · clinch tie-up · recovers composure',               rd:1, tc:'2:45' },
-  { t:11.0,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:4,dn:0},                               b:{x:670,le:.2,re:.3,ln:.05,ws:.1,hox:0,dn:0},                               cap:'Break · reset center',                                      rd:1, tc:'3:00' },
-  { t:12.5,  r:{x:460,le:.2,re:.88,ln:.2,ws:.45,hox:0,dn:0},                             b:{x:660,le:.2,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},                            cap:'Usman · body shot · Cov visibly feels it',                 rd:1, tc:'3:30', ev:{color:'#FFB020', x:600, y:250, label:'BODY'} },
-  { t:14.0,  r:{x:455,le:.15,re:.15,ln:.08,ws:.15,hox:0,dn:0,rk:.85,ky:.45},             b:{x:665,le:.3,re:.3,ln:-.1,ws:-.12,hox:0,dn:0},                             cap:'Usman · body kick right side',                              rd:1, tc:'3:45', ev:{color:'#FF2D3F', x:590, y:260, label:'BODY KICK'} },
-  { t:15.5,  r:{x:450,le:.4,re:.4,ln:.1,ws:.1,hox:0,dn:0},                               b:{x:660,le:.4,re:.4,ln:.05,ws:0,hox:0,dn:0},                                cap:'Trading in center · both landing',                         rd:1, tc:'4:00' },
-  { t:17.0,  r:{x:445,le:.2,re:.3,ln:.05,ws:0,hox:0,dn:0},                               b:{x:668,le:.15,re:.15,ln:.05,ws:.05,hox:0,dn:0,rk:.6,ky:.1},               cap:'Cov · outside leg kick',                                    rd:1, tc:'4:30', ev:{color:'#2DB4FF', x:555, y:315, label:'LEG KICK'} },
-  { t:18.5,  r:{x:435,le:.2,re:.2,ln:0,ws:0,hox:0,dn:0},                                 b:{x:680,le:.2,re:.2,ln:0,ws:0,hox:0,dn:0},                                  cap:'R1 · Covington 3-0 on the cards',                          rd:1, tc:'5:00' },
+  { t: 1.5,  r:{x:425,le:.3,re:.2,ln:.03,ws:.05,hox:0,dn:0,lk:.15,ky:.1},               b:{x:675,le:.3,re:.3,ln:.03,ws:-.05,hox:0,dn:0},                             cap:'Usman feints calf kick',                                  rd:1, tc:'0:15' },
+  { t: 3.0,  r:{x:432,le:.3,re:.3,ln:.05,ws:.05,hox:0,dn:0},                             b:{x:672,le:.15,re:.15,ln:.02,ws:-.05,hox:0,dn:0,rk:.7,ky:.15},             cap:'Covington inside leg kick',                                     rd:1, tc:'0:40', ev:{color:'#2DB4FF', x:548, y:310, label:'LEG KICK'} },
+  { t: 4.5,  r:{x:440,le:.85,re:.2,ln:.1,ws:.2,hox:0,dn:0},                              b:{x:680,le:.1,re:.3,ln:-.08,ws:-.15,hox:-6,dn:0},                           cap:'Usman jab · Covington slips',                             rd:1, tc:'1:00', ev:{color:'#FF2D3F', x:570, y:200, label:'JAB'} },
+  { t: 6.5,  r:{x:450,le:.2,re:.2,ln:-.08,ws:-.2,hox:8,dn:0},                            b:{x:680,le:.8,re:.1,ln:.1,ws:.25,hox:0,dn:0},                               cap:'Covington jab',                                          rd:1, tc:'1:30' },
+  { t: 8.0,  r:{x:470,le:.15,re:.1,ln:-.3,ws:-.5,hox:16,dn:0},                           b:{x:660,le:.2,re:.95,ln:.25,ws:.55,hox:0,dn:0},                             cap:'Covington lands left hand · Usman hurt',                        rd:1, tc:'2:30', ev:{color:'#2DB4FF', x:570, y:180, label:'LEFT HAND', big:true} },
+  { t: 9.5,  r:{x:465,le:.15,re:.15,ln:.1,ws:-.1,hox:6,dn:0,cl:.7},                      b:{x:665,le:.15,re:.15,ln:.05,ws:.1,hox:0,dn:0,cl:.7},                       cap:'Clinch',               rd:1, tc:'2:45' },
+  { t:11.0,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:4,dn:0},                               b:{x:670,le:.2,re:.3,ln:.05,ws:.1,hox:0,dn:0},                               cap:'Break · fighters reset',                                      rd:1, tc:'3:00' },
+  { t:12.5,  r:{x:460,le:.2,re:.88,ln:.2,ws:.45,hox:0,dn:0},                             b:{x:660,le:.2,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},                            cap:'Usman lands body shot',                 rd:1, tc:'3:30', ev:{color:'#FFB020', x:600, y:250, label:'BODY'} },
+  { t:14.0,  r:{x:455,le:.15,re:.15,ln:.08,ws:.15,hox:0,dn:0,rk:.85,ky:.45},             b:{x:665,le:.3,re:.3,ln:-.1,ws:-.12,hox:0,dn:0},                             cap:'Usman lands body kick',                              rd:1, tc:'3:45', ev:{color:'#FF2D3F', x:590, y:260, label:'BODY KICK'} },
+  { t:15.5,  r:{x:450,le:.4,re:.4,ln:.1,ws:.1,hox:0,dn:0},                               b:{x:660,le:.4,re:.4,ln:.05,ws:0,hox:0,dn:0},                                cap:'Striking exchange',                         rd:1, tc:'4:00' },
+  { t:17.0,  r:{x:445,le:.2,re:.3,ln:.05,ws:0,hox:0,dn:0},                               b:{x:668,le:.15,re:.15,ln:.05,ws:.05,hox:0,dn:0,rk:.6,ky:.1},               cap:'Covington outside leg kick',                                    rd:1, tc:'4:30', ev:{color:'#2DB4FF', x:555, y:315, label:'LEG KICK'} },
+  { t:18.5,  r:{x:435,le:.2,re:.2,ln:0,ws:0,hox:0,dn:0},                                 b:{x:680,le:.2,re:.2,ln:0,ws:0,hox:0,dn:0},                                  cap:'R1 ends · Judges: 10-9 Covington (all three cards)',                          rd:1, tc:'5:00' },
 
   // ROUND 2 · 20–40s
-  { t:20.0,  r:{x:440,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                               b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'R2 · both aggressive out of the bell',                     rd:2, tc:'5:00' },
-  { t:21.5,  r:{x:445,le:.15,re:.15,ln:.08,ws:.1,hox:0,dn:0,rk:.9,ky:.5},                b:{x:680,le:.3,re:.25,ln:-.05,ws:-.1,hox:0,dn:0},                            cap:'Usman · body kick · landing consistently',                 rd:2, tc:'5:20', ev:{color:'#FFB020', x:585, y:255, label:'BODY KICK'} },
-  { t:23.0,  r:{x:450,le:.85,re:.2,ln:.1,ws:.2,hox:0,dn:0},                              b:{x:680,le:.2,re:.3,ln:-.08,ws:-.15,hox:-8,dn:0},                           cap:'Usman · jabs · Cov right eye swelling',                    rd:2, tc:'5:30', ev:{color:'#FF2D3F', x:565, y:195, label:'JAB'} },
-  { t:25.0,  r:{x:460,le:.2,re:.2,ln:-.18,ws:-.3,hox:14,dn:0},                           b:{x:670,le:.3,re:.88,ln:.18,ws:.4,hox:0,dn:0},                              cap:'Cov · overhand left lands',                                 rd:2, tc:'6:30', ev:{color:'#2DB4FF', x:570, y:190, label:'OVERHAND'} },
-  { t:26.5,  r:{x:450,le:.2,re:.2,ln:.25,ws:-.1,hox:0,dn:0,cr:.15},                      b:{x:670,le:.15,re:.15,ln:.1,ws:.1,hox:0,dn:0,lk:.5,ky:.0},                  cap:'⚠ Cov · LOW KICK to cup · action halt',                    rd:2, tc:'7:30', ev:{color:'#8A5EF5', x:565, y:305, label:'⚠ LOW BLOW'} },
-  { t:29.0,  r:{x:440,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},                                 b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'Action resumes after delay',                                rd:2, tc:'7:45' },
-  { t:30.5,  r:{x:448,le:.15,re:.15,ln:.12,ws:.18,hox:0,dn:0,lk:.85,ky:.45},             b:{x:670,le:.3,re:.3,ln:-.08,ws:-.12,hox:0,dn:0},                            cap:'Usman · front kick to body · snaps in',                    rd:2, tc:'8:30', ev:{color:'#FFB020', x:578, y:258, label:'FRONT KICK'} },
-  { t:32.0,  r:{x:450,le:.2,re:.82,ln:.18,ws:.4,hox:0,dn:0},                             b:{x:670,le:.2,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},                            cap:'Usman · heavy body shot',                                   rd:2, tc:'9:00', ev:{color:'#FFB020', x:600, y:235, label:'BODY'} },
-  { t:33.5,  r:{x:455,le:.15,re:.15,ln:.05,ws:0,hox:0,dn:0,cl:.6},                       b:{x:665,le:.15,re:.15,ln:.05,ws:0,hox:0,dn:0,cl:.6},                        cap:'Clinch · dirty boxing exchange',                            rd:2, tc:'9:15' },
-  { t:35.0,  r:{x:460,le:.3,re:.3,ln:.1,ws:0,hox:0,dn:0},                                b:{x:660,le:.8,re:.3,ln:.1,ws:.15,hox:0,dn:0},                               cap:'Cov · uppercut fires',                                      rd:2, tc:'9:30' },
-  { t:37.5,  r:{x:460,le:.3,re:.88,ln:.2,ws:.45,hox:0,dn:0},                             b:{x:670,le:.2,re:.2,ln:-.1,ws:-.15,hox:10,dn:0},                            cap:'Usman · closing body shot at bell',                         rd:2, tc:'9:50', ev:{color:'#FFB020', x:600, y:235, label:'BODY'} },
-  { t:39.5,  r:{x:450,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},                                 b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'R2 · split · Cov 2 · Usman 1 · Colon 38-38',              rd:2, tc:'10:00' },
+  { t:20.0,  r:{x:440,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                               b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'R2 begins',                     rd:2, tc:'5:00' },
+  { t:21.5,  r:{x:445,le:.15,re:.15,ln:.08,ws:.1,hox:0,dn:0,rk:.9,ky:.5},                b:{x:680,le:.3,re:.25,ln:-.05,ws:-.1,hox:0,dn:0},                            cap:'Usman lands body kick',                 rd:2, tc:'5:20', ev:{color:'#FFB020', x:585, y:255, label:'BODY KICK'} },
+  { t:23.0,  r:{x:450,le:.85,re:.2,ln:.1,ws:.2,hox:0,dn:0},                              b:{x:680,le:.2,re:.3,ln:-.08,ws:-.15,hox:-8,dn:0},                           cap:'Usman lands jab',                    rd:2, tc:'5:30', ev:{color:'#FF2D3F', x:565, y:195, label:'JAB'} },
+  { t:25.0,  r:{x:460,le:.2,re:.2,ln:-.18,ws:-.3,hox:14,dn:0},                           b:{x:670,le:.3,re:.88,ln:.18,ws:.4,hox:0,dn:0},                              cap:'Covington lands overhand left',                                 rd:2, tc:'6:30', ev:{color:'#2DB4FF', x:570, y:190, label:'OVERHAND'} },
+  { t:26.5,  r:{x:450,le:.2,re:.2,ln:.25,ws:-.1,hox:0,dn:0,cr:.15},                      b:{x:670,le:.15,re:.15,ln:.1,ws:.1,hox:0,dn:0,lk:.5,ky:.0},                  cap:'⚠ Covington low blow · Ref Goddard halts action',                    rd:2, tc:'7:30', ev:{color:'#8A5EF5', x:565, y:305, label:'⚠ LOW BLOW'} },
+  { t:29.0,  r:{x:440,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},                                 b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'Action resumes · Ref Goddard restarts',                                rd:2, tc:'7:45' },
+  { t:30.5,  r:{x:448,le:.15,re:.15,ln:.12,ws:.18,hox:0,dn:0,lk:.85,ky:.45},             b:{x:670,le:.3,re:.3,ln:-.08,ws:-.12,hox:0,dn:0},                            cap:'Usman lands front kick to body',                    rd:2, tc:'8:30', ev:{color:'#FFB020', x:578, y:258, label:'FRONT KICK'} },
+  { t:32.0,  r:{x:450,le:.2,re:.82,ln:.18,ws:.4,hox:0,dn:0},                             b:{x:670,le:.2,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},                            cap:'Usman lands body shot',                                   rd:2, tc:'9:00', ev:{color:'#FFB020', x:600, y:235, label:'BODY'} },
+  { t:33.5,  r:{x:455,le:.15,re:.15,ln:.05,ws:0,hox:0,dn:0,cl:.6},                       b:{x:665,le:.15,re:.15,ln:.05,ws:0,hox:0,dn:0,cl:.6},                        cap:'Clinch',                            rd:2, tc:'9:15' },
+  { t:35.0,  r:{x:460,le:.3,re:.3,ln:.1,ws:0,hox:0,dn:0},                                b:{x:660,le:.8,re:.3,ln:.1,ws:.15,hox:0,dn:0},                               cap:'Covington lands uppercut',                                      rd:2, tc:'9:30' },
+  { t:37.5,  r:{x:460,le:.3,re:.88,ln:.2,ws:.45,hox:0,dn:0},                             b:{x:670,le:.2,re:.2,ln:-.1,ws:-.15,hox:10,dn:0},                            cap:'Usman lands body shot at bell',                         rd:2, tc:'9:50', ev:{color:'#FFB020', x:600, y:235, label:'BODY'} },
+  { t:39.5,  r:{x:450,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},                                 b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'R2 ends · Judges: D\'Amato 20-18 Cov · Colon 19-19 · Cleary 20-18 Usman',              rd:2, tc:'10:00' },
 
   // ROUND 3 · 40–60s · TURNING POINT
-  { t:40.0,  r:{x:460,le:.3,re:.3,ln:.1,ws:.1,hox:0,dn:0},                               b:{x:680,le:.3,re:.3,ln:0,ws:-.05,hox:0,dn:0},                               cap:'R3 · Usman takes center · pressure building',             rd:3, tc:'10:00' },
-  { t:41.5,  r:{x:465,le:.15,re:.15,ln:.1,ws:.15,hox:0,dn:0,rk:.8,ky:.15},               b:{x:680,le:.3,re:.3,ln:-.05,ws:-.08,hox:0,dn:0},                            cap:'Usman · outside calf kick',                                 rd:3, tc:'10:30', ev:{color:'#FF2D3F', x:575, y:315, label:'CALF KICK'} },
-  { t:43.0,  r:{x:470,le:.9,re:.2,ln:.12,ws:.3,hox:0,dn:0},                              b:{x:690,le:.2,re:.3,ln:-.1,ws:-.18,hox:-10,dn:0},                           cap:'Usman · right hand · Cov backing to cage',                rd:3, tc:'11:00', ev:{color:'#FF2D3F', x:580, y:195, label:'RIGHT'} },
-  { t:44.5,  r:{x:478,le:.15,re:.3,ln:.1,ws:.2,hox:0,dn:0,lk:.95,ky:.5},                 b:{x:695,le:.2,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                             cap:'Usman · front kick to body · snaps Cov upright',          rd:3, tc:'12:00', ev:{color:'#FFB020', x:590, y:245, label:'FRONT KICK'} },
-  { t:46.0,  r:{x:475,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},                              b:{x:690,le:.3,re:.4,ln:0,ws:0,hox:0,dn:0},                                  cap:'Trading · Cov firing back but less volume',                rd:3, tc:'13:00' },
-  { t:47.5,  r:{x:470,le:.15,re:.15,ln:.08,ws:.1,hox:0,dn:0,rk:.85,ky:.45},              b:{x:688,le:.3,re:.3,ln:-.08,ws:-.1,hox:0,dn:0},                             cap:'Usman · body kick · Cov folds briefly',                    rd:3, tc:'13:30', ev:{color:'#FFB020', x:585, y:260, label:'BODY KICK'} },
-  { t:49.0,  r:{x:470,le:.3,re:.3,ln:.05,ws:.05,hox:0,dn:0},                             b:{x:685,le:.15,re:.15,ln:.05,ws:.05,hox:0,dn:0,rk:.7,ky:.1},               cap:'Cov · leg kick counter',                                    rd:3, tc:'14:00', ev:{color:'#2DB4FF', x:572, y:312, label:'LEG KICK'} },
-  { t:50.5,  r:{x:470,le:.2,re:.2,ln:-.1,ws:-.15,hox:14,dn:0},                           b:{x:680,le:.8,re:.2,ln:.15,ws:.25,hox:0,dn:0},                              cap:'⚠ Cov · EYE POKE · physician check',                       rd:3, tc:'14:15', ev:{color:'#8A5EF5', x:570, y:175, label:'⚠ EYE POKE'} },
-  { t:52.5,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                               b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'Action resumes · Usman cleared',                            rd:3, tc:'14:30' },
-  { t:54.5,  r:{x:470,le:.3,re:.3,ln:.15,ws:.2,hox:0,dn:0},                              b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'Usman sets up · subtle weight load to rear foot',          rd:3, tc:'14:45' },
-  { t:56.5,  r:{x:480,le:.3,re:.97,ln:.35,ws:.65,hox:0,dn:0},                            b:{x:680,le:.1,re:.1,ln:-.45,ws:-.6,hox:24,dn:0},                            cap:'💥 💥 USMAN · RIGHT CROSS · MANDIBLE FRACTURE',              rd:3, tc:'14:50', ev:{color:'#FF2D3F', x:595, y:175, label:'💥 JAW BREAK', big:true} },
-  { t:58.0,  r:{x:478,le:.15,re:.15,ln:.1,ws:.1,hox:0,dn:0,cl:.5},                       b:{x:682,le:.1,re:.1,ln:-.08,ws:-.1,hox:12,dn:0,cl:.5},                      cap:'Cov · clinch · survival mode · holding on',               rd:3, tc:'14:55' },
-  { t:59.5,  r:{x:475,le:.3,re:.3,ln:.1,ws:.1,hox:0,dn:0},                               b:{x:685,le:.1,re:.1,ln:-.15,ws:-.2,hox:15,dn:0},                            cap:'Round ends · corner: "I think I broke my jaw"',            rd:3, tc:'15:00', ev:{color:'#FFB020', x:685, y:120, label:'🎙 AUDIO'} },
+  { t:40.0,  r:{x:460,le:.3,re:.3,ln:.1,ws:.1,hox:0,dn:0},                               b:{x:680,le:.3,re:.3,ln:0,ws:-.05,hox:0,dn:0},                               cap:'R3 begins · Usman moves to center',             rd:3, tc:'10:00' },
+  { t:41.5,  r:{x:465,le:.15,re:.15,ln:.1,ws:.15,hox:0,dn:0,rk:.8,ky:.15},               b:{x:680,le:.3,re:.3,ln:-.05,ws:-.08,hox:0,dn:0},                            cap:'Usman lands calf kick',                                 rd:3, tc:'10:30', ev:{color:'#FF2D3F', x:575, y:315, label:'CALF KICK'} },
+  { t:43.0,  r:{x:470,le:.9,re:.2,ln:.12,ws:.3,hox:0,dn:0},                              b:{x:690,le:.2,re:.3,ln:-.1,ws:-.18,hox:-10,dn:0},                           cap:'Usman lands right hand · Covington moves to cage',                rd:3, tc:'11:00', ev:{color:'#FF2D3F', x:580, y:195, label:'RIGHT'} },
+  { t:44.5,  r:{x:478,le:.15,re:.3,ln:.1,ws:.2,hox:0,dn:0,lk:.95,ky:.5},                 b:{x:695,le:.2,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                             cap:'Usman lands front kick to body',          rd:3, tc:'12:00', ev:{color:'#FFB020', x:590, y:245, label:'FRONT KICK'} },
+  { t:46.0,  r:{x:475,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},                              b:{x:690,le:.3,re:.4,ln:0,ws:0,hox:0,dn:0},                                  cap:'Striking exchange',                rd:3, tc:'13:00' },
+  { t:47.5,  r:{x:470,le:.15,re:.15,ln:.08,ws:.1,hox:0,dn:0,rk:.85,ky:.45},              b:{x:688,le:.3,re:.3,ln:-.08,ws:-.1,hox:0,dn:0},                             cap:'Usman lands body kick',                    rd:3, tc:'13:30', ev:{color:'#FFB020', x:585, y:260, label:'BODY KICK'} },
+  { t:49.0,  r:{x:470,le:.3,re:.3,ln:.05,ws:.05,hox:0,dn:0},                             b:{x:685,le:.15,re:.15,ln:.05,ws:.05,hox:0,dn:0,rk:.7,ky:.1},               cap:'Covington lands leg kick',                                    rd:3, tc:'14:00', ev:{color:'#2DB4FF', x:572, y:312, label:'LEG KICK'} },
+  { t:50.5,  r:{x:470,le:.2,re:.2,ln:-.1,ws:-.15,hox:14,dn:0},                           b:{x:680,le:.8,re:.2,ln:.15,ws:.25,hox:0,dn:0},                              cap:'⚠ Covington eye poke · Ref Goddard halts · physician clears Usman',                       rd:3, tc:'14:15', ev:{color:'#8A5EF5', x:570, y:175, label:'⚠ EYE POKE'} },
+  { t:52.5,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                               b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'Action resumes · Ref Goddard restarts',                            rd:3, tc:'14:30' },
+  { t:54.5,  r:{x:470,le:.3,re:.3,ln:.15,ws:.2,hox:0,dn:0},                              b:{x:680,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                                cap:'Usman shifts weight',          rd:3, tc:'14:45' },
+  { t:56.5,  r:{x:480,le:.3,re:.97,ln:.35,ws:.65,hox:0,dn:0},                            b:{x:680,le:.1,re:.1,ln:-.45,ws:-.6,hox:24,dn:0},                            cap:'Usman lands right cross · Covington jaw fracture (confirmed NSAC medical)',              rd:3, tc:'14:50', ev:{color:'#FF2D3F', x:595, y:175, label:'RIGHT CROSS', big:true} },
+  { t:58.0,  r:{x:478,le:.15,re:.15,ln:.1,ws:.1,hox:0,dn:0,cl:.5},                       b:{x:682,le:.1,re:.1,ln:-.08,ws:-.1,hox:12,dn:0,cl:.5},                      cap:'Clinch',               rd:3, tc:'14:55' },
+  { t:59.5,  r:{x:475,le:.3,re:.3,ln:.1,ws:.1,hox:0,dn:0},                               b:{x:685,le:.1,re:.1,ln:-.15,ws:-.2,hox:15,dn:0},                            cap:'R3 ends · Covington jaw injury apparent between rounds',            rd:3, tc:'15:00', ev:{color:'#FFB020', x:685, y:120, label:'R3 ENDS'} },
 
   // ROUND 4 · 60–80s
-  { t:60.0,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                               b:{x:680,le:.3,re:.3,ln:0,ws:-.05,hox:0,dn:0},                               cap:'R4 · tentative · Cov fighting through broken jaw',        rd:4, tc:'15:00' },
-  { t:61.5,  r:{x:465,le:.15,re:.15,ln:.1,ws:.15,hox:0,dn:0,rk:.8,ky:.5},                b:{x:678,le:.3,re:.3,ln:-.08,ws:-.1,hox:0,dn:0},                             cap:'Usman · body kick · targeting the ribs',                   rd:4, tc:'15:20', ev:{color:'#FFB020', x:582, y:255, label:'BODY KICK'} },
-  { t:63.0,  r:{x:470,le:.2,re:.85,ln:.2,ws:.4,hox:0,dn:0},                              b:{x:670,le:.2,re:.2,ln:-.12,ws:-.2,hox:10,dn:0},                            cap:'Usman · body work · 14 body shots this round',            rd:4, tc:'15:40', ev:{color:'#FFB020', x:600, y:240, label:'BODY'} },
-  { t:64.5,  r:{x:468,le:.15,re:.15,ln:.05,ws:0,hox:0,dn:0,cl:.65},                      b:{x:668,le:.15,re:.15,ln:.05,ws:.05,hox:0,dn:0,cl:.65},                     cap:'Clinch · Usman dirty boxing from collar tie',              rd:4, tc:'16:00' },
-  { t:66.0,  r:{x:465,le:.3,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},                           b:{x:670,le:.82,re:.82,ln:.2,ws:.35,hox:0,dn:0},                             cap:'Cov · uppercut combo · firing through pain',              rd:4, tc:'16:30', ev:{color:'#2DB4FF', x:575, y:185, label:'UPPERCUT'} },
-  { t:68.0,  r:{x:460,le:.2,re:.2,ln:-.3,ws:-.55,hox:18,dn:0,cr:.2},                     b:{x:665,le:.92,re:.92,ln:.28,ws:.5,hox:0,dn:0},                             cap:'💥 Cov · 3-PUNCH COMBO · Usman legs buckle',               rd:4, tc:'18:00', ev:{color:'#2DB4FF', x:570, y:190, label:'💥 STAGGER', big:true} },
-  { t:69.5,  r:{x:465,le:.15,re:.15,ln:.1,ws:.05,hox:0,dn:0,cl:.55},                     b:{x:670,le:.15,re:.15,ln:.08,ws:0,hox:0,dn:0,cl:.55},                       cap:'Usman · clinch to recover · knee inside',                  rd:4, tc:'18:20' },
-  { t:71.0,  r:{x:470,le:.15,re:.15,ln:.15,ws:.2,hox:0,dn:0,rk:.9,ky:.5},                b:{x:680,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                             cap:'Usman · body kick answers · pure spite',                   rd:4, tc:'18:40', ev:{color:'#FF2D3F', x:582, y:260, label:'BODY KICK'} },
-  { t:73.0,  r:{x:475,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},                              b:{x:675,le:.85,re:.4,ln:.25,ws:.35,hox:0,dn:0,lk:.4,ky:.2},                 cap:'Cov · Superman punch + kick combo',                        rd:4, tc:'19:15', ev:{color:'#2DB4FF', x:580, y:200, label:'SUPERMAN'} },
-  { t:75.0,  r:{x:470,le:.15,re:.15,ln:.05,ws:.05,hox:0,dn:0,lk:.7,ky:.15},              b:{x:678,le:.3,re:.3,ln:0,ws:-.05,hox:0,dn:0},                               cap:'Usman · calf kick exchange',                                rd:4, tc:'19:30', ev:{color:'#FF2D3F', x:572, y:315, label:'CALF KICK'} },
-  { t:76.5,  r:{x:465,le:.45,re:.45,ln:.1,ws:0,hox:0,dn:0},                              b:{x:680,le:.45,re:.45,ln:.1,ws:.05,hox:0,dn:0},                             cap:'Heavy trading · both jawing at each other',                rd:4, tc:'19:45' },
-  { t:78.5,  r:{x:460,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},                                 b:{x:680,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},                                  cap:'R4 ends · fight is dead even entering R5',                rd:4, tc:'20:00' },
+  { t:60.0,  r:{x:460,le:.3,re:.3,ln:.05,ws:0,hox:0,dn:0},                               b:{x:680,le:.3,re:.3,ln:0,ws:-.05,hox:0,dn:0},                               cap:'R4 begins',        rd:4, tc:'15:00' },
+  { t:61.5,  r:{x:465,le:.15,re:.15,ln:.1,ws:.15,hox:0,dn:0,rk:.8,ky:.5},                b:{x:678,le:.3,re:.3,ln:-.08,ws:-.1,hox:0,dn:0},                             cap:'Usman lands body kick',                   rd:4, tc:'15:20', ev:{color:'#FFB020', x:582, y:255, label:'BODY KICK'} },
+  { t:63.0,  r:{x:470,le:.2,re:.85,ln:.2,ws:.4,hox:0,dn:0},                              b:{x:670,le:.2,re:.2,ln:-.12,ws:-.2,hox:10,dn:0},                            cap:'Usman lands body shots',            rd:4, tc:'15:40', ev:{color:'#FFB020', x:600, y:240, label:'BODY'} },
+  { t:64.5,  r:{x:468,le:.15,re:.15,ln:.05,ws:0,hox:0,dn:0,cl:.65},                      b:{x:668,le:.15,re:.15,ln:.05,ws:.05,hox:0,dn:0,cl:.65},                     cap:'Clinch · Usman lands from collar tie',              rd:4, tc:'16:00' },
+  { t:66.0,  r:{x:465,le:.3,re:.2,ln:-.12,ws:-.2,hox:12,dn:0},                           b:{x:670,le:.82,re:.82,ln:.2,ws:.35,hox:0,dn:0},                             cap:'Covington lands uppercut combo',              rd:4, tc:'16:30', ev:{color:'#2DB4FF', x:575, y:185, label:'UPPERCUT'} },
+  { t:68.0,  r:{x:460,le:.2,re:.2,ln:-.3,ws:-.55,hox:18,dn:0,cr:.2},                     b:{x:665,le:.92,re:.92,ln:.28,ws:.5,hox:0,dn:0},                             cap:'Covington lands 3-punch combination · Usman hurt',               rd:4, tc:'18:00', ev:{color:'#2DB4FF', x:570, y:190, label:'COMBINATION', big:true} },
+  { t:69.5,  r:{x:465,le:.15,re:.15,ln:.1,ws:.05,hox:0,dn:0,cl:.55},                     b:{x:670,le:.15,re:.15,ln:.08,ws:0,hox:0,dn:0,cl:.55},                       cap:'Clinch · Usman lands knee',                  rd:4, tc:'18:20' },
+  { t:71.0,  r:{x:470,le:.15,re:.15,ln:.15,ws:.2,hox:0,dn:0,rk:.9,ky:.5},                b:{x:680,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                             cap:'Usman lands body kick',                   rd:4, tc:'18:40', ev:{color:'#FF2D3F', x:582, y:260, label:'BODY KICK'} },
+  { t:73.0,  r:{x:475,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},                              b:{x:675,le:.85,re:.4,ln:.25,ws:.35,hox:0,dn:0,lk:.4,ky:.2},                 cap:'Covington superman punch and kick',                        rd:4, tc:'19:15', ev:{color:'#2DB4FF', x:580, y:200, label:'SUPERMAN'} },
+  { t:75.0,  r:{x:470,le:.15,re:.15,ln:.05,ws:.05,hox:0,dn:0,lk:.7,ky:.15},              b:{x:678,le:.3,re:.3,ln:0,ws:-.05,hox:0,dn:0},                               cap:'Calf kick exchange',                                rd:4, tc:'19:30', ev:{color:'#FF2D3F', x:572, y:315, label:'CALF KICK'} },
+  { t:76.5,  r:{x:465,le:.45,re:.45,ln:.1,ws:0,hox:0,dn:0},                              b:{x:680,le:.45,re:.45,ln:.1,ws:.05,hox:0,dn:0},                             cap:'Striking exchange',                rd:4, tc:'19:45' },
+  { t:78.5,  r:{x:460,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},                                 b:{x:680,le:.3,re:.3,ln:0,ws:0,hox:0,dn:0},                                  cap:'R4 ends · Judges: D\'Amato 39-37 Cov · Colon 38-38 · Cleary 39-37 Usman',                rd:4, tc:'20:00' },
 
   // ROUND 5 · 80–100s · TKO
-  { t:80.0,  r:{x:450,le:.3,re:.3,ln:0,ws:-.1,hox:0,dn:0},                               b:{x:690,le:.4,re:.4,ln:.1,ws:.25,hox:0,dn:0},                               cap:'R5 · Championship round · winner takes all',              rd:5, tc:'20:00' },
-  { t:81.5,  r:{x:448,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                            b:{x:688,le:.3,re:.2,ln:.08,ws:.12,hox:0,dn:0,rk:.7,ky:.15},                cap:'Cov · leg kick · pain-fighting output',                    rd:5, tc:'21:00', ev:{color:'#2DB4FF', x:565, y:312, label:'LEG KICK'} },
-  { t:83.0,  r:{x:455,le:.15,re:.15,ln:.12,ws:.18,hox:0,dn:0,rk:.85,ky:.5},              b:{x:685,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                             cap:'Usman · body kick · stacking damage',                      rd:5, tc:'21:30', ev:{color:'#FFB020', x:580, y:255, label:'BODY KICK'} },
-  { t:84.5,  r:{x:460,le:.85,re:.85,ln:.2,ws:.4,hox:0,dn:0},                             b:{x:680,le:.2,re:.2,ln:-.1,ws:-.15,hox:12,dn:0},                            cap:'Usman · 3-2 combo near the fence',                         rd:5, tc:'22:30', ev:{color:'#FF2D3F', x:580, y:190, label:'3-2 COMBO'} },
-  { t:86.0,  r:{x:468,le:.15,re:.15,ln:.05,ws:0,hox:0,dn:0,cl:.55},                      b:{x:678,le:.15,re:.15,ln:-.05,ws:-.05,hox:0,dn:0,cl:.55},                   cap:'Clinch · both dirty boxing · grinding',                    rd:5, tc:'22:45' },
-  { t:87.5,  r:{x:475,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},                              b:{x:680,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                             cap:'Wild trade · Cov wobbled',                                  rd:5, tc:'23:15' },
-  { t:89.0,  r:{x:482,le:.2,re:.97,ln:.4,ws:.7,hox:0,dn:0},                              b:{x:675,le:.1,re:.1,ln:-.55,ws:-.75,hox:22,dn:.55,cr:.3},                   cap:'💥 💥 KD #1 · right hand drops Cov · legs gone',             rd:5, tc:'23:30', ev:{color:'#FF2D3F', x:595, y:180, label:'💥 KD 1', big:true} },
-  { t:90.5,  r:{x:485,le:.3,re:.3,ln:.2,ws:.3,hox:0,dn:0},                               b:{x:660,le:.3,re:.3,ln:-.25,ws:-.35,hox:10,dn:0},                           cap:'Cov pops up · defiant · Usman stalks',                     rd:5, tc:'23:40' },
-  { t:91.5,  r:{x:495,le:.2,re:.97,ln:.45,ws:.8,hox:0,dn:0},                             b:{x:650,le:.1,re:.1,ln:-.7,ws:-.85,hox:26,dn:.95},                          cap:'💥 💥 KD #2 · "right into the jaw"',                          rd:5, tc:'23:45', ev:{color:'#FF2D3F', x:590, y:200, label:'💥 KD 2', big:true} },
-  { t:93.0,  r:{x:515,le:.2,re:.3,ln:.4,ws:.6,hox:0,dn:.15,cr:.4},                       b:{x:630,le:.2,re:.1,ln:0,ws:0,hox:0,dn:.85,cr:.6},                          cap:'Cov · desperate TD shot · Usman sprawls',                 rd:5, tc:'23:55' },
-  { t:95.0,  r:{x:550,le:.3,re:.88,ln:.35,ws:.35,hox:0,dn:.2},                           b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                                    cap:'Ground & pound · hammerfists raining down',               rd:5, tc:'24:00', ev:{color:'#FFB020', x:620, y:305, label:'G&P'} },
-  { t:97.0,  r:{x:553,le:.3,re:.95,ln:.3,ws:.3,hox:0,dn:.2},                             b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                                    cap:'14 of 15 hammerfists in 11 seconds',                       rd:5, tc:'24:08', ev:{color:'#FFB020', x:620, y:305, label:'G&P'} },
-  { t:98.5,  r:{x:555,le:.15,re:.92,ln:.28,ws:.28,hox:0,dn:.2},                          b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                                    cap:'Goddard watching · one more sequence',                     rd:5, tc:'24:09' },
-  { t:100.0, r:{x:555,le:.3,re:.3,ln:0,ws:0,hox:0,dn:.2},                                b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                                    cap:'🏁 TKO · 4:10 · GODDARD DIVES IN',                          rd:5, tc:'24:10', ev:{color:'#FFFFFF', x:590, y:180, label:'🏁 TKO 4:10', big:true} }
+  { t:80.0,  r:{x:450,le:.3,re:.3,ln:0,ws:-.1,hox:0,dn:0},                               b:{x:690,le:.4,re:.4,ln:.1,ws:.25,hox:0,dn:0},                               cap:'R5 begins',              rd:5, tc:'20:00' },
+  { t:81.5,  r:{x:448,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                            b:{x:688,le:.3,re:.2,ln:.08,ws:.12,hox:0,dn:0,rk:.7,ky:.15},                cap:'Covington lands leg kick',                    rd:5, tc:'21:00', ev:{color:'#2DB4FF', x:565, y:312, label:'LEG KICK'} },
+  { t:83.0,  r:{x:455,le:.15,re:.15,ln:.12,ws:.18,hox:0,dn:0,rk:.85,ky:.5},              b:{x:685,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                             cap:'Usman lands body kick',                      rd:5, tc:'21:30', ev:{color:'#FFB020', x:580, y:255, label:'BODY KICK'} },
+  { t:84.5,  r:{x:460,le:.85,re:.85,ln:.2,ws:.4,hox:0,dn:0},                             b:{x:680,le:.2,re:.2,ln:-.1,ws:-.15,hox:12,dn:0},                            cap:'Usman lands combination near fence',                         rd:5, tc:'22:30', ev:{color:'#FF2D3F', x:580, y:190, label:'3-2 COMBO'} },
+  { t:86.0,  r:{x:468,le:.15,re:.15,ln:.05,ws:0,hox:0,dn:0,cl:.55},                      b:{x:678,le:.15,re:.15,ln:-.05,ws:-.05,hox:0,dn:0,cl:.55},                   cap:'Clinch exchange',                    rd:5, tc:'22:45' },
+  { t:87.5,  r:{x:475,le:.3,re:.3,ln:.1,ws:.15,hox:0,dn:0},                              b:{x:680,le:.3,re:.3,ln:-.05,ws:-.1,hox:0,dn:0},                             cap:'Striking exchange · Covington hurt',                                  rd:5, tc:'23:15' },
+  { t:89.0,  r:{x:482,le:.2,re:.97,ln:.4,ws:.7,hox:0,dn:0},                              b:{x:675,le:.1,re:.1,ln:-.55,ws:-.75,hox:22,dn:.55,cr:.3},                   cap:'Knockdown 1 · Usman right hand',             rd:5, tc:'23:30', ev:{color:'#FF2D3F', x:595, y:180, label:'KD 1', big:true} },
+  { t:90.5,  r:{x:485,le:.3,re:.3,ln:.2,ws:.3,hox:0,dn:0},                               b:{x:660,le:.3,re:.3,ln:-.25,ws:-.35,hox:10,dn:0},                           cap:'Covington returns to feet',                     rd:5, tc:'23:40' },
+  { t:91.5,  r:{x:495,le:.2,re:.97,ln:.45,ws:.8,hox:0,dn:0},                             b:{x:650,le:.1,re:.1,ln:-.7,ws:-.85,hox:26,dn:.95},                          cap:'Knockdown 2 · Usman right hand',                          rd:5, tc:'23:45', ev:{color:'#FF2D3F', x:590, y:200, label:'KD 2', big:true} },
+  { t:93.0,  r:{x:515,le:.2,re:.3,ln:.4,ws:.6,hox:0,dn:.15,cr:.4},                       b:{x:630,le:.2,re:.1,ln:0,ws:0,hox:0,dn:.85,cr:.6},                          cap:'Covington takedown attempt · Usman defends',                 rd:5, tc:'23:55' },
+  { t:95.0,  r:{x:550,le:.3,re:.88,ln:.35,ws:.35,hox:0,dn:.2},                           b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                                    cap:'Usman ground strikes · hammerfists',               rd:5, tc:'24:00', ev:{color:'#FFB020', x:620, y:305, label:'G&P'} },
+  { t:97.0,  r:{x:553,le:.3,re:.95,ln:.3,ws:.3,hox:0,dn:.2},                             b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                                    cap:'Usman ground strikes continue',                       rd:5, tc:'24:08', ev:{color:'#FFB020', x:620, y:305, label:'G&P'} },
+  { t:98.5,  r:{x:555,le:.15,re:.92,ln:.28,ws:.28,hox:0,dn:.2},                          b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                                    cap:'Ref Goddard observing · Covington not defending',                     rd:5, tc:'24:09' },
+  { t:100.0, r:{x:555,le:.3,re:.3,ln:0,ws:0,hox:0,dn:.2},                                b:{x:620,le:0,re:0,ln:0,ws:0,hox:0,dn:1},                                    cap:'Ref Goddard stops fight · TKO 4:10 R5',                          rd:5, tc:'24:10', ev:{color:'#FFFFFF', x:590, y:180, label:'TKO · REF STOPPAGE', big:true} }
 ];
 const REC_TOTAL = FIGHT_KEYFRAMES[FIGHT_KEYFRAMES.length - 1].t;
 const REC_ROUND_STARTS = [0, 20, 40, 60, 80];
