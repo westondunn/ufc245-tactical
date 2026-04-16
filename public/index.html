@@ -123,6 +123,60 @@ body::after{
 }
 
 /* =============================================================
+   FIGHT SELECTOR BAR
+============================================================= */
+.fight-selector{
+  position:sticky;top:44px;z-index:70;
+  background:rgba(4,5,10,.94);
+  backdrop-filter:blur(14px);
+  -webkit-backdrop-filter:blur(14px);
+  border-bottom:1px solid var(--border);
+  padding:10px 24px;
+  display:flex;align-items:center;gap:10px;
+  overflow-x:auto;
+  scrollbar-width:none;
+}
+.fight-selector::-webkit-scrollbar{display:none}
+.fight-selector__label{
+  font-family:var(--f-mono);
+  font-size:9px;letter-spacing:.22em;
+  text-transform:uppercase;
+  color:var(--muted);
+  white-space:nowrap;flex-shrink:0;
+}
+.fight-chip{
+  background:transparent;
+  border:1px solid var(--border-soft);
+  color:var(--fg-dim);
+  font-family:var(--f-mono);
+  font-size:10px;letter-spacing:.1em;
+  text-transform:uppercase;
+  padding:6px 12px;
+  cursor:pointer;white-space:nowrap;
+  transition:all .2s ease;flex-shrink:0;
+}
+.fight-chip:hover{border-color:var(--muted);color:var(--fg)}
+.fight-chip.active{
+  border-color:var(--cyan);color:var(--cyan);
+  background:rgba(45,220,255,.06);
+  box-shadow:0 0 10px rgba(45,220,255,.12);
+}
+.fight-chip__method{
+  display:inline-block;margin-left:6px;
+  padding:1px 5px;font-size:8px;
+  border:1px solid currentColor;opacity:.65;
+}
+.scope-msg{
+  display:none;
+  background:var(--bg-card);border:1px solid var(--border);
+  padding:32px;text-align:center;
+  font-family:var(--f-mono);font-size:12px;letter-spacing:.15em;
+  text-transform:uppercase;color:var(--muted);
+  margin-bottom:24px;
+}
+.scope-msg.show{display:block}
+
+/* =============================================================
    DOT NAV
 ============================================================= */
 .dot-nav{
@@ -1578,6 +1632,56 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 </header>
 
 <!-- ============================================================
+     FIGHT SELECTOR
+============================================================ -->
+<div class="fight-selector" id="fightSelector">
+  <span class="fight-selector__label">Event ▸</span>
+  <button class="fight-chip active" data-fight="ufc245">
+    <span class="fight-chip__event">UFC 245</span> Usman vs Covington
+    <span class="fight-chip__method">TKO R5</span>
+  </button>
+  <button class="fight-chip" data-fight="ufc229">
+    <span class="fight-chip__event">UFC 229</span> Khabib vs McGregor
+    <span class="fight-chip__method">SUB R4</span>
+  </button>
+  <button class="fight-chip" data-fight="ufc261">
+    <span class="fight-chip__event">UFC 261</span> Usman vs Masvidal 2
+    <span class="fight-chip__method">KO R2</span>
+  </button>
+  <button class="fight-chip" data-fight="ufc194">
+    <span class="fight-chip__event">UFC 194</span> Aldo vs McGregor
+    <span class="fight-chip__method">KO R1</span>
+  </button>
+  <button class="fight-chip" data-fight="ufc217">
+    <span class="fight-chip__event">UFC 217</span> Bisping vs GSP
+    <span class="fight-chip__method">SUB R3</span>
+  </button>
+  <span class="fight-selector__label" style="margin-left:auto">Fighter ▸</span>
+  <div style="position:relative;flex-shrink:0">
+    <input id="fighterSearch" type="text" placeholder="Search fighter…"
+      style="background:#0A0C14;border:1px solid var(--border-soft);color:var(--fg);
+        font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;padding:6px 12px;
+        width:180px;outline:none;transition:border-color .2s"
+      onfocus="this.style.borderColor='var(--cyan)'"
+      onblur="setTimeout(()=>this.style.borderColor='var(--border-soft)',200)">
+    <div id="searchResults" style="display:none;position:absolute;top:100%;left:0;right:0;
+      background:#0A0C14;border:1px solid var(--border);max-height:260px;overflow-y:auto;z-index:100;
+      box-shadow:0 8px 24px rgba(0,0,0,.5)"></div>
+  </div>
+</div>
+
+<!-- Fighter events / event card panel (hidden by default) -->
+<div id="fighterPanel" style="display:none;background:var(--bg-card);border:1px solid var(--border);
+  margin:0 24px 24px;padding:24px 28px;max-height:500px;overflow-y:auto">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <div id="fighterPanelTitle" style="font-family:var(--f-disp);font-size:20px;font-weight:700;letter-spacing:.1em"></div>
+    <button id="closeFighterPanel" style="background:none;border:1px solid var(--muted-dim);color:var(--muted);
+      font-family:var(--f-mono);font-size:10px;padding:4px 10px;cursor:pointer;letter-spacing:.12em">CLOSE ×</button>
+  </div>
+  <div id="fighterPanelBody"></div>
+</div>
+
+<!-- ============================================================
      DOT NAV
 ============================================================ -->
 <nav class="dot-nav">
@@ -1602,18 +1706,18 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 <section id="hero" class="full-h">
   <div class="hero-inner">
     <div class="hero-fighter hero-fighter--red reveal" data-d="1">
-      <div class="hero-fighter__tag">
+      <div class="hero-fighter__tag" id="heroRedTag">
         Red Corner · Champion
         <span class="dot"></span>
       </div>
-      <div class="hero-fighter__nickname">"The Nigerian Nightmare"</div>
-      <div class="hero-fighter__name">Kamaru<br>Usman</div>
-      <div class="hero-fighter__record"><strong>15 – 1 – 0</strong> · 10-0 UFC</div>
-      <div class="hero-fighter__style">Pressure Wrestler · Power Striker</div>
+      <div class="hero-fighter__nickname" id="heroRedNick">"The Nigerian Nightmare"</div>
+      <div class="hero-fighter__name" id="heroRedName">Kamaru<br>Usman</div>
+      <div class="hero-fighter__record" id="heroRedRecord"><strong>15 – 1 – 0</strong> · 10-0 UFC</div>
+      <div class="hero-fighter__style" id="heroRedStyle">Pressure Wrestler · Power Striker</div>
     </div>
 
     <div class="hero-center reveal" data-d="2">
-      <div class="hero-event">UFC 245 · Welterweight Title</div>
+      <div class="hero-event" id="heroEvent">UFC 245 · Welterweight Title</div>
       <div class="hero-vs" style="font-size:28px;letter-spacing:.3em;margin-bottom:4px">VS</div>
       <svg class="hero-faceoff" viewBox="0 0 560 260" preserveAspectRatio="xMidYMid meet">
         <!-- ground line -->
@@ -1681,19 +1785,27 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
     </div>
 
     <div class="hero-fighter hero-fighter--blue reveal" data-d="3">
-      <div class="hero-fighter__tag">
+      <div class="hero-fighter__tag" id="heroBlueTag">
         <span class="dot"></span>
         Blue Corner · Challenger
       </div>
-      <div class="hero-fighter__nickname">"Chaos"</div>
-      <div class="hero-fighter__name">Colby<br>Covington</div>
-      <div class="hero-fighter__record"><strong>15 – 1 – 0</strong> · 10-1 UFC</div>
-      <div class="hero-fighter__style">Volume Striker · Elite Wrestler</div>
+      <div class="hero-fighter__nickname" id="heroBlueNick">"Chaos"</div>
+      <div class="hero-fighter__name" id="heroBlueName">Colby<br>Covington</div>
+      <div class="hero-fighter__record" id="heroBlueRecord"><strong>15 – 1 – 0</strong> · 10-1 UFC</div>
+      <div class="hero-fighter__style" id="heroBlueStyle">Volume Striker · Elite Wrestler</div>
     </div>
   </div>
 
   <div class="hero-scroll">Scroll · Tactical Report</div>
 </section>
+
+<!-- ============================================================
+     SCOPE MESSAGE (shown for non-UFC 245 fights)
+============================================================ -->
+<div class="scope-msg" id="scopeMsg">
+  Full tactical breakdown available for UFC 245 · Usman vs Covington I<br>
+  <span style="font-size:10px;color:var(--muted-dim);margin-top:8px;display:inline-block">Select UFC 245 above to view all 12 analytical sections · Additional fights coming soon</span>
+</div>
 
 <!-- ============================================================
      TALE OF THE TAPE
@@ -5172,6 +5284,251 @@ function setupRecreation(){
   if (stage) obs.observe(stage);
 }
 
+/* -----------------------------------------------------------
+   FIGHT DATABASE · MULTI-EVENT SELECTOR
+----------------------------------------------------------- */
+const FIGHTS = {
+  ufc245: {
+    event: 'UFC 245 · Welterweight Title', date: 'Dec 14, 2019', venue: 'T-Mobile Arena, Las Vegas',
+    red: { tag:'Red Corner · Champion', nick:'"The Nigerian Nightmare"', name:'Kamaru<br>Usman', record:'<strong>15 – 1 – 0</strong> · 10-0 UFC', style:'Pressure Wrestler · Power Striker' },
+    blue: { tag:'Blue Corner · Challenger', nick:'"Chaos"', name:'Colby<br>Covington', record:'<strong>15 – 1 – 0</strong> · 10-1 UFC', style:'Volume Striker · Elite Wrestler' },
+    result: 'TKO · R5 4:10', full: true
+  },
+  ufc229: {
+    event: 'UFC 229 · Lightweight Title', date: 'Oct 6, 2018', venue: 'T-Mobile Arena, Las Vegas',
+    red: { tag:'Red Corner · Champion', nick:'"The Eagle"', name:'Khabib<br>Nurmagomedov', record:'<strong>27 – 0 – 0</strong> · 11-0 UFC', style:'Sambo · Elite Wrestler · Ground & Pound' },
+    blue: { tag:'Blue Corner · Challenger', nick:'"The Notorious"', name:'Conor<br>McGregor', record:'<strong>21 – 3 – 0</strong> · 9-1 UFC', style:'Precision Striker · Southpaw · KO Power' },
+    result: 'Submission (RNC) · R4 3:03', full: false
+  },
+  ufc261: {
+    event: 'UFC 261 · Welterweight Title', date: 'Apr 24, 2021', venue: 'VyStar Veterans Memorial Arena, Jacksonville',
+    red: { tag:'Red Corner · Champion', nick:'"The Nigerian Nightmare"', name:'Kamaru<br>Usman', record:'<strong>18 – 1 – 0</strong> · 13-0 UFC', style:'Pressure Wrestler · Evolved Striker' },
+    blue: { tag:'Blue Corner · Challenger', nick:'"Gamebred"', name:'Jorge<br>Masvidal', record:'<strong>35 – 14 – 0</strong> · 12-6 UFC', style:'Street Fighter · KO Artist · BMF' },
+    result: 'KO · R2 1:02', full: false
+  },
+  ufc194: {
+    event: 'UFC 194 · Featherweight Title', date: 'Dec 12, 2015', venue: 'MGM Grand, Las Vegas',
+    red: { tag:'Red Corner · Champion', nick:'"Scarface"', name:'José<br>Aldo', record:'<strong>25 – 1 – 0</strong> · 7-0 UFC', style:'Muay Thai · Counter Striker · Leg Kicks' },
+    blue: { tag:'Blue Corner · Challenger', nick:'"The Notorious"', name:'Conor<br>McGregor', record:'<strong>18 – 2 – 0</strong> · 6-0 UFC', style:'Precision Striker · Southpaw · KO Power' },
+    result: 'KO · R1 0:13', full: false
+  },
+  ufc217: {
+    event: 'UFC 217 · Middleweight Title', date: 'Nov 4, 2017', venue: 'Madison Square Garden, NYC',
+    red: { tag:'Red Corner · Champion', nick:'"The Count"', name:'Michael<br>Bisping', record:'<strong>31 – 7 – 0</strong> · 20-7 UFC', style:'Boxing · Volume · Cardio Machine' },
+    blue: { tag:'Blue Corner · Challenger', nick:'"Rush"', name:'Georges<br>St-Pierre', record:'<strong>25 – 2 – 0</strong> · 19-2 UFC', style:'Complete MMA · Wrestling · Jab' },
+    result: 'Submission (RNC) · R3 4:23', full: false
+  }
+};
+
+let _currentFight = 'ufc245';
+
+// Sections that require full UFC 245 data
+const SCOPED_SECTIONS = ['tape','result','totals','rounds','targets','accuracy','positions','timeline','geometry','biomech','pace','aftermath'];
+
+function selectFight(fightId){
+  const fight = FIGHTS[fightId];
+  if (!fight) return;
+  _currentFight = fightId;
+
+  // Update selector chips
+  document.querySelectorAll('.fight-chip').forEach(c => c.classList.toggle('active', c.dataset.fight === fightId));
+
+  // Update hero text
+  const setHtml = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
+  setHtml('heroEvent', fight.event);
+  setHtml('heroRedTag', fight.red.tag + ' <span class="dot"></span>');
+  setHtml('heroRedNick', fight.red.nick);
+  setHtml('heroRedName', fight.red.name);
+  setHtml('heroRedRecord', fight.red.record);
+  setHtml('heroRedStyle', fight.red.style);
+  setHtml('heroBlueTag', '<span class="dot"></span> ' + fight.blue.tag);
+  setHtml('heroBlueNick', fight.blue.nick);
+  setHtml('heroBlueName', fight.blue.name);
+  setHtml('heroBlueRecord', fight.blue.record);
+  setHtml('heroBlueStyle', fight.blue.style);
+
+  // Scope detailed sections
+  if (fight.full){
+    SCOPED_SECTIONS.forEach(id => {
+      const sec = document.getElementById(id);
+      if (sec){ sec.style.opacity = ''; sec.style.pointerEvents = ''; }
+    });
+    document.querySelectorAll('.scope-msg').forEach(e => e.classList.remove('show'));
+  } else {
+    SCOPED_SECTIONS.forEach(id => {
+      const sec = document.getElementById(id);
+      if (sec){ sec.style.opacity = '0.18'; sec.style.pointerEvents = 'none'; }
+    });
+    document.querySelectorAll('.scope-msg').forEach(e => e.classList.add('show'));
+  }
+
+  // Scroll to top
+  document.getElementById('hero').scrollIntoView({ behavior: 'smooth' });
+}
+
+function setupFightSelector(){
+  document.querySelectorAll('.fight-chip').forEach(chip => {
+    chip.addEventListener('click', () => selectFight(chip.dataset.fight));
+  });
+
+  // Fighter search autocomplete
+  const input = document.getElementById('fighterSearch');
+  const results = document.getElementById('searchResults');
+  let searchTimeout = null;
+
+  input.addEventListener('input', () => {
+    clearTimeout(searchTimeout);
+    const q = input.value.trim();
+    if (q.length < 2){ results.style.display = 'none'; return; }
+    searchTimeout = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/fighters/search?q=' + encodeURIComponent(q));
+        const fighters = await res.json();
+        if (!fighters.length){
+          results.innerHTML = '<div style="padding:10px 14px;color:var(--muted);font-family:var(--f-mono);font-size:10px">No fighters found</div>';
+        } else {
+          results.innerHTML = fighters.map(f =>
+            '<div class="search-result" data-fid="' + f.id + '" style="padding:8px 14px;cursor:pointer;' +
+            'font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;color:var(--fg-dim);' +
+            'border-bottom:1px solid var(--border-soft);transition:background .15s"' +
+            ' onmouseover="this.style.background=\'rgba(45,220,255,.06)\'"' +
+            ' onmouseout="this.style.background=\'none\'">' +
+            '<strong style="color:var(--fg)">' + f.name + '</strong>' +
+            (f.nickname ? ' <span style="color:var(--muted)">"' + f.nickname + '"</span>' : '') +
+            ' <span style="color:var(--muted-dim);font-size:9px;margin-left:8px">' + f.weight_class + '</span>' +
+            '</div>'
+          ).join('');
+        }
+        results.style.display = 'block';
+
+        results.querySelectorAll('.search-result').forEach(el => {
+          el.addEventListener('click', () => {
+            const fid = el.dataset.fid;
+            results.style.display = 'none';
+            input.value = el.querySelector('strong').textContent;
+            loadFighterEvents(fid);
+          });
+        });
+      } catch(e){ console.error('search error', e); }
+    }, 250);
+  });
+
+  // Close panel
+  document.getElementById('closeFighterPanel').addEventListener('click', () => {
+    document.getElementById('fighterPanel').style.display = 'none';
+  });
+}
+
+// Load a fighter's event history
+async function loadFighterEvents(fighterId){
+  const panel = document.getElementById('fighterPanel');
+  const title = document.getElementById('fighterPanelTitle');
+  const body = document.getElementById('fighterPanelBody');
+
+  panel.style.display = 'block';
+  title.textContent = 'Loading…';
+  body.innerHTML = '';
+
+  try {
+    const [fighterRes, eventsRes] = await Promise.all([
+      fetch('/api/fighters/' + fighterId),
+      fetch('/api/fighters/' + fighterId + '/events')
+    ]);
+    const fighter = await fighterRes.json();
+    const events = await eventsRes.json();
+
+    title.innerHTML = fighter.name +
+      (fighter.nickname ? ' <span style="color:var(--muted);font-weight:400">"' + fighter.nickname + '"</span>' : '') +
+      ' <span style="color:var(--cyan);font-size:12px;margin-left:12px">' + (fighter.weight_class || '') + '</span>';
+
+    if (!events.length){
+      body.innerHTML = '<div style="color:var(--muted);font-family:var(--f-mono);font-size:11px">No UFC numbered events found in database</div>';
+      return;
+    }
+
+    body.innerHTML = events.map(ev =>
+      '<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border-soft)">' +
+        '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
+          '<div style="font-family:var(--f-disp);font-size:16px;font-weight:600;letter-spacing:.08em;color:var(--fg)">' +
+            'UFC ' + ev.number + '</div>' +
+          '<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--muted)">' +
+            ev.date + ' · ' + ev.city + '</div>' +
+        '</div>' +
+        '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted-dim);margin-bottom:10px;letter-spacing:.1em">' +
+          ev.name + ' · ' + ev.venue + '</div>' +
+        ev.fights.map(f => {
+          const won = f.winner_id === parseInt(fighterId, 10);
+          const isRedCorner = f.red_id === parseInt(fighterId, 10);
+          return '<div class="event-fight-row" data-eid="' + ev.event_id + '" style="display:flex;align-items:center;gap:12px;' +
+            'padding:8px 12px;cursor:pointer;transition:background .15s;margin-bottom:2px;' +
+            'border-left:3px solid ' + (won ? 'var(--green)' : 'var(--red)') + '"' +
+            ' onmouseover="this.style.background=\'rgba(45,220,255,.04)\'"' +
+            ' onmouseout="this.style.background=\'none\'">' +
+            '<span style="font-family:var(--f-mono);font-size:9px;color:' + (won ? 'var(--green)' : 'var(--red)') +
+              ';font-weight:700;min-width:14px">' + (won ? 'W' : 'L') + '</span>' +
+            '<span style="font-family:var(--f-mono);font-size:11px;color:var(--fg);flex:1">' +
+              (isRedCorner ? '<span style="color:#FF5965">' + f.red_name + '</span> vs ' + f.blue_name :
+                f.red_name + ' vs <span style="color:#5EC2FF">' + f.blue_name + '</span>') +
+            '</span>' +
+            (f.is_title ? '<span style="font-size:8px;border:1px solid var(--amber);color:var(--amber);padding:1px 5px;font-family:var(--f-mono);letter-spacing:.12em">TITLE</span>' : '') +
+            '<span style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">' +
+              f.method + ' R' + f.round + ' ' + f.time + '</span>' +
+          '</div>';
+        }).join('') +
+        '<button class="rec-btn" onclick="loadEventCard(' + ev.event_id + ')" style="margin-top:8px;font-size:10px">' +
+          'View Full Card · UFC ' + ev.number + '</button>' +
+      '</div>'
+    ).join('');
+  } catch(e){
+    body.innerHTML = '<div style="color:var(--red)">Error loading fighter data</div>';
+    console.error(e);
+  }
+}
+
+// Load full event card
+async function loadEventCard(eventId){
+  const body = document.getElementById('fighterPanelBody');
+  const title = document.getElementById('fighterPanelTitle');
+
+  try {
+    const res = await fetch('/api/events/' + eventId + '/card');
+    const data = await res.json();
+
+    title.innerHTML = data.event.name +
+      ' <span style="color:var(--muted);font-weight:400;font-size:12px">' + data.event.date + ' · ' + data.event.venue + '</span>';
+
+    body.innerHTML = '<div style="font-family:var(--f-mono);font-size:9px;letter-spacing:.18em;color:var(--muted);margin-bottom:14px;text-transform:uppercase">' +
+      'Full Card · ' + data.card.length + ' fights</div>' +
+      data.card.map((f, i) =>
+        '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;' +
+          'border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .15s"' +
+          ' onmouseover="this.style.background=\'rgba(45,220,255,.04)\'"' +
+          ' onmouseout="this.style.background=\'none\'"' +
+          ' onclick="loadFighterEvents(' + f.red_id + ')">' +
+          '<span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim);min-width:20px">' + (i+1) + '</span>' +
+          '<div style="flex:1">' +
+            '<div style="font-family:var(--f-mono);font-size:12px;letter-spacing:.08em">' +
+              '<span style="color:#FF5965;font-weight:600">' + f.red_name + '</span>' +
+              ' <span style="color:var(--muted)">vs</span> ' +
+              '<span style="color:#5EC2FF;font-weight:600">' + f.blue_name + '</span>' +
+            '</div>' +
+            '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);margin-top:3px;letter-spacing:.1em">' +
+              f.weight_class + (f.is_title ? ' · TITLE FIGHT' : '') + '</div>' +
+          '</div>' +
+          '<div style="text-align:right">' +
+            '<div style="font-family:var(--f-mono);font-size:11px;color:var(--fg);letter-spacing:.1em">' +
+              f.method + '</div>' +
+            '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);letter-spacing:.1em">' +
+              'R' + f.round + ' ' + f.time + '</div>' +
+          '</div>' +
+        '</div>'
+      ).join('');
+  } catch(e){
+    body.innerHTML = '<div style="color:var(--red)">Error loading event card</div>';
+    console.error(e);
+  }
+}
+
 renderPaceChart();
 setupNav();
 setupOctPhaseButtons();
@@ -5180,6 +5537,7 @@ setupSpotlight();
 setupOctControls();
 setupCrossLinks();
 setupRecreation();
+setupFightSelector();
 startTicker();
 document.getElementById('renderTime').textContent = Math.round(performance.now() - __t0);
 })();
