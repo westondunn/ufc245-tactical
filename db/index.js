@@ -18,7 +18,11 @@ const SCHEMA = `
     reach_cm INTEGER,
     stance TEXT,
     weight_class TEXT,
-    nationality TEXT
+    nationality TEXT,
+    dob TEXT,
+    slpm REAL, str_acc REAL, sapm REAL, str_def REAL,
+    td_avg REAL, td_acc REAL, td_def REAL, sub_avg REAL,
+    ufcstats_hash TEXT
   );
 
   CREATE TABLE IF NOT EXISTS events (
@@ -28,7 +32,8 @@ const SCHEMA = `
     date TEXT,
     venue TEXT,
     city TEXT,
-    country TEXT
+    country TEXT,
+    ufcstats_hash TEXT
   );
 
   CREATE TABLE IF NOT EXISTS fights (
@@ -45,7 +50,9 @@ const SCHEMA = `
     round INTEGER,
     time TEXT,
     winner_id INTEGER REFERENCES fighters(id),
-    referee TEXT
+    referee TEXT,
+    has_stats INTEGER DEFAULT 0,
+    ufcstats_hash TEXT
   );
 
   CREATE TABLE IF NOT EXISTS fight_stats (
@@ -69,6 +76,29 @@ const SCHEMA = `
     PRIMARY KEY (fight_id, fighter_id)
   );
 
+  CREATE TABLE IF NOT EXISTS round_stats (
+    fight_id INTEGER REFERENCES fights(id),
+    fighter_id INTEGER REFERENCES fighters(id),
+    round INTEGER NOT NULL,
+    kd INTEGER DEFAULT 0,
+    sig_str_landed INTEGER DEFAULT 0,
+    sig_str_attempted INTEGER DEFAULT 0,
+    total_str_landed INTEGER DEFAULT 0,
+    total_str_attempted INTEGER DEFAULT 0,
+    td_landed INTEGER DEFAULT 0,
+    td_attempted INTEGER DEFAULT 0,
+    sub_att INTEGER DEFAULT 0,
+    reversal INTEGER DEFAULT 0,
+    ctrl_sec INTEGER DEFAULT 0,
+    head_landed INTEGER DEFAULT 0, head_attempted INTEGER DEFAULT 0,
+    body_landed INTEGER DEFAULT 0, body_attempted INTEGER DEFAULT 0,
+    leg_landed INTEGER DEFAULT 0, leg_attempted INTEGER DEFAULT 0,
+    distance_landed INTEGER DEFAULT 0, distance_attempted INTEGER DEFAULT 0,
+    clinch_landed INTEGER DEFAULT 0, clinch_attempted INTEGER DEFAULT 0,
+    ground_landed INTEGER DEFAULT 0, ground_attempted INTEGER DEFAULT 0,
+    PRIMARY KEY (fight_id, fighter_id, round)
+  );
+
   CREATE TABLE IF NOT EXISTS biomechanics (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     fight_id INTEGER REFERENCES fights(id),
@@ -82,12 +112,13 @@ const SCHEMA = `
     notes TEXT
   );
 
-  -- Indexes for search
+  -- Indexes
   CREATE INDEX IF NOT EXISTS idx_fighters_name ON fighters(name);
   CREATE INDEX IF NOT EXISTS idx_events_number ON events(number);
   CREATE INDEX IF NOT EXISTS idx_fights_event ON fights(event_id);
   CREATE INDEX IF NOT EXISTS idx_fights_red ON fights(red_fighter_id);
   CREATE INDEX IF NOT EXISTS idx_fights_blue ON fights(blue_fighter_id);
+  CREATE INDEX IF NOT EXISTS idx_round_stats_fight ON round_stats(fight_id);
 `;
 
 async function init() {
@@ -103,26 +134,26 @@ async function init() {
     const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
 
     const insertFighter = db.prepare(
-      'INSERT OR IGNORE INTO fighters (id,name,nickname,height_cm,reach_cm,stance,weight_class,nationality) VALUES (?,?,?,?,?,?,?,?)'
+      'INSERT OR IGNORE INTO fighters (id,name,nickname,height_cm,reach_cm,stance,weight_class,nationality,dob,slpm,str_acc,sapm,str_def,td_avg,td_acc,td_def,sub_avg,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     );
     for (const f of seed.fighters || []) {
-      insertFighter.run([f.id, f.name, f.nickname, f.height_cm, f.reach_cm, f.stance, f.weight_class, f.nationality]);
+      insertFighter.run([f.id, f.name, f.nickname, f.height_cm, f.reach_cm, f.stance, f.weight_class, f.nationality, f.dob||null, f.slpm||null, f.str_acc||null, f.sapm||null, f.str_def||null, f.td_avg||null, f.td_acc||null, f.td_def||null, f.sub_avg||null, f.ufcstats_hash||null]);
     }
     insertFighter.free();
 
     const insertEvent = db.prepare(
-      'INSERT OR IGNORE INTO events (id,number,name,date,venue,city,country) VALUES (?,?,?,?,?,?,?)'
+      'INSERT OR IGNORE INTO events (id,number,name,date,venue,city,country,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?)'
     );
     for (const e of seed.events || []) {
-      insertEvent.run([e.id, e.number, e.name, e.date, e.venue, e.city, e.country]);
+      insertEvent.run([e.id, e.number, e.name, e.date, e.venue||e.location||null, e.city||null, e.country||null, e.ufcstats_hash||null]);
     }
     insertEvent.free();
 
     const insertFight = db.prepare(
-      'INSERT OR IGNORE INTO fights (id,event_id,red_fighter_id,blue_fighter_id,weight_class,is_title,is_main,card_position,method,method_detail,round,time,winner_id,referee) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+      'INSERT OR IGNORE INTO fights (id,event_id,red_fighter_id,blue_fighter_id,weight_class,is_title,is_main,card_position,method,method_detail,round,time,winner_id,referee,has_stats,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
     );
     for (const f of seed.fights || []) {
-      insertFight.run([f.id, f.event_id, f.red_fighter_id, f.blue_fighter_id, f.weight_class, f.is_title?1:0, f.is_main?1:0, f.card_position, f.method, f.method_detail, f.round, f.time, f.winner_id, f.referee]);
+      insertFight.run([f.id, f.event_id, f.red_fighter_id, f.blue_fighter_id, f.weight_class, f.is_title?1:0, f.is_main?1:0, f.card_position, f.method, f.method_detail, f.round, f.time, f.winner_id, f.referee, f.has_stats?1:0, f.ufcstats_hash||null]);
     }
     insertFight.free();
 
@@ -134,7 +165,19 @@ async function init() {
     }
     insertStats.free();
 
-    console.log(`[db] seeded: ${seed.fighters.length} fighters, ${seed.events.length} events, ${seed.fights.length} fights`);
+    // Per-round stats (from scraper)
+    if (seed.round_stats && seed.round_stats.length) {
+      const insertRound = db.prepare(
+        'INSERT OR IGNORE INTO round_stats (fight_id,fighter_id,round,kd,sig_str_landed,sig_str_attempted,total_str_landed,total_str_attempted,td_landed,td_attempted,sub_att,reversal,ctrl_sec,head_landed,head_attempted,body_landed,body_attempted,leg_landed,leg_attempted,distance_landed,distance_attempted,clinch_landed,clinch_attempted,ground_landed,ground_attempted) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
+      );
+      for (const rs of seed.round_stats) {
+        insertRound.run([rs.fight_id, rs.fighter_id, rs.round, rs.kd||0, rs.sig_str_landed||0, rs.sig_str_attempted||0, rs.total_str_landed||0, rs.total_str_attempted||0, rs.td_landed||0, rs.td_attempted||0, rs.sub_att||0, rs.reversal||0, rs.ctrl_sec||0, rs.head_landed||0, rs.head_attempted||0, rs.body_landed||0, rs.body_attempted||0, rs.leg_landed||0, rs.leg_attempted||0, rs.distance_landed||0, rs.distance_attempted||0, rs.clinch_landed||0, rs.clinch_attempted||0, rs.ground_landed||0, rs.ground_attempted||0]);
+      }
+      insertRound.free();
+    }
+
+    const rsCount = (seed.round_stats || []).length;
+    console.log(`[db] seeded: ${seed.fighters.length} fighters, ${seed.events.length} events, ${seed.fights.length} fights` + (rsCount ? `, ${rsCount} round stats` : ''));
   }
 
   return db;
@@ -296,8 +339,57 @@ function getFighterRecord(fighterId) {
   return { wins, losses: total - wins - draws, draws, total };
 }
 
+function getRoundStats(fightId) {
+  return allRows(
+    `SELECT rs.*, f.name as fighter_name
+     FROM round_stats rs
+     JOIN fighters f ON rs.fighter_id = f.id
+     WHERE rs.fight_id = ?
+     ORDER BY rs.round, rs.fighter_id`,
+    [fightId]
+  );
+}
+
+function getFightWithRounds(fightId) {
+  const fight = getFight(fightId);
+  if (fight) {
+    fight.round_stats = getRoundStats(fightId);
+    fight.has_round_stats = fight.round_stats.length > 0;
+  }
+  return fight;
+}
+
+function getStatLeaders(stat, limit = 10) {
+  const validStats = {
+    'knockdowns': 'SUM(knockdowns)',
+    'sig_strikes': 'SUM(sig_str_landed)',
+    'sig_accuracy': 'ROUND(CAST(SUM(sig_str_landed) AS REAL)/NULLIF(SUM(sig_str_attempted),0)*100,1)',
+    'takedowns': 'SUM(takedowns_landed)',
+    'td_accuracy': 'ROUND(CAST(SUM(takedowns_landed) AS REAL)/NULLIF(SUM(takedowns_attempted),0)*100,1)',
+    'control_time': 'SUM(control_time_sec)',
+    'sub_attempts': 'SUM(sub_attempts)',
+    'fights': 'COUNT(*)'
+  };
+  const expr = validStats[stat];
+  if (!expr) return [];
+  const minFights = ['sig_accuracy','td_accuracy'].includes(stat) ? 'HAVING COUNT(*) >= 3' : '';
+  return allRows(
+    `SELECT fs.fighter_id, f.name, f.weight_class, f.nationality,
+       COUNT(*) as fight_count, ${expr} as value
+     FROM fight_stats fs JOIN fighters f ON fs.fighter_id = f.id
+     GROUP BY fs.fighter_id ${minFights}
+     ORDER BY value DESC LIMIT ?`,
+    [limit]
+  );
+}
+
+function getAllFighters(limit = 500) {
+  return allRows('SELECT * FROM fighters ORDER BY name LIMIT ?', [limit]);
+}
+
 module.exports = {
   init, searchFighters, getFighter, getFighterEvents,
   getEventCard, getEvent, getEventByNumber, getFight, getAllEvents,
-  getCareerStats, getHeadToHead, getFighterRecord
+  getCareerStats, getHeadToHead, getFighterRecord,
+  getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters
 };

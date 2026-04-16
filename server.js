@@ -143,6 +143,27 @@ app.get('/api/fights/:id', apiHandler((req, res) => {
   res.json(fight);
 }));
 
+// Fight detail with per-round stats
+app.get('/api/fights/:id/rounds', apiHandler((req, res) => {
+  const fight = db.getFightWithRounds(parseInt(req.params.id, 10));
+  if (!fight) return res.status(404).json({ error: 'fight_not_found' });
+  res.json(fight);
+}));
+
+// Stat leaders
+app.get('/api/stats/leaders', apiHandler((req, res) => {
+  const stat = req.query.stat || 'sig_strikes';
+  const limit = Math.min(parseInt(req.query.limit) || 10, 50);
+  const leaders = db.getStatLeaders(stat, limit);
+  res.json({ stat, leaders });
+}));
+
+// All fighters (paginated)
+app.get('/api/fighters', apiHandler((req, res) => {
+  const limit = Math.min(parseInt(req.query.limit) || 500, 1000);
+  res.json(db.getAllFighters(limit));
+}));
+
 // Fighter career stats (aggregated)
 app.get('/api/fighters/:id/career-stats', apiHandler((req, res) => {
   const id = parseInt(req.params.id, 10);
