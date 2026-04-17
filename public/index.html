@@ -131,9 +131,11 @@ body::after{
   backdrop-filter:blur(14px);
   -webkit-backdrop-filter:blur(14px);
   border-bottom:1px solid var(--border);
-  padding:10px 24px;
-  display:flex;align-items:center;gap:10px;
-  flex-wrap:wrap;
+  padding:10px 16px;
+  display:flex;flex-direction:column;gap:8px;
+}
+.fight-selector__row{
+  display:flex;align-items:center;gap:8px;
 }
 .fight-selector__label{
   font-family:var(--f-mono);
@@ -147,22 +149,22 @@ body::after{
   border:1px solid var(--border-soft);
   color:var(--cyan);
   font-family:var(--f-mono);
-  font-size:11px;letter-spacing:.1em;
-  padding:6px 28px 6px 12px;
+  font-size:12px;letter-spacing:.1em;
+  padding:8px 28px 8px 12px;
   cursor:pointer;
   appearance:none;-webkit-appearance:none;
   background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%232DDCFF'/%3E%3C/svg%3E");
   background-repeat:no-repeat;
   background-position:right 10px center;
   outline:none;
-  min-width:160px;
+  flex:1;min-width:0;
   transition:border-color .2s;
 }
 .event-dropdown:focus{border-color:var(--cyan)}
 .event-dropdown option{background:#0A0C14;color:var(--fg);font-family:var(--f-mono);font-size:11px}
 .event-fight-strip{
-  display:flex;gap:6px;align-items:center;overflow-x:auto;flex:1;
-  scrollbar-width:none;min-height:32px;
+  display:flex;gap:6px;align-items:center;overflow-x:auto;
+  scrollbar-width:none;min-height:36px;padding-bottom:2px;
 }
 .event-fight-strip::-webkit-scrollbar{display:none}
 .fight-chip{
@@ -179,6 +181,16 @@ body::after{
 .fight-chip:hover{border-color:var(--muted);color:var(--fg)}
 .fight-chip.active{
   border-color:var(--cyan);color:var(--cyan);
+}
+.fight-selector__search{
+  position:relative;flex:1;min-width:0;
+}
+.fight-selector__search input{
+  background:#0A0C14;border:1px solid var(--border-soft);color:var(--fg);
+  font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;padding:8px 12px;
+  width:100%;outline:none;transition:border-color .2s;box-sizing:border-box;
+}
+.fight-selector__search input:focus{border-color:var(--cyan)}
   background:rgba(45,220,255,.06);
   box-shadow:0 0 10px rgba(45,220,255,.12);
 }
@@ -321,6 +333,26 @@ body::after{
 .tab-content{display:none;padding:16px 20px;max-width:1200px;margin:0 auto}
 .tab-content.active{display:block}
 .tab-content h2{font-family:var(--f-disp);font-size:22px;font-weight:700;letter-spacing:.1em;margin-bottom:16px}
+
+/* ── Mobile overrides ── */
+@media(max-width:600px){
+  .primary-tab{padding:10px 12px;font-size:10px;letter-spacing:.12em}
+  .fight-selector{padding:8px 12px;gap:6px}
+  .fight-selector__row{flex-wrap:wrap;gap:6px}
+  .event-dropdown{font-size:11px;padding:7px 26px 7px 10px;min-width:100px}
+  .fight-selector__search{min-width:80px}
+  .fight-selector__search input{font-size:10px;padding:7px 10px}
+  .event-fight-strip{min-height:34px;gap:5px}
+  .fight-chip{font-size:9px;padding:4px 8px}
+  .tab-content{padding:12px 12px}
+  .tab-content h2{font-size:18px}
+  .evt-table td,.evt-table th{padding:6px 6px;font-size:10px}
+  .fight-row{grid-template-columns:auto 1fr auto;gap:4px;padding:6px 6px;font-size:10px}
+  .fight-row__result{display:none}
+  .fight-detail-drop{padding:10px 10px}
+  .fighter-card{padding:10px}
+  .leader-card{padding:10px}
+}
 
 /* Tab: Events — inline accordion */
 .evt-table{width:100%;border-collapse:collapse;font-family:var(--f-mono);font-size:11px}
@@ -1914,24 +1946,21 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
      FIGHT SELECTOR
 ============================================================ -->
 <div class="fight-selector" id="fightSelector">
-  <span class="fight-selector__label">Event ▸</span>
-  <select class="event-dropdown" id="eventDropdown">
-    <option value="">Loading events…</option>
-  </select>
+  <div class="fight-selector__row">
+    <span class="fight-selector__label">Event ▸</span>
+    <select class="event-dropdown" id="eventDropdown">
+      <option value="">Loading events…</option>
+    </select>
+    <span class="fight-selector__label">Fighter ▸</span>
+    <div class="fight-selector__search">
+      <input id="fighterSearch" type="text" placeholder="Search fighter…">
+      <div id="searchResults" style="display:none;position:absolute;top:100%;left:0;right:0;
+        background:#0A0C14;border:1px solid var(--border);max-height:260px;overflow-y:auto;z-index:100;
+        box-shadow:0 8px 24px rgba(0,0,0,.5)"></div>
+    </div>
+  </div>
   <div class="event-fight-strip" id="eventFightStrip">
     <span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim)">Select an event</span>
-  </div>
-  <span class="fight-selector__label" style="margin-left:auto">Fighter ▸</span>
-  <div style="position:relative;flex-shrink:0">
-    <input id="fighterSearch" type="text" placeholder="Search fighter…"
-      style="background:#0A0C14;border:1px solid var(--border-soft);color:var(--fg);
-        font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;padding:6px 12px;
-        width:180px;outline:none;transition:border-color .2s"
-      onfocus="this.style.borderColor='var(--cyan)'"
-      onblur="setTimeout(()=>this.style.borderColor='var(--border-soft)',200)">
-    <div id="searchResults" style="display:none;position:absolute;top:100%;left:0;right:0;
-      background:#0A0C14;border:1px solid var(--border);max-height:260px;overflow-y:auto;z-index:100;
-      box-shadow:0 8px 24px rgba(0,0,0,.5)"></div>
   </div>
 </div>
 
