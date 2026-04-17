@@ -85,12 +85,14 @@ body::after{
   font-size:11px;letter-spacing:.12em;
   text-transform:uppercase;
   color:var(--muted);
+  overflow:hidden;
 }
 .top-bar__brand{
   display:flex;align-items:center;gap:10px;
+  overflow:hidden;white-space:nowrap;
 }
 .top-bar__dot{
-  width:8px;height:8px;border-radius:50%;
+  width:8px;height:8px;border-radius:50%;flex-shrink:0;
   background:var(--red);
   box-shadow:0 0 10px var(--red-soft);
   animation:pulse 1.6s ease-in-out infinite;
@@ -105,9 +107,10 @@ body::after{
   font-family:var(--f-disp);
   font-size:14px;letter-spacing:.18em;
 }
+.top-bar__sub{color:var(--muted-dim);font-size:10px}
 .top-bar__sep{margin:0 14px;color:var(--muted-dim)}
 .top-bar__right{
-  margin-left:auto;display:flex;align-items:center;gap:22px;
+  margin-left:auto;display:flex;align-items:center;gap:22px;flex-shrink:0;
 }
 .top-bar__tc{
   color:var(--fg);
@@ -121,12 +124,20 @@ body::after{
   background:var(--cyan);
   box-shadow:0 0 8px var(--cyan);
 }
+@media(max-width:600px){
+  .top-bar{padding:0 12px;height:40px}
+  .top-bar__name{font-size:11px;letter-spacing:.1em}
+  .top-bar__sub,.top-bar__sep{display:none}
+  .top-bar__tc{display:none}
+  .primary-tabs{top:40px}
+  .fight-selector{top:80px}
+}
 
 /* =============================================================
    FIGHT SELECTOR BAR
 ============================================================= */
 .fight-selector{
-  position:sticky;top:44px;z-index:70;
+  position:sticky;top:86px;z-index:70;
   background:rgba(4,5,10,.94);
   backdrop-filter:blur(14px);
   -webkit-backdrop-filter:blur(14px);
@@ -319,7 +330,7 @@ body::after{
 ============================================================= */
 .primary-tabs{
   display:flex;gap:0;background:#06080E;border-bottom:2px solid var(--border);
-  position:sticky;top:0;z-index:200;padding:0 16px;
+  position:sticky;top:44px;z-index:90;padding:0 16px;
   overflow-x:auto;-webkit-overflow-scrolling:touch;
 }
 .primary-tab{
@@ -1884,9 +1895,9 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 <header class="top-bar">
   <div class="top-bar__brand">
     <span class="top-bar__dot"></span>
-    <span class="top-bar__name">Octagon Tactical Model</span>
+    <span class="top-bar__name" id="appVersion">Octagon Tactical</span>
     <span class="top-bar__sep">·</span>
-    <span>v4.6 · Biomechanics Lab</span>
+    <span class="top-bar__sub">Biomechanics Lab</span>
   </div>
   <div class="top-bar__right">
     <span class="top-bar__tc">TC <span id="tc">00:00.00</span></span>
