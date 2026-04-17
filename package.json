@@ -1,6 +1,6 @@
 {
   "name": "ufc-tactical-dashboard",
-  "version": "2.36.2",
+  "version": "2.37.0",
   "description": "UFC Tactical Analysis Dashboard — SQLite API + Three.js 3D + biomechanics framework",
   "private": true,
   "main": "server.js",
