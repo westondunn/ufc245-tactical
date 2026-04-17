@@ -298,6 +298,26 @@ app.get('/api/version', (_req, res) => {
   res.json({ version: ver.version, build: ver.full, sha: ver.buildSha, buildTime: ver.buildTime });
 });
 
+// ── ADMIN ENDPOINTS (protected by ADMIN_KEY) ──
+const ADMIN_KEY = process.env.ADMIN_KEY || null;
+function requireAdmin(req, res, next) {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin_disabled', message: 'Set ADMIN_KEY env var to enable' });
+  const key = req.headers['x-admin-key'] || req.query.key;
+  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'unauthorized' });
+  next();
+}
+
+// DB statistics — shows current state, persistence info
+app.get('/api/admin/db-stats', requireAdmin, (_req, res) => {
+  res.json(db.getDbStats());
+});
+
+// Save — persist current DB state to disk
+app.post('/api/admin/save', requireAdmin, (_req, res) => {
+  const ok = db.save();
+  res.json({ status: ok ? 'saved' : 'not_persistent', dbPath: process.env.DB_PATH || null });
+});
+
 app.use((req, res) => {
   if (req.accepts('html')) return res.status(200).sendFile(path.join(__dirname, 'public', 'index.html'));
   res.status(404).json({ error: 'not_found', path: req.path });

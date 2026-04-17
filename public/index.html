@@ -3323,7 +3323,7 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 <footer>
   <div class="footer-grid">
     <div>
-      <div class="footer-brand">Octagon Tactical Model · <span id="appVersion">v2.0.0</span></div>
+      <div class="footer-brand">Octagon Tactical Model · <span id="appVersionFooter">v2.0.0</span></div>
       <div class="footer-meta">
         Data · UFCStats.com · ESPN · Sherdog · NSAC · UFC medical staff<br>
         Biomechanics · Walilko et al. 2005 · Kacprzak et al. 2025 · Dunn et al. 2023 · Corcoran et al. 2024<br>
@@ -5648,30 +5648,6 @@ const FIGHTS = {
     red: { tag:'Red Corner · Champion', nick:'"The Nigerian Nightmare"', name:'Kamaru<br>Usman', record:'<strong>15 – 1 – 0</strong> · 10-0 UFC', style:'Pressure Wrestler · Power Striker' },
     blue: { tag:'Blue Corner · Challenger', nick:'"Chaos"', name:'Colby<br>Covington', record:'<strong>15 – 1 – 0</strong> · 10-1 UFC', style:'Volume Striker · Elite Wrestler' },
     result: 'TKO · R5 4:10', full: true
-  },
-  ufc229: {
-    event: 'UFC 229 · Lightweight Title', date: 'Oct 6, 2018', venue: 'T-Mobile Arena, Las Vegas',
-    red: { tag:'Red Corner · Champion', nick:'"The Eagle"', name:'Khabib<br>Nurmagomedov', record:'<strong>27 – 0 – 0</strong> · 11-0 UFC', style:'Sambo · Elite Wrestler · Ground & Pound' },
-    blue: { tag:'Blue Corner · Challenger', nick:'"The Notorious"', name:'Conor<br>McGregor', record:'<strong>21 – 3 – 0</strong> · 9-1 UFC', style:'Precision Striker · Southpaw · KO Power' },
-    result: 'Submission (RNC) · R4 3:03', full: false
-  },
-  ufc261: {
-    event: 'UFC 261 · Welterweight Title', date: 'Apr 24, 2021', venue: 'VyStar Veterans Memorial Arena, Jacksonville',
-    red: { tag:'Red Corner · Champion', nick:'"The Nigerian Nightmare"', name:'Kamaru<br>Usman', record:'<strong>18 – 1 – 0</strong> · 13-0 UFC', style:'Pressure Wrestler · Evolved Striker' },
-    blue: { tag:'Blue Corner · Challenger', nick:'"Gamebred"', name:'Jorge<br>Masvidal', record:'<strong>35 – 14 – 0</strong> · 12-6 UFC', style:'Street Fighter · KO Artist · BMF' },
-    result: 'KO · R2 1:02', full: false
-  },
-  ufc194: {
-    event: 'UFC 194 · Featherweight Title', date: 'Dec 12, 2015', venue: 'MGM Grand, Las Vegas',
-    red: { tag:'Red Corner · Champion', nick:'"Scarface"', name:'José<br>Aldo', record:'<strong>25 – 1 – 0</strong> · 7-0 UFC', style:'Muay Thai · Counter Striker · Leg Kicks' },
-    blue: { tag:'Blue Corner · Challenger', nick:'"The Notorious"', name:'Conor<br>McGregor', record:'<strong>18 – 2 – 0</strong> · 6-0 UFC', style:'Precision Striker · Southpaw · KO Power' },
-    result: 'KO · R1 0:13', full: false
-  },
-  ufc217: {
-    event: 'UFC 217 · Middleweight Title', date: 'Nov 4, 2017', venue: 'Madison Square Garden, NYC',
-    red: { tag:'Red Corner · Champion', nick:'"The Count"', name:'Michael<br>Bisping', record:'<strong>31 – 7 – 0</strong> · 20-7 UFC', style:'Boxing · Volume · Cardio Machine' },
-    blue: { tag:'Blue Corner · Challenger', nick:'"Rush"', name:'Georges<br>St-Pierre', record:'<strong>25 – 2 – 0</strong> · 19-2 UFC', style:'Complete MMA · Wrestling · Jab' },
-    result: 'Submission (RNC) · R3 4:23', full: false
   }
 };
 
@@ -5870,17 +5846,26 @@ async function loadEventFightStrip(eventId){
       strip.innerHTML = '<span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim)">No fights</span>';
       return;
     }
-    strip.innerHTML = data.card.map(f => {
+    strip.innerHTML = data.card.map((f,i) => {
       const isWR = f.winner_id === f.red_id;
       const isWB = f.winner_id === f.blue_id;
-      const wName = isWR ? f.red_name.split(' ').pop() : isWB ? f.blue_name.split(' ').pop() : '?';
-      const lName = isWR ? f.blue_name.split(' ').pop() : isWB ? f.red_name.split(' ').pop() : '?';
-      const method = (f.method||'').replace('KO/TKO','TKO').replace('U-DEC','DEC').replace('S-DEC','SDEC').replace('M-DEC','MDEC');
-      return '<button class="fight-chip" data-dbfight="' + f.id + '" data-event="' + data.event.number + '" onclick="selectDbFight(' + f.id + ',this)">' +
-        '<span style="color:var(--green);font-weight:700">' + escHtml(wName) + '</span>' +
-        ' <span style="color:var(--muted-dim);font-size:8px">def</span> ' +
-        escHtml(lName) +
-        '<br><span style="font-size:8px;color:var(--muted)">' + escHtml(method) + ' R' + (f.round||'') + '</span>' +
+      const isDraw = !f.winner_id;
+      const method = (f.method||'').replace('KO/TKO','TKO').replace('U-DEC','DEC').replace('S-DEC','SDEC').replace('M-DEC','MDEC').replace('CNC','NC');
+      let label;
+      if (isDraw) {
+        label = escHtml(f.red_name.split(' ').pop()) +
+          ' <span style="color:var(--muted-dim);font-size:8px">vs</span> ' +
+          escHtml(f.blue_name.split(' ').pop());
+      } else {
+        const wName = isWR ? f.red_name.split(' ').pop() : f.blue_name.split(' ').pop();
+        const lName = isWR ? f.blue_name.split(' ').pop() : f.red_name.split(' ').pop();
+        label = '<span style="color:var(--green);font-weight:700">' + escHtml(wName) + '</span>' +
+          ' <span style="color:var(--muted-dim);font-size:8px">def</span> ' + escHtml(lName);
+      }
+      const mainAttr = (i === 0 && f.is_main) ? ' data-main="1"' : '';
+      return '<button class="fight-chip" data-dbfight="' + f.id + '" data-event="' + data.event.number + '"' + mainAttr + ' onclick="selectDbFight(' + f.id + ',this)">' +
+        label +
+        '<br><span style="font-size:8px;color:var(--muted)">' + escHtml(method) + (isDraw ? '' : ' R' + (f.round||'')) + '</span>' +
         '</button>';
     }).join('');
   } catch(e){
@@ -5895,7 +5880,7 @@ async function selectDbFight(fightId, chipEl){
 
   // Check if this is the hardcoded UFC 245 main event
   const eventNum = chipEl ? parseInt(chipEl.dataset.event, 10) : 0;
-  if (eventNum === 245 && chipEl === chipEl.parentElement.firstElementChild && FIGHTS.ufc245) {
+  if (eventNum === 245 && chipEl && chipEl.dataset.main === '1' && FIGHTS.ufc245) {
     selectFight('ufc245');
     return;
   }
@@ -6654,8 +6639,10 @@ fetch('/api/version').then(r=>r.json()).then(v=>{
   const tag = `v${v.version}+${v.sha}`;
   const el = document.getElementById('appVersion');
   if (el) el.textContent = tag;
+  const ft = document.getElementById('appVersionFooter');
+  if (ft) ft.textContent = tag;
   const tb = document.querySelector('.top-bar__name');
-  if (tb) tb.textContent = `Octagon Tactical Model · ${tag}`;
+  if (tb) tb.textContent = `Octagon Tactical · ${tag}`;
 }).catch(()=>{});
 })();
 </script>
