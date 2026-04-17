@@ -78,20 +78,21 @@ jobs:
           node -e "
             const fs = require('fs');
             const html = fs.readFileSync('public/index.html','utf8');
-            const required = [
-              'Content-Security-Policy', 'escHtml', 'window.addToCompare',
-              '/api/version', 'comparePanel', 'fighterSearch',
-              'three.min.js', 'appVersion'
+            const htmlRequired = [
+              'comparePanel', 'fighterSearch', 'three.min.js', 'appVersion',
+              '/css/styles.css', '/js/app.js'
             ];
+            const appJs = fs.readFileSync('public/js/app.js','utf8');
+            const jsRequired = ['escHtml', 'window.addToCompare', '/api/version'];
             let ok = true;
-            for (const r of required) {
-              if (!html.includes(r)) {
-                console.error('Missing in HTML:', r);
-                ok = false;
-              }
+            for (const r of htmlRequired) {
+              if (!html.includes(r)) { console.error('Missing in HTML:', r); ok = false; }
+            }
+            for (const r of jsRequired) {
+              if (!appJs.includes(r)) { console.error('Missing in app.js:', r); ok = false; }
             }
             if (!ok) process.exit(1);
-            console.log('HTML structure: OK');
+            console.log('HTML + JS structure: OK');
           "
 
       - name: Check server security headers

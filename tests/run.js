@@ -419,12 +419,18 @@ async function run() {
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   assert(html.includes('<!DOCTYPE html>'), 'HTML has doctype');
   assert(html.includes('three.min.js'), 'Three.js CDN included');
-  assert(html.includes('escHtml'), 'XSS escape function present');
-  assert(html.includes('window.addToCompare'), 'IIFE functions exposed on window');
   assert(html.includes('appVersion'), 'version display element present');
-  assert(html.includes('/api/version'), 'version API fetch present');
   assert(html.includes('comparePanel'), 'comparison panel present');
   assert(html.includes('fighterSearch'), 'fighter search input present');
+  assert(html.includes('/css/styles.css'), 'external CSS stylesheet linked');
+  assert(html.includes('/js/app.js'), 'external JS bundle linked');
+
+  // ── App JS ──
+  console.log('\nApp JS:');
+  const appJs = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'app.js'), 'utf8');
+  assert(appJs.includes('escHtml'), 'XSS escape function present');
+  assert(appJs.includes('window.addToCompare'), 'IIFE functions exposed on window');
+  assert(appJs.includes('/api/version'), 'version API fetch present');
 
   // ── Server Config ──
   console.log('\nServer Config:');
