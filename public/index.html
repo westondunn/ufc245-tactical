@@ -133,10 +133,8 @@ body::after{
   border-bottom:1px solid var(--border);
   padding:10px 24px;
   display:flex;align-items:center;gap:10px;
-  overflow-x:auto;
-  scrollbar-width:none;
+  flex-wrap:wrap;
 }
-.fight-selector::-webkit-scrollbar{display:none}
 .fight-selector__label{
   font-family:var(--f-mono);
   font-size:9px;letter-spacing:.22em;
@@ -144,16 +142,39 @@ body::after{
   color:var(--muted);
   white-space:nowrap;flex-shrink:0;
 }
+.event-dropdown{
+  background:#0A0C14;
+  border:1px solid var(--border-soft);
+  color:var(--cyan);
+  font-family:var(--f-mono);
+  font-size:11px;letter-spacing:.1em;
+  padding:6px 28px 6px 12px;
+  cursor:pointer;
+  appearance:none;-webkit-appearance:none;
+  background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6'%3E%3Cpath d='M0 0l5 6 5-6z' fill='%232DDCFF'/%3E%3C/svg%3E");
+  background-repeat:no-repeat;
+  background-position:right 10px center;
+  outline:none;
+  min-width:160px;
+  transition:border-color .2s;
+}
+.event-dropdown:focus{border-color:var(--cyan)}
+.event-dropdown option{background:#0A0C14;color:var(--fg);font-family:var(--f-mono);font-size:11px}
+.event-fight-strip{
+  display:flex;gap:6px;align-items:center;overflow-x:auto;flex:1;
+  scrollbar-width:none;min-height:32px;
+}
+.event-fight-strip::-webkit-scrollbar{display:none}
 .fight-chip{
   background:transparent;
   border:1px solid var(--border-soft);
   color:var(--fg-dim);
   font-family:var(--f-mono);
-  font-size:10px;letter-spacing:.1em;
-  text-transform:uppercase;
-  padding:6px 12px;
+  font-size:10px;letter-spacing:.08em;
+  padding:5px 10px;
   cursor:pointer;white-space:nowrap;
   transition:all .2s ease;flex-shrink:0;
+  text-align:left;line-height:1.3;
 }
 .fight-chip:hover{border-color:var(--muted);color:var(--fg)}
 .fight-chip.active{
@@ -1894,26 +1915,12 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
 ============================================================ -->
 <div class="fight-selector" id="fightSelector">
   <span class="fight-selector__label">Event ▸</span>
-  <button class="fight-chip active" data-fight="ufc245">
-    <span class="fight-chip__event">UFC 245</span> Usman vs Covington
-    <span class="fight-chip__method">TKO R5</span>
-  </button>
-  <button class="fight-chip" data-fight="ufc229">
-    <span class="fight-chip__event">UFC 229</span> Khabib vs McGregor
-    <span class="fight-chip__method">SUB R4</span>
-  </button>
-  <button class="fight-chip" data-fight="ufc261">
-    <span class="fight-chip__event">UFC 261</span> Usman vs Masvidal 2
-    <span class="fight-chip__method">KO R2</span>
-  </button>
-  <button class="fight-chip" data-fight="ufc194">
-    <span class="fight-chip__event">UFC 194</span> Aldo vs McGregor
-    <span class="fight-chip__method">KO R1</span>
-  </button>
-  <button class="fight-chip" data-fight="ufc217">
-    <span class="fight-chip__event">UFC 217</span> Bisping vs GSP
-    <span class="fight-chip__method">SUB R3</span>
-  </button>
+  <select class="event-dropdown" id="eventDropdown">
+    <option value="">Loading events…</option>
+  </select>
+  <div class="event-fight-strip" id="eventFightStrip">
+    <span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim)">Select an event</span>
+  </div>
   <span class="fight-selector__label" style="margin-left:auto">Fighter ▸</span>
   <div style="position:relative;flex-shrink:0">
     <input id="fighterSearch" type="text" placeholder="Search fighter…"
@@ -5730,8 +5737,33 @@ function selectFight(fightId){
 }
 
 function setupFightSelector(){
-  document.querySelectorAll('.fight-chip').forEach(chip => {
-    chip.addEventListener('click', () => selectFight(chip.dataset.fight));
+  // Populate event dropdown from API
+  const dropdown = document.getElementById('eventDropdown');
+  const strip = document.getElementById('eventFightStrip');
+
+  fetch('/api/events').then(r=>r.json()).then(events => {
+    const numbered = events.filter(e => e.number).sort((a,b) => b.number - a.number);
+    dropdown.innerHTML = '<option value="">— Select Event —</option>' +
+      numbered.map(e =>
+        '<option value="' + e.id + '" data-num="' + e.number + '"' +
+        (e.number === 245 ? ' selected' : '') + '>' +
+        'UFC ' + e.number +
+        '</option>'
+      ).join('');
+    // Auto-load UFC 245
+    const ufc245 = numbered.find(e => e.number === 245);
+    if (ufc245) loadEventFightStrip(ufc245.id);
+  }).catch(() => {
+    dropdown.innerHTML = '<option value="">Error loading</option>';
+  });
+
+  dropdown.addEventListener('change', function(){
+    const eventId = this.value;
+    if (!eventId) {
+      strip.innerHTML = '<span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim)">Select an event</span>';
+      return;
+    }
+    loadEventFightStrip(parseInt(eventId, 10));
   });
 
   // Fighter search autocomplete
@@ -5785,6 +5817,82 @@ function setupFightSelector(){
   document.getElementById('closeFighterPanel').addEventListener('click', () => {
     document.getElementById('fighterPanel').style.display = 'none';
   });
+}
+
+// Load fight card into the horizontal strip
+async function loadEventFightStrip(eventId){
+  const strip = document.getElementById('eventFightStrip');
+  strip.innerHTML = '<span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim)">Loading…</span>';
+  try {
+    const res = await fetch('/api/events/' + eventId + '/card');
+    const data = await res.json();
+    if (!data.card || !data.card.length) {
+      strip.innerHTML = '<span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim)">No fights</span>';
+      return;
+    }
+    strip.innerHTML = data.card.map(f => {
+      const isWR = f.winner_id === f.red_id;
+      const isWB = f.winner_id === f.blue_id;
+      const wName = isWR ? f.red_name.split(' ').pop() : isWB ? f.blue_name.split(' ').pop() : '?';
+      const lName = isWR ? f.blue_name.split(' ').pop() : isWB ? f.red_name.split(' ').pop() : '?';
+      const method = (f.method||'').replace('KO/TKO','TKO').replace('U-DEC','DEC').replace('S-DEC','SDEC').replace('M-DEC','MDEC');
+      return '<button class="fight-chip" data-dbfight="' + f.id + '" data-event="' + data.event.number + '" onclick="selectDbFight(' + f.id + ',this)">' +
+        '<span style="color:var(--green);font-weight:700">' + escHtml(wName) + '</span>' +
+        ' <span style="color:var(--muted-dim);font-size:8px">def</span> ' +
+        escHtml(lName) +
+        '<br><span style="font-size:8px;color:var(--muted)">' + escHtml(method) + ' R' + (f.round||'') + '</span>' +
+        '</button>';
+    }).join('');
+  } catch(e){
+    strip.innerHTML = '<span style="font-family:var(--f-mono);font-size:9px;color:var(--red)">Error</span>';
+  }
+}
+
+// Select a fight from the DB and update the dashboard hero
+async function selectDbFight(fightId, chipEl){
+  document.querySelectorAll('.fight-chip').forEach(c => c.classList.remove('active'));
+  if (chipEl) chipEl.classList.add('active');
+
+  // Check if this is the hardcoded UFC 245 main event
+  const eventNum = chipEl ? parseInt(chipEl.dataset.event, 10) : 0;
+  if (eventNum === 245 && chipEl === chipEl.parentElement.firstElementChild && FIGHTS.ufc245) {
+    selectFight('ufc245');
+    return;
+  }
+
+  try {
+    const res = await fetch('/api/fights/' + fightId + '/rounds');
+    const f = await res.json();
+    const titleTag = f.is_title ? ' · ' + (f.weight_class||'') + ' Title' : '';
+
+    const setHtml = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
+    setHtml('heroEvent', 'UFC ' + (f.event_number||'') + titleTag);
+    setHtml('heroRedTag', 'Red Corner <span class="dot"></span>');
+    setHtml('heroRedNick', f.red_nickname ? '&ldquo;' + escHtml(f.red_nickname) + '&rdquo;' : '');
+    setHtml('heroRedName', escHtml(f.red_name));
+    setHtml('heroRedRecord', (f.red_height ? f.red_height + 'cm' : '') + (f.red_reach ? ' · ' + f.red_reach + 'cm reach' : ''));
+    setHtml('heroRedStyle', f.red_stance ? escHtml(f.red_stance) + (f.red_nationality ? ' · ' + escHtml(f.red_nationality) : '') : '');
+
+    setHtml('heroBlueTag', '<span class="dot"></span> Blue Corner');
+    setHtml('heroBlueNick', f.blue_nickname ? '&ldquo;' + escHtml(f.blue_nickname) + '&rdquo;' : '');
+    setHtml('heroBlueName', escHtml(f.blue_name));
+    setHtml('heroBlueRecord', (f.blue_height ? f.blue_height + 'cm' : '') + (f.blue_reach ? ' · ' + f.blue_reach + 'cm reach' : ''));
+    setHtml('heroBlueStyle', f.blue_stance ? escHtml(f.blue_stance) + (f.blue_nationality ? ' · ' + escHtml(f.blue_nationality) : '') : '');
+
+    // Dim hardcoded sections
+    SCOPED_SECTIONS.forEach(id => {
+      const sec = document.getElementById(id);
+      if (sec){ sec.style.opacity = '0.18'; sec.style.pointerEvents = 'none'; }
+    });
+    document.querySelectorAll('.scope-msg').forEach(e => e.classList.add('show'));
+
+    try {
+      document.getElementById('fighterPanel').style.display = 'none';
+      document.getElementById('comparePanel').classList.remove('show');
+    } catch(e){}
+
+    document.getElementById('hero').scrollIntoView({ behavior: 'smooth' });
+  } catch(e){ console.warn('[selectDbFight]', e.message); }
 }
 
 // Load a fighter's event history
@@ -6497,6 +6605,7 @@ window.loadEventCardTab = toggleEventCard;
 window.loadFightDetailTab = toggleFightDetail;
 window.toggleEventCard = toggleEventCard;
 window.toggleFightDetail = toggleFightDetail;
+window.selectDbFight = selectDbFight;
 window.showFighterProfile = showFighterProfile;
 window.renderFighterDir = function(){ renderFighterDir(_allFightersData); };
 
