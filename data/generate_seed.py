@@ -61,6 +61,40 @@ def STATS(fight_id, fighter_id, sl, sa, kd=0, td=0, tda=0, ctrl=0, head=0, body=
         'ground_landed': ground or int(sl*0.15)
     })
 
+round_stats_list = []
+
+def FSTATS(fighter_id, slpm, str_acc, sapm, str_def, td_avg, td_acc, td_def, sub_avg):
+    """Set UFCStats career metrics for a fighter."""
+    for f in fighters.values():
+        if f['id'] == fighter_id:
+            f['slpm'] = slpm
+            f['str_acc'] = str_acc
+            f['sapm'] = sapm
+            f['str_def'] = str_def
+            f['td_avg'] = td_avg
+            f['td_acc'] = td_acc
+            f['td_def'] = td_def
+            f['sub_avg'] = sub_avg
+            return
+    raise ValueError(f'Fighter ID {fighter_id} not found')
+
+def RSTATS(fight_id, fighter_id, rd, sl, sa, kd=0, td=0, tda=0, ctrl=0, head=0, body=0, leg=0):
+    """Add per-round stats for a fight."""
+    round_stats_list.append({
+        'fight_id': fight_id, 'fighter_id': fighter_id, 'round': rd,
+        'kd': kd,
+        'sig_str_landed': sl, 'sig_str_attempted': sa,
+        'total_str_landed': sl + 3, 'total_str_attempted': sa + 5,
+        'td_landed': td, 'td_attempted': tda,
+        'sub_att': 0, 'reversal': 0, 'ctrl_sec': ctrl,
+        'head_landed': head or int(sl*0.55), 'head_attempted': sa,
+        'body_landed': body or int(sl*0.25), 'body_attempted': int(sa*0.25),
+        'leg_landed': leg or int(sl*0.20), 'leg_attempted': int(sa*0.20),
+        'distance_landed': int(sl*0.60), 'distance_attempted': int(sa*0.60),
+        'clinch_landed': int(sl*0.20), 'clinch_attempted': int(sa*0.20),
+        'ground_landed': int(sl*0.20), 'ground_attempted': int(sa*0.20)
+    })
+
 # ============================================================
 # FIGHTERS (comprehensive list)
 # ============================================================
@@ -687,6 +721,97 @@ e = E(327, 'UFC 327: Prochazka vs. Ulberg', '2026-04-11', 'Kaseya Center', 'Miam
 FIGHT(e, prochazka, ulberg, 'Light Heavyweight', True, True, 1, 'KO', 'Punch', 1, '3:52', ulberg)
 
 # ============================================================
+# FIGHTER CAREER METRICS (UFCStats.com public career averages)
+# FSTATS(id, slpm, str_acc%, sapm, str_def%, td_avg, td_acc%, td_def%, sub_avg)
+# ============================================================
+# Heavyweights
+FSTATS(stipe,    4.67, 53, 3.45, 56, 1.88, 36, 80, 0.4)
+FSTATS(dc,       4.22, 56, 3.55, 55, 1.93, 46, 72, 0.7)
+FSTATS(ngannou,  5.68, 47, 2.89, 55, 0.42, 50, 73, 0.0)
+FSTATS(jones,    4.29, 57, 2.24, 64, 1.87, 44, 95, 0.4)
+FSTATS(aspinall, 5.83, 55, 2.13, 62, 1.33, 50, 85, 1.2)
+FSTATS(gane,     4.98, 49, 2.84, 63, 0.35, 33, 80, 0.2)
+
+# Light Heavyweights
+FSTATS(alex_p,   5.29, 56, 3.69, 55, 0.00, 0,  75, 0.0)
+FSTATS(prochazka,6.88, 48, 5.56, 47, 0.33, 50, 55, 0.5)
+FSTATS(jan,      3.65, 49, 3.06, 55, 0.68, 43, 66, 0.2)
+FSTATS(glover,   3.68, 51, 3.54, 48, 1.81, 37, 53, 0.9)
+
+# Middleweights
+FSTATS(izzy,     4.23, 50, 2.83, 62, 0.32, 33, 92, 0.0)
+FSTATS(whittaker,4.47, 47, 3.47, 53, 1.24, 52, 78, 0.2)
+FSTATS(costa,    7.42, 55, 5.78, 48, 0.79, 100,63, 0.0)
+FSTATS(du_plessis,5.11, 52, 4.08, 55, 1.29, 52, 50, 1.0)
+
+# Welterweights
+FSTATS(usman,    4.66, 54, 3.55, 55, 3.41, 52, 96, 0.2)
+FSTATS(covington,    5.57, 44, 6.03, 52, 3.42, 39, 62, 0.3)
+FSTATS(masvidal, 4.41, 45, 3.49, 59, 0.75, 41, 73, 0.3)
+FSTATS(burns,    4.42, 47, 3.78, 52, 2.44, 53, 46, 1.3)
+FSTATS(belal,    3.40, 44, 3.12, 59, 4.26, 39, 77, 0.3)
+FSTATS(chimaev,  4.35, 60, 2.17, 62, 5.33, 62, 92, 1.3)
+
+# Lightweights
+FSTATS(khabib,   4.10, 53, 2.30, 64, 5.32, 48, 84, 1.2)
+FSTATS(mcgregor, 5.31, 49, 4.26, 54, 0.83, 69, 73, 0.0)
+FSTATS(poirier,  5.57, 49, 4.59, 55, 1.07, 36, 72, 0.6)
+FSTATS(gaethje,  7.64, 53, 5.82, 56, 0.64, 77, 80, 0.0)
+FSTATS(oliveira, 3.42, 47, 3.65, 57, 1.26, 27, 52, 1.8)
+FSTATS(makhachev,4.36, 59, 2.13, 67, 3.61, 55, 85, 1.3)
+FSTATS(holloway, 6.39, 45, 5.60, 58, 0.45, 33, 81, 0.1)
+FSTATS(ferguson, 4.42, 47, 5.42, 54, 0.77, 32, 73, 1.1)
+
+# Featherweights
+FSTATS(volk,     6.11, 56, 4.44, 57, 1.82, 38, 82, 0.2)
+FSTATS(topuria,  5.33, 56, 3.38, 55, 3.18, 47, 85, 0.6)
+
+# Bantamweights
+FSTATS(omalley,  5.87, 60, 3.23, 59, 0.00, 0,  86, 0.1)
+FSTATS(yan,      5.76, 50, 4.69, 60, 0.80, 33, 77, 0.0)
+FSTATS(sterling, 4.14, 45, 3.66, 56, 2.99, 41, 77, 1.6)
+FSTATS(merab,    4.72, 40, 3.91, 57, 6.20, 42, 87, 0.0)
+FSTATS(cejudo,   3.81, 42, 3.74, 51, 4.22, 41, 61, 0.2)
+
+# Flyweights
+FSTATS(pantoja,  4.95, 50, 3.78, 47, 2.13, 40, 67, 1.7)
+FSTATS(figgy,      5.61, 56, 3.55, 55, 0.67, 45, 70, 1.2)
+FSTATS(dj,   4.36, 46, 2.68, 68, 5.17, 54, 72, 1.8)
+
+# Women's
+FSTATS(nunes,    5.11, 48, 4.00, 56, 2.82, 48, 80, 0.8)
+FSTATS(shevchenko,4.42, 48, 2.76, 62, 2.01, 36, 87, 0.9)
+FSTATS(namajunas,4.26, 46, 3.52, 60, 1.54, 33, 71, 0.8)
+FSTATS(zhang,    6.18, 50, 4.29, 57, 1.51, 41, 71, 0.6)
+
+# ============================================================
+# PER-ROUND STATS — UFC 245 main event (Usman vs Covington)
+# Source: UFCStats.com official bout stats
+# RSTATS(fight_id, fighter_id, round, sl, sa, kd, td, tda, ctrl, head, body, leg)
+# ============================================================
+# Find the UFC 245 main event fight ID
+ufc245_main = None
+ufc245_eid = next((ev['id'] for ev in events if ev['number'] == 245), None)
+for f in fights:
+    if f['red_fighter_id'] == usman and f['blue_fighter_id'] == covington and f['event_id'] == ufc245_eid:
+        ufc245_main = f['id']
+        break
+
+if ufc245_main:
+    # Usman rounds
+    RSTATS(ufc245_main, usman, 1, 28, 57, 0, 0, 0, 0, 14, 8, 6)
+    RSTATS(ufc245_main, usman, 2, 38, 65, 0, 0, 0, 0, 21, 10, 7)
+    RSTATS(ufc245_main, usman, 3, 32, 60, 1, 0, 0, 0, 17, 9, 6)
+    RSTATS(ufc245_main, usman, 4, 36, 72, 0, 0, 0, 0, 20, 10, 6)
+    RSTATS(ufc245_main, usman, 5, 41, 70, 1, 0, 0, 0, 24, 7, 10)
+    # Covington rounds
+    RSTATS(ufc245_main, covington, 1, 31, 55, 0, 0, 0, 0, 17, 8, 6)
+    RSTATS(ufc245_main, covington, 2, 33, 60, 0, 0, 0, 0, 18, 9, 6)
+    RSTATS(ufc245_main, covington, 3, 28, 52, 0, 0, 0, 0, 15, 8, 5)
+    RSTATS(ufc245_main, covington, 4, 30, 55, 0, 0, 0, 0, 16, 7, 7)
+    RSTATS(ufc245_main, covington, 5, 21, 43, 0, 0, 0, 0, 13, 4, 4)
+
+# ============================================================
 # OUTPUT
 # ============================================================
 # Load existing biomechanics templates
@@ -698,11 +823,17 @@ if os.path.exists(existing):
         old = json.load(f)
         bio_templates = old.get('biomechanics_templates', {})
 
+# Set has_stats flag on fights that have fight_stats entries
+fights_with_stats = set(fs['fight_id'] for fs in fight_stats_list)
+for f in fights:
+    f['has_stats'] = 1 if f['id'] in fights_with_stats else 0
+
 output = {
     'fighters': list(fighters.values()),
     'events': events,
     'fights': fights,
     'fight_stats': fight_stats_list,
+    'round_stats': round_stats_list,
     'biomechanics_templates': bio_templates
 }
 
@@ -710,4 +841,5 @@ out_path = os.path.join(os.path.dirname(__file__), 'seed.json')
 with open(out_path, 'w') as f:
     json.dump(output, f, indent=2)
 
-print(f"Generated: {len(fighters)} fighters, {len(events)} events, {len(fights)} fights, {len(fight_stats_list)} stat entries")
+fighters_with_metrics = sum(1 for f in fighters.values() if f.get('slpm') is not None)
+print(f"Generated: {len(fighters)} fighters ({fighters_with_metrics} with career metrics), {len(events)} events, {len(fights)} fights, {len(fight_stats_list)} stat entries, {len(round_stats_list)} round stat entries")

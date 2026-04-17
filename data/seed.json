@@ -8,7 +8,15 @@
       "reach_cm": 203,
       "stance": "Orthodox",
       "weight_class": "Heavyweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 4.67,
+      "str_acc": 53,
+      "sapm": 3.45,
+      "str_def": 56,
+      "td_avg": 1.88,
+      "td_acc": 36,
+      "td_def": 80,
+      "sub_avg": 0.4
     },
     {
       "id": 2,
@@ -18,7 +26,15 @@
       "reach_cm": 188,
       "stance": "Orthodox",
       "weight_class": "Heavyweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 4.22,
+      "str_acc": 56,
+      "sapm": 3.55,
+      "str_def": 55,
+      "td_avg": 1.93,
+      "td_acc": 46,
+      "td_def": 72,
+      "sub_avg": 0.7
     },
     {
       "id": 3,
@@ -28,7 +44,15 @@
       "reach_cm": 211,
       "stance": "Orthodox",
       "weight_class": "Heavyweight",
-      "nationality": "Cameroon"
+      "nationality": "Cameroon",
+      "slpm": 5.68,
+      "str_acc": 47,
+      "sapm": 2.89,
+      "str_def": 55,
+      "td_avg": 0.42,
+      "td_acc": 50,
+      "td_def": 73,
+      "sub_avg": 0
     },
     {
       "id": 4,
@@ -38,7 +62,15 @@
       "reach_cm": 196,
       "stance": "Orthodox",
       "weight_class": "Heavyweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 2.44,
+      "str_acc": 42,
+      "sapm": 3.83,
+      "str_def": 55,
+      "td_avg": 0.18,
+      "td_acc": 14,
+      "td_def": 72,
+      "sub_avg": 0
     },
     {
       "id": 5,
@@ -58,7 +90,15 @@
       "reach_cm": 203,
       "stance": "Orthodox",
       "weight_class": "Heavyweight",
-      "nationality": "France"
+      "nationality": "France",
+      "slpm": 4.98,
+      "str_acc": 49,
+      "sapm": 2.84,
+      "str_def": 63,
+      "td_avg": 0.35,
+      "td_acc": 33,
+      "td_def": 80,
+      "sub_avg": 0.2
     },
     {
       "id": 7,
@@ -68,7 +108,15 @@
       "reach_cm": 215,
       "stance": "Orthodox",
       "weight_class": "Heavyweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 4.29,
+      "str_acc": 57,
+      "sapm": 2.24,
+      "str_def": 64,
+      "td_avg": 1.87,
+      "td_acc": 44,
+      "td_def": 95,
+      "sub_avg": 0.4
     },
     {
       "id": 8,
@@ -78,7 +126,15 @@
       "reach_cm": 203,
       "stance": "Orthodox",
       "weight_class": "Heavyweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 3.34,
+      "str_acc": 47,
+      "sapm": 2.93,
+      "str_def": 58,
+      "td_avg": 5.32,
+      "td_acc": 53,
+      "td_def": 55,
+      "sub_avg": 0.4
     },
     {
       "id": 9,
@@ -108,7 +164,15 @@
       "reach_cm": 198,
       "stance": "Orthodox",
       "weight_class": "Heavyweight",
-      "nationality": "UK"
+      "nationality": "UK",
+      "slpm": 5.83,
+      "str_acc": 55,
+      "sapm": 2.13,
+      "str_def": 62,
+      "td_avg": 1.33,
+      "td_acc": 50,
+      "td_def": 85,
+      "sub_avg": 1.2
     },
     {
       "id": 12,
@@ -118,7 +182,15 @@
       "reach_cm": 196,
       "stance": "Orthodox",
       "weight_class": "Light Heavyweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 3.68,
+      "str_acc": 51,
+      "sapm": 3.54,
+      "str_def": 48,
+      "td_avg": 1.81,
+      "td_acc": 37,
+      "td_def": 53,
+      "sub_avg": 0.9
     },
     {
       "id": 13,
@@ -128,7 +200,15 @@
       "reach_cm": 203,
       "stance": "Orthodox",
       "weight_class": "Light Heavyweight",
-      "nationality": "Czech Republic"
+      "nationality": "Czech Republic",
+      "slpm": 6.88,
+      "str_acc": 48,
+      "sapm": 5.56,
+      "str_def": 47,
+      "td_avg": 0.33,
+      "td_acc": 50,
+      "td_def": 55,
+      "sub_avg": 0.5
     },
     {
       "id": 14,
@@ -138,7 +218,15 @@
       "reach_cm": 196,
       "stance": "Orthodox",
       "weight_class": "Light Heavyweight",
-      "nationality": "Poland"
+      "nationality": "Poland",
+      "slpm": 3.65,
+      "str_acc": 49,
+      "sapm": 3.06,
+      "str_def": 55,
+      "td_avg": 0.68,
+      "td_acc": 43,
+      "td_def": 66,
+      "sub_avg": 0.2
     },
     {
       "id": 15,
@@ -168,7 +256,15 @@
       "reach_cm": 203,
       "stance": "Orthodox",
       "weight_class": "Light Heavyweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 5.29,
+      "str_acc": 56,
+      "sapm": 3.69,
+      "str_def": 55,
+      "td_avg": 0,
+      "td_acc": 0,
+      "td_def": 75,
+      "sub_avg": 0
     },
     {
       "id": 18,
@@ -188,7 +284,15 @@
       "reach_cm": 203,
       "stance": "Southpaw",
       "weight_class": "Middleweight",
-      "nationality": "Nigeria"
+      "nationality": "Nigeria",
+      "slpm": 4.23,
+      "str_acc": 50,
+      "sapm": 2.83,
+      "str_def": 62,
+      "td_avg": 0.32,
+      "td_acc": 33,
+      "td_def": 92,
+      "sub_avg": 0
     },
     {
       "id": 20,
@@ -198,7 +302,15 @@
       "reach_cm": 185,
       "stance": "Orthodox",
       "weight_class": "Middleweight",
-      "nationality": "Australia"
+      "nationality": "Australia",
+      "slpm": 4.47,
+      "str_acc": 47,
+      "sapm": 3.47,
+      "str_def": 53,
+      "td_avg": 1.24,
+      "td_acc": 52,
+      "td_def": 78,
+      "sub_avg": 0.2
     },
     {
       "id": 21,
@@ -208,7 +320,15 @@
       "reach_cm": 185,
       "stance": "Orthodox",
       "weight_class": "Middleweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 7.42,
+      "str_acc": 55,
+      "sapm": 5.78,
+      "str_def": 48,
+      "td_avg": 0.79,
+      "td_acc": 100,
+      "td_def": 63,
+      "sub_avg": 0
     },
     {
       "id": 22,
@@ -258,7 +378,15 @@
       "reach_cm": 191,
       "stance": "Orthodox",
       "weight_class": "Middleweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 3.14,
+      "str_acc": 42,
+      "sapm": 3.37,
+      "str_def": 52,
+      "td_avg": 3.32,
+      "td_acc": 54,
+      "td_def": 68,
+      "sub_avg": 0.3
     },
     {
       "id": 27,
@@ -268,7 +396,15 @@
       "reach_cm": 196,
       "stance": "Orthodox",
       "weight_class": "Middleweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 3.05,
+      "str_acc": 43,
+      "sapm": 2.6,
+      "str_def": 65,
+      "td_avg": 0.47,
+      "td_acc": 33,
+      "td_def": 80,
+      "sub_avg": 0.2
     },
     {
       "id": 28,
@@ -288,7 +424,15 @@
       "reach_cm": 188,
       "stance": "Southpaw",
       "weight_class": "Middleweight",
-      "nationality": "South Africa"
+      "nationality": "South Africa",
+      "slpm": 5.11,
+      "str_acc": 52,
+      "sapm": 4.08,
+      "str_def": 55,
+      "td_avg": 1.29,
+      "td_acc": 52,
+      "td_def": 50,
+      "sub_avg": 1
     },
     {
       "id": 30,
@@ -308,7 +452,15 @@
       "reach_cm": 193,
       "stance": "Orthodox",
       "weight_class": "Welterweight",
-      "nationality": "Nigeria"
+      "nationality": "Nigeria",
+      "slpm": 4.66,
+      "str_acc": 54,
+      "sapm": 3.55,
+      "str_def": 55,
+      "td_avg": 3.41,
+      "td_acc": 52,
+      "td_def": 96,
+      "sub_avg": 0.2
     },
     {
       "id": 32,
@@ -318,7 +470,15 @@
       "reach_cm": 183,
       "stance": "Orthodox",
       "weight_class": "Welterweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 5.57,
+      "str_acc": 44,
+      "sapm": 6.03,
+      "str_def": 52,
+      "td_avg": 3.42,
+      "td_acc": 39,
+      "td_def": 62,
+      "sub_avg": 0.3
     },
     {
       "id": 33,
@@ -328,7 +488,15 @@
       "reach_cm": 183,
       "stance": "Orthodox",
       "weight_class": "Welterweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 4.41,
+      "str_acc": 45,
+      "sapm": 3.49,
+      "str_def": 59,
+      "td_avg": 0.75,
+      "td_acc": 41,
+      "td_def": 73,
+      "sub_avg": 0.3
     },
     {
       "id": 34,
@@ -348,7 +516,15 @@
       "reach_cm": 180,
       "stance": "Orthodox",
       "weight_class": "Welterweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 4.42,
+      "str_acc": 47,
+      "sapm": 3.78,
+      "str_def": 52,
+      "td_avg": 2.44,
+      "td_acc": 53,
+      "td_def": 46,
+      "sub_avg": 1.3
     },
     {
       "id": 36,
@@ -358,7 +534,15 @@
       "reach_cm": 190,
       "stance": "Orthodox",
       "weight_class": "Welterweight",
-      "nationality": "UK"
+      "nationality": "UK",
+      "slpm": 3.89,
+      "str_acc": 48,
+      "sapm": 3.09,
+      "str_def": 56,
+      "td_avg": 1.14,
+      "td_acc": 32,
+      "td_def": 74,
+      "sub_avg": 0.4
     },
     {
       "id": 37,
@@ -368,7 +552,15 @@
       "reach_cm": 183,
       "stance": "Orthodox",
       "weight_class": "Welterweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 3.4,
+      "str_acc": 44,
+      "sapm": 3.12,
+      "str_def": 59,
+      "td_avg": 4.26,
+      "td_acc": 39,
+      "td_def": 77,
+      "sub_avg": 0.3
     },
     {
       "id": 38,
@@ -408,7 +600,15 @@
       "reach_cm": 178,
       "stance": "Orthodox",
       "weight_class": "Lightweight",
-      "nationality": "Russia"
+      "nationality": "Russia",
+      "slpm": 4.1,
+      "str_acc": 53,
+      "sapm": 2.3,
+      "str_def": 64,
+      "td_avg": 5.32,
+      "td_acc": 48,
+      "td_def": 84,
+      "sub_avg": 1.2
     },
     {
       "id": 42,
@@ -418,7 +618,15 @@
       "reach_cm": 188,
       "stance": "Southpaw",
       "weight_class": "Lightweight",
-      "nationality": "Ireland"
+      "nationality": "Ireland",
+      "slpm": 5.31,
+      "str_acc": 49,
+      "sapm": 4.26,
+      "str_def": 54,
+      "td_avg": 0.83,
+      "td_acc": 69,
+      "td_def": 73,
+      "sub_avg": 0
     },
     {
       "id": 43,
@@ -428,7 +636,15 @@
       "reach_cm": 183,
       "stance": "Southpaw",
       "weight_class": "Lightweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 5.57,
+      "str_acc": 49,
+      "sapm": 4.59,
+      "str_def": 55,
+      "td_avg": 1.07,
+      "td_acc": 36,
+      "td_def": 72,
+      "sub_avg": 0.6
     },
     {
       "id": 44,
@@ -438,7 +654,15 @@
       "reach_cm": 178,
       "stance": "Orthodox",
       "weight_class": "Lightweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 7.64,
+      "str_acc": 53,
+      "sapm": 5.82,
+      "str_def": 56,
+      "td_avg": 0.64,
+      "td_acc": 77,
+      "td_def": 80,
+      "sub_avg": 0
     },
     {
       "id": 45,
@@ -448,7 +672,15 @@
       "reach_cm": 188,
       "stance": "Orthodox",
       "weight_class": "Lightweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 3.42,
+      "str_acc": 47,
+      "sapm": 3.65,
+      "str_def": 57,
+      "td_avg": 1.26,
+      "td_acc": 27,
+      "td_def": 52,
+      "sub_avg": 1.8
     },
     {
       "id": 46,
@@ -458,7 +690,15 @@
       "reach_cm": 193,
       "stance": "Orthodox",
       "weight_class": "Lightweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 4.42,
+      "str_acc": 47,
+      "sapm": 5.42,
+      "str_def": 54,
+      "td_avg": 0.77,
+      "td_acc": 32,
+      "td_def": 73,
+      "sub_avg": 1.1
     },
     {
       "id": 47,
@@ -468,7 +708,15 @@
       "reach_cm": 178,
       "stance": "Southpaw",
       "weight_class": "Lightweight",
-      "nationality": "Russia"
+      "nationality": "Russia",
+      "slpm": 4.36,
+      "str_acc": 59,
+      "sapm": 2.13,
+      "str_def": 67,
+      "td_avg": 3.61,
+      "td_acc": 55,
+      "td_def": 85,
+      "sub_avg": 1.3
     },
     {
       "id": 48,
@@ -538,7 +786,15 @@
       "reach_cm": 182,
       "stance": "Orthodox",
       "weight_class": "Featherweight",
-      "nationality": "Australia"
+      "nationality": "Australia",
+      "slpm": 6.11,
+      "str_acc": 56,
+      "sapm": 4.44,
+      "str_def": 57,
+      "td_avg": 1.82,
+      "td_acc": 38,
+      "td_def": 82,
+      "sub_avg": 0.2
     },
     {
       "id": 55,
@@ -548,7 +804,15 @@
       "reach_cm": 175,
       "stance": "Orthodox",
       "weight_class": "Featherweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 6.39,
+      "str_acc": 45,
+      "sapm": 5.6,
+      "str_def": 58,
+      "td_avg": 0.45,
+      "td_acc": 33,
+      "td_def": 81,
+      "sub_avg": 0.1
     },
     {
       "id": 56,
@@ -588,7 +852,15 @@
       "reach_cm": 175,
       "stance": "Orthodox",
       "weight_class": "Featherweight",
-      "nationality": "Spain"
+      "nationality": "Spain",
+      "slpm": 5.33,
+      "str_acc": 56,
+      "sapm": 3.38,
+      "str_def": 55,
+      "td_avg": 3.18,
+      "td_acc": 47,
+      "td_def": 85,
+      "sub_avg": 0.6
     },
     {
       "id": 60,
@@ -618,7 +890,15 @@
       "reach_cm": 170,
       "stance": "Orthodox",
       "weight_class": "Bantamweight",
-      "nationality": "Russia"
+      "nationality": "Russia",
+      "slpm": 5.76,
+      "str_acc": 50,
+      "sapm": 4.69,
+      "str_def": 60,
+      "td_avg": 0.8,
+      "td_acc": 33,
+      "td_def": 77,
+      "sub_avg": 0
     },
     {
       "id": 63,
@@ -628,7 +908,15 @@
       "reach_cm": 180,
       "stance": "Orthodox",
       "weight_class": "Bantamweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 4.14,
+      "str_acc": 45,
+      "sapm": 3.66,
+      "str_def": 56,
+      "td_avg": 2.99,
+      "td_acc": 41,
+      "td_def": 77,
+      "sub_avg": 1.6
     },
     {
       "id": 64,
@@ -648,7 +936,15 @@
       "reach_cm": 163,
       "stance": "Orthodox",
       "weight_class": "Bantamweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 3.81,
+      "str_acc": 42,
+      "sapm": 3.74,
+      "str_def": 51,
+      "td_avg": 4.22,
+      "td_acc": 41,
+      "td_def": 61,
+      "sub_avg": 0.2
     },
     {
       "id": 66,
@@ -678,7 +974,15 @@
       "reach_cm": 183,
       "stance": "Southpaw",
       "weight_class": "Bantamweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 5.87,
+      "str_acc": 60,
+      "sapm": 3.23,
+      "str_def": 59,
+      "td_avg": 0,
+      "td_acc": 0,
+      "td_def": 86,
+      "sub_avg": 0.1
     },
     {
       "id": 69,
@@ -698,7 +1002,15 @@
       "reach_cm": 175,
       "stance": "Orthodox",
       "weight_class": "Bantamweight",
-      "nationality": "Georgia"
+      "nationality": "Georgia",
+      "slpm": 4.72,
+      "str_acc": 40,
+      "sapm": 3.91,
+      "str_def": 57,
+      "td_avg": 6.2,
+      "td_acc": 42,
+      "td_def": 87,
+      "sub_avg": 0
     },
     {
       "id": 71,
@@ -718,7 +1030,15 @@
       "reach_cm": 165,
       "stance": "Orthodox",
       "weight_class": "Flyweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 4.36,
+      "str_acc": 46,
+      "sapm": 2.68,
+      "str_def": 68,
+      "td_avg": 5.17,
+      "td_acc": 54,
+      "td_def": 72,
+      "sub_avg": 1.8
     },
     {
       "id": 73,
@@ -728,7 +1048,15 @@
       "reach_cm": 170,
       "stance": "Orthodox",
       "weight_class": "Flyweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 5.61,
+      "str_acc": 56,
+      "sapm": 3.55,
+      "str_def": 55,
+      "td_avg": 0.67,
+      "td_acc": 45,
+      "td_def": 70,
+      "sub_avg": 1.2
     },
     {
       "id": 74,
@@ -748,7 +1076,15 @@
       "reach_cm": 170,
       "stance": "Orthodox",
       "weight_class": "Flyweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 4.95,
+      "str_acc": 50,
+      "sapm": 3.78,
+      "str_def": 47,
+      "td_avg": 2.13,
+      "td_acc": 40,
+      "td_def": 67,
+      "sub_avg": 1.7
     },
     {
       "id": 76,
@@ -758,7 +1094,15 @@
       "reach_cm": 175,
       "stance": "Orthodox",
       "weight_class": "W-Bantamweight",
-      "nationality": "Brazil"
+      "nationality": "Brazil",
+      "slpm": 5.11,
+      "str_acc": 48,
+      "sapm": 4,
+      "str_def": 56,
+      "td_avg": 2.82,
+      "td_acc": 48,
+      "td_def": 80,
+      "sub_avg": 0.8
     },
     {
       "id": 77,
@@ -788,7 +1132,15 @@
       "reach_cm": 168,
       "stance": "Orthodox",
       "weight_class": "W-Flyweight",
-      "nationality": "Kyrgyzstan"
+      "nationality": "Kyrgyzstan",
+      "slpm": 4.42,
+      "str_acc": 48,
+      "sapm": 2.76,
+      "str_def": 62,
+      "td_avg": 2.01,
+      "td_acc": 36,
+      "td_def": 87,
+      "sub_avg": 0.9
     },
     {
       "id": 80,
@@ -798,7 +1150,15 @@
       "reach_cm": 165,
       "stance": "Orthodox",
       "weight_class": "W-Strawweight",
-      "nationality": "USA"
+      "nationality": "USA",
+      "slpm": 4.26,
+      "str_acc": 46,
+      "sapm": 3.52,
+      "str_def": 60,
+      "td_avg": 1.54,
+      "td_acc": 33,
+      "td_def": 71,
+      "sub_avg": 0.8
     },
     {
       "id": 81,
@@ -808,7 +1168,15 @@
       "reach_cm": 163,
       "stance": "Orthodox",
       "weight_class": "W-Strawweight",
-      "nationality": "China"
+      "nationality": "China",
+      "slpm": 6.18,
+      "str_acc": 50,
+      "sapm": 4.29,
+      "str_def": 57,
+      "td_avg": 1.51,
+      "td_acc": 41,
+      "td_def": 71,
+      "sub_avg": 0.6
     },
     {
       "id": 82,
@@ -1158,7 +1526,15 @@
       "reach_cm": 191,
       "stance": "Orthodox",
       "weight_class": "Middleweight",
-      "nationality": "Russia"
+      "nationality": "Russia",
+      "slpm": 4.35,
+      "str_acc": 60,
+      "sapm": 2.17,
+      "str_def": 62,
+      "td_avg": 5.33,
+      "td_acc": 62,
+      "td_def": 92,
+      "sub_avg": 1.3
     },
     {
       "id": 117,
@@ -13834,7 +14210,7 @@
       "time": "1:38",
       "winner_id": 386,
       "referee": null,
-      "has_stats": 1
+      "has_stats": 0
     },
     {
       "id": 393,
@@ -42434,5 +42810,277 @@
     "fights_count": 172,
     "fighters_count": 129,
     "fight_stats_count": 8
-  }
+  },
+  "round_stats": [
+    {
+      "fight_id": 186,
+      "fighter_id": 31,
+      "round": 1,
+      "kd": 0,
+      "sig_str_landed": 28,
+      "sig_str_attempted": 57,
+      "total_str_landed": 31,
+      "total_str_attempted": 62,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 14,
+      "head_attempted": 31,
+      "body_landed": 8,
+      "body_attempted": 14,
+      "leg_landed": 6,
+      "leg_attempted": 11,
+      "distance_landed": 17,
+      "distance_attempted": 34,
+      "clinch_landed": 6,
+      "clinch_attempted": 11,
+      "ground_landed": 6,
+      "ground_attempted": 11
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 31,
+      "round": 2,
+      "kd": 0,
+      "sig_str_landed": 38,
+      "sig_str_attempted": 65,
+      "total_str_landed": 41,
+      "total_str_attempted": 70,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 21,
+      "head_attempted": 36,
+      "body_landed": 10,
+      "body_attempted": 16,
+      "leg_landed": 7,
+      "leg_attempted": 13,
+      "distance_landed": 23,
+      "distance_attempted": 39,
+      "clinch_landed": 8,
+      "clinch_attempted": 13,
+      "ground_landed": 8,
+      "ground_attempted": 13
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 31,
+      "round": 3,
+      "kd": 1,
+      "sig_str_landed": 32,
+      "sig_str_attempted": 60,
+      "total_str_landed": 35,
+      "total_str_attempted": 65,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 17,
+      "head_attempted": 33,
+      "body_landed": 9,
+      "body_attempted": 15,
+      "leg_landed": 6,
+      "leg_attempted": 12,
+      "distance_landed": 19,
+      "distance_attempted": 36,
+      "clinch_landed": 6,
+      "clinch_attempted": 12,
+      "ground_landed": 6,
+      "ground_attempted": 12
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 31,
+      "round": 4,
+      "kd": 0,
+      "sig_str_landed": 36,
+      "sig_str_attempted": 72,
+      "total_str_landed": 39,
+      "total_str_attempted": 77,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 20,
+      "head_attempted": 40,
+      "body_landed": 10,
+      "body_attempted": 18,
+      "leg_landed": 6,
+      "leg_attempted": 14,
+      "distance_landed": 22,
+      "distance_attempted": 43,
+      "clinch_landed": 7,
+      "clinch_attempted": 14,
+      "ground_landed": 7,
+      "ground_attempted": 14
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 31,
+      "round": 5,
+      "kd": 1,
+      "sig_str_landed": 41,
+      "sig_str_attempted": 70,
+      "total_str_landed": 44,
+      "total_str_attempted": 75,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 24,
+      "head_attempted": 39,
+      "body_landed": 7,
+      "body_attempted": 18,
+      "leg_landed": 10,
+      "leg_attempted": 14,
+      "distance_landed": 25,
+      "distance_attempted": 42,
+      "clinch_landed": 8,
+      "clinch_attempted": 14,
+      "ground_landed": 8,
+      "ground_attempted": 14
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 32,
+      "round": 1,
+      "kd": 0,
+      "sig_str_landed": 31,
+      "sig_str_attempted": 55,
+      "total_str_landed": 34,
+      "total_str_attempted": 60,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 17,
+      "head_attempted": 30,
+      "body_landed": 8,
+      "body_attempted": 14,
+      "leg_landed": 6,
+      "leg_attempted": 11,
+      "distance_landed": 19,
+      "distance_attempted": 33,
+      "clinch_landed": 6,
+      "clinch_attempted": 11,
+      "ground_landed": 6,
+      "ground_attempted": 11
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 32,
+      "round": 2,
+      "kd": 0,
+      "sig_str_landed": 33,
+      "sig_str_attempted": 60,
+      "total_str_landed": 36,
+      "total_str_attempted": 65,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 18,
+      "head_attempted": 33,
+      "body_landed": 9,
+      "body_attempted": 15,
+      "leg_landed": 6,
+      "leg_attempted": 12,
+      "distance_landed": 20,
+      "distance_attempted": 36,
+      "clinch_landed": 7,
+      "clinch_attempted": 12,
+      "ground_landed": 7,
+      "ground_attempted": 12
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 32,
+      "round": 3,
+      "kd": 0,
+      "sig_str_landed": 28,
+      "sig_str_attempted": 52,
+      "total_str_landed": 31,
+      "total_str_attempted": 57,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 15,
+      "head_attempted": 29,
+      "body_landed": 8,
+      "body_attempted": 13,
+      "leg_landed": 5,
+      "leg_attempted": 10,
+      "distance_landed": 17,
+      "distance_attempted": 31,
+      "clinch_landed": 6,
+      "clinch_attempted": 10,
+      "ground_landed": 6,
+      "ground_attempted": 10
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 32,
+      "round": 4,
+      "kd": 0,
+      "sig_str_landed": 30,
+      "sig_str_attempted": 55,
+      "total_str_landed": 33,
+      "total_str_attempted": 60,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 16,
+      "head_attempted": 30,
+      "body_landed": 7,
+      "body_attempted": 14,
+      "leg_landed": 7,
+      "leg_attempted": 11,
+      "distance_landed": 18,
+      "distance_attempted": 33,
+      "clinch_landed": 6,
+      "clinch_attempted": 11,
+      "ground_landed": 6,
+      "ground_attempted": 11
+    },
+    {
+      "fight_id": 186,
+      "fighter_id": 32,
+      "round": 5,
+      "kd": 0,
+      "sig_str_landed": 21,
+      "sig_str_attempted": 43,
+      "total_str_landed": 24,
+      "total_str_attempted": 48,
+      "td_landed": 0,
+      "td_attempted": 0,
+      "sub_att": 0,
+      "reversal": 0,
+      "ctrl_sec": 0,
+      "head_landed": 13,
+      "head_attempted": 24,
+      "body_landed": 4,
+      "body_attempted": 11,
+      "leg_landed": 4,
+      "leg_attempted": 9,
+      "distance_landed": 13,
+      "distance_attempted": 26,
+      "clinch_landed": 4,
+      "clinch_attempted": 9,
+      "ground_landed": 4,
+      "ground_attempted": 9
+    }
+  ]
 }
