@@ -303,4 +303,46 @@ test.describe('API Endpoints', () => {
     // Should be 401 or 503 (no key configured in test)
     expect([401, 503]).toContain(res.status());
   });
+
+  // ── Cache headers & ETag tests ──
+
+  test('API responses include Cache-Control header', async ({ request }) => {
+    const res = await request.get('/api/events');
+    const cc = res.headers()['cache-control'];
+    expect(cc).toContain('public');
+    expect(cc).toContain('max-age=');
+  });
+
+  test('API responses include ETag header', async ({ request }) => {
+    const res = await request.get('/api/events');
+    const etag = res.headers()['etag'];
+    expect(etag).toBeTruthy();
+    expect(etag).toMatch(/^W\//);
+  });
+
+  test('Conditional GET returns 304 for matching ETag', async ({ request }) => {
+    const res1 = await request.get('/api/events');
+    const etag = res1.headers()['etag'];
+    expect(etag).toBeTruthy();
+
+    const res2 = await request.get('/api/events', {
+      headers: { 'If-None-Match': etag }
+    });
+    expect(res2.status()).toBe(304);
+  });
+
+  test('/healthz has no-cache header', async ({ request }) => {
+    const res = await request.get('/healthz');
+    expect(res.headers()['cache-control']).toContain('no-cache');
+  });
+
+  test('/api/version has no-cache header', async ({ request }) => {
+    const res = await request.get('/api/version');
+    expect(res.headers()['cache-control']).toContain('no-cache');
+  });
+
+  test('biomechanics endpoints have long cache', async ({ request }) => {
+    const res = await request.get('/api/biomechanics/strikes');
+    expect(res.headers()['cache-control']).toContain('max-age=86400');
+  });
 });

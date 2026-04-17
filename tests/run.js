@@ -354,6 +354,25 @@ async function run() {
   assertGt(bio.THRESHOLDS.mandible_fracture, 0, 'mandible threshold is positive');
   assertGt(bio.THRESHOLDS.orbital_fracture, 0, 'orbital threshold is positive');
 
+  // ── Caching ──
+  console.log('\nCaching:');
+  const cacheModule = require('../lib/cache');
+  assertEq(cacheModule.has('nonexistent'), false, 'cache miss returns false');
+  assertEq(cacheModule.get('nonexistent'), undefined, 'cache get miss returns undefined');
+  cacheModule.set('test-key', { data: 42 });
+  assertEq(cacheModule.has('test-key'), true, 'cache hit after set');
+  assertEq(cacheModule.get('test-key').data, 42, 'cache returns stored value');
+  assertEq(cacheModule.size() > 0, true, 'cache size > 0 after set');
+  cacheModule.invalidateAll();
+  assertEq(cacheModule.has('test-key'), false, 'cache cleared after invalidateAll');
+  assertEq(cacheModule.size(), 0, 'cache size is 0 after invalidateAll');
+  const etag1 = cacheModule.computeETag('{"hello":"world"}');
+  assert(etag1.startsWith('W/"'), 'computeETag returns weak ETag');
+  assertEq(cacheModule.computeETag('{"hello":"world"}'), etag1, 'computeETag is deterministic');
+  assert(cacheModule.computeETag('{"hello":"other"}') !== etag1, 'computeETag differs for different input');
+  const retVal = cacheModule.set('ret-test', 'value');
+  assertEq(retVal, 'value', 'cache set returns the stored value');
+
   // ── Seed Data Integrity (fight_stats) ──
   console.log('\nSeed Data Integrity:');
   const fightStatsIntegrity = (() => {

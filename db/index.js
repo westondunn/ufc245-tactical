@@ -125,6 +125,8 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_fights_blue ON fights(blue_fighter_id);
   CREATE INDEX IF NOT EXISTS idx_fights_event_num ON fights(event_number);
   CREATE INDEX IF NOT EXISTS idx_round_stats_fight ON round_stats(fight_id);
+  CREATE INDEX IF NOT EXISTS idx_fights_winner ON fights(winner_id);
+  CREATE INDEX IF NOT EXISTS idx_fight_stats_fighter ON fight_stats(fighter_id);
 `;
 
 /* ── INIT ── */
@@ -329,10 +331,15 @@ function getHeadToHead(id1, id2) {
 }
 
 function getFighterRecord(fighterId) {
-  const wins = (allRows('SELECT COUNT(*) as c FROM fights WHERE winner_id = ?', [fighterId])[0] || {}).c || 0;
-  const total = (allRows('SELECT COUNT(*) as c FROM fights WHERE red_fighter_id = ? OR blue_fighter_id = ?', [fighterId, fighterId])[0] || {}).c || 0;
-  const draws = (allRows("SELECT COUNT(*) as c FROM fights WHERE (red_fighter_id = ? OR blue_fighter_id = ?) AND (winner_id IS NULL OR winner_id = 0 OR method LIKE '%Draw%' OR method LIKE '%No Contest%')", [fighterId, fighterId])[0] || {}).c || 0;
-  return { wins, losses: total - wins - draws, draws, total };
+  const row = oneRow(
+    `SELECT COUNT(*) as total,
+       SUM(CASE WHEN winner_id = ? THEN 1 ELSE 0 END) as wins,
+       SUM(CASE WHEN winner_id IS NULL OR winner_id = 0 OR method LIKE '%Draw%' OR method LIKE '%No Contest%' THEN 1 ELSE 0 END) as draws
+     FROM fights WHERE red_fighter_id = ? OR blue_fighter_id = ?`,
+    [fighterId, fighterId, fighterId]
+  );
+  if (!row) return { wins: 0, losses: 0, draws: 0, total: 0 };
+  return { wins: row.wins, losses: row.total - row.wins - row.draws, draws: row.draws, total: row.total };
 }
 
 function getRoundStats(fightId) {

@@ -9,6 +9,7 @@ const db = require('./db');
 const bio = require('./lib/biomechanics');
 const tactical = require('./lib/tactical');
 const ver = require('./lib/version');
+const cache = require('./lib/cache');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -46,6 +47,23 @@ app.use((req, res, next) => {
 app.use((req, _res, next) => {
   if (!req.path.startsWith('/api/')) { next(); return; }
   console.log(`[${new Date().toISOString()}] ${req.method} ${req.path}`);
+  next();
+});
+
+// Cache-Control + ETag middleware for API GET requests
+app.use('/api', (req, res, next) => {
+  if (req.method !== 'GET') return next();
+  res.setHeader('Cache-Control', 'public, max-age=300, stale-while-revalidate=600');
+  const origJson = res.json.bind(res);
+  res.json = function (body) {
+    const bodyStr = JSON.stringify(body);
+    const etag = cache.computeETag(bodyStr);
+    res.setHeader('ETag', etag);
+    if (req.headers['if-none-match'] === etag) { res.status(304).end(); return res; }
+    res.setHeader('Content-Type', 'application/json');
+    res.end(bodyStr);
+    return res;
+  };
   next();
 });
 
@@ -114,7 +132,10 @@ app.get('/api/fighters/:id/events', apiHandler((req, res) => {
 
 // All events
 app.get('/api/events', apiHandler((req, res) => {
-  res.json(db.getAllEvents());
+  const key = 'events:all';
+  let result = cache.get(key);
+  if (!result) { result = cache.set(key, db.getAllEvents()); }
+  res.json(result);
 }));
 
 // Event detail + full card
@@ -154,94 +175,128 @@ app.get('/api/fights/:id/rounds', apiHandler((req, res) => {
 // Tactical breakdown for a single fight
 app.get('/api/fights/:id/tactical', apiHandler((req, res) => {
   const fightId = parseInt(req.params.id, 10);
-  const fight = db.getFight(fightId);
-  if (!fight) return res.status(404).json({ error: 'fight_not_found' });
-  const red = db.getFighter(fight.red_fighter_id);
-  const blue = db.getFighter(fight.blue_fighter_id);
-  const roundStats = db.getRoundStats(fightId);
-  const analysis = tactical.analyzeFight(fight, red, blue, roundStats);
-  res.json(analysis);
+  const key = `tactical:fight:${fightId}`;
+  let result = cache.get(key);
+  if (!result) {
+    const fight = db.getFight(fightId);
+    if (!fight) return res.status(404).json({ error: 'fight_not_found' });
+    const red = db.getFighter(fight.red_fighter_id);
+    const blue = db.getFighter(fight.blue_fighter_id);
+    const roundStats = db.getRoundStats(fightId);
+    result = cache.set(key, tactical.analyzeFight(fight, red, blue, roundStats));
+  }
+  res.json(result);
 }));
 
 // Tactical breakdowns for an entire event card
 app.get('/api/events/:id/tactical', apiHandler((req, res) => {
   const eventId = parseInt(req.params.id, 10);
   if (isNaN(eventId)) return res.status(400).json({ error: 'invalid_id' });
-  const event = db.getEvent(eventId);
-  if (!event) return res.status(404).json({ error: 'event_not_found' });
-  const card = db.getEventCard(eventId);
-  const analyses = card.map(bout => {
-    const fight = db.getFight(bout.id);
-    if (!fight) return null;
-    const red = db.getFighter(fight.red_fighter_id);
-    const blue = db.getFighter(fight.blue_fighter_id);
-    const roundStats = db.getRoundStats(bout.id);
-    return tactical.analyzeFight(fight, red, blue, roundStats);
-  }).filter(Boolean);
-  res.json({ event, analyses });
+  const key = `tactical:event:${eventId}`;
+  let result = cache.get(key);
+  if (!result) {
+    const event = db.getEvent(eventId);
+    if (!event) return res.status(404).json({ error: 'event_not_found' });
+    const card = db.getEventCard(eventId);
+    const analyses = card.map(bout => {
+      const fight = db.getFight(bout.id);
+      if (!fight) return null;
+      const red = db.getFighter(fight.red_fighter_id);
+      const blue = db.getFighter(fight.blue_fighter_id);
+      const roundStats = db.getRoundStats(bout.id);
+      return tactical.analyzeFight(fight, red, blue, roundStats);
+    }).filter(Boolean);
+    result = cache.set(key, { event, analyses });
+  }
+  res.json(result);
 }));
 
 // All tactical breakdowns (bulk)
 app.get('/api/tactical/all', apiHandler((req, res) => {
-  const analyses = tactical.generateAllAnalyses(db);
-  res.json({ count: analyses.length, analyses });
+  res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=7200');
+  const key = 'tactical:all';
+  let result = cache.get(key);
+  if (!result) {
+    const analyses = tactical.generateAllAnalyses(db);
+    result = cache.set(key, { count: analyses.length, analyses });
+  }
+  res.json(result);
 }));
 
 // Stat leaders
 app.get('/api/stats/leaders', apiHandler((req, res) => {
   const stat = req.query.stat || 'sig_strikes';
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
-  const leaders = db.getStatLeaders(stat, limit);
-  res.json({ stat, leaders });
+  const key = `leaders:${stat}:${limit}`;
+  let result = cache.get(key);
+  if (!result) {
+    const leaders = db.getStatLeaders(stat, limit);
+    result = cache.set(key, { stat, leaders });
+  }
+  res.json(result);
 }));
 
 // All fighters (paginated)
 app.get('/api/fighters', apiHandler((req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 500, 1000);
-  res.json(db.getAllFighters(limit));
+  const key = `fighters:all:${limit}`;
+  let result = cache.get(key);
+  if (!result) { result = cache.set(key, db.getAllFighters(limit)); }
+  res.json(result);
 }));
 
 // Fighter career stats (aggregated)
 app.get('/api/fighters/:id/career-stats', apiHandler((req, res) => {
   const id = parseInt(req.params.id, 10);
-  const fighter = db.getFighter(id);
-  if (!fighter) return res.status(404).json({ error: 'fighter_not_found' });
-  const stats = db.getCareerStats(id);
-  const record = db.getFighterRecord(id);
-  res.json({ fighter, stats, record });
+  const key = `career:${id}`;
+  let result = cache.get(key);
+  if (!result) {
+    const fighter = db.getFighter(id);
+    if (!fighter) return res.status(404).json({ error: 'fighter_not_found' });
+    const stats = db.getCareerStats(id);
+    const record = db.getFighterRecord(id);
+    result = cache.set(key, { fighter, stats, record });
+  }
+  res.json(result);
 }));
 
 // Compare two fighters
 app.get('/api/fighters/:id1/compare/:id2', apiHandler((req, res) => {
   const id1 = parseInt(req.params.id1, 10);
   const id2 = parseInt(req.params.id2, 10);
-  const f1 = db.getFighter(id1);
-  const f2 = db.getFighter(id2);
-  if (!f1 || !f2) return res.status(404).json({ error: 'fighter_not_found' });
+  const key = `compare:${id1}:${id2}`;
+  let result = cache.get(key);
+  if (!result) {
+    const f1 = db.getFighter(id1);
+    const f2 = db.getFighter(id2);
+    if (!f1 || !f2) return res.status(404).json({ error: 'fighter_not_found' });
 
-  const stats1 = db.getCareerStats(id1);
-  const stats2 = db.getCareerStats(id2);
-  const record1 = db.getFighterRecord(id1);
-  const record2 = db.getFighterRecord(id2);
-  const h2h = db.getHeadToHead(id1, id2);
+    const stats1 = db.getCareerStats(id1);
+    const stats2 = db.getCareerStats(id2);
+    const record1 = db.getFighterRecord(id1);
+    const record2 = db.getFighterRecord(id2);
+    const h2h = db.getHeadToHead(id1, id2);
 
-  const massKg1 = fighterMassKg(f1);
-  const massKg2 = fighterMassKg(f2);
-  const bio1 = bio.estimateStrikeForce({ bodyMassKg: massKg1, strikeType: 'right_cross' });
-  const bio2 = bio.estimateStrikeForce({ bodyMassKg: massKg2, strikeType: 'right_cross' });
+    const massKg1 = fighterMassKg(f1);
+    const massKg2 = fighterMassKg(f2);
+    const bio1 = bio.estimateStrikeForce({ bodyMassKg: massKg1, strikeType: 'right_cross' });
+    const bio2 = bio.estimateStrikeForce({ bodyMassKg: massKg2, strikeType: 'right_cross' });
 
-  res.json({
-    fighters: [
-      { ...f1, career_stats: stats1, record: record1, biomechanics: bio1 },
-      { ...f2, career_stats: stats2, record: record2, biomechanics: bio2 }
-    ],
-    head_to_head: h2h,
-    common_weight_class: f1.weight_class === f2.weight_class ? f1.weight_class : null
-  });
+    result = cache.set(key, {
+      fighters: [
+        { ...f1, career_stats: stats1, record: record1, biomechanics: bio1 },
+        { ...f2, career_stats: stats2, record: record2, biomechanics: bio2 }
+      ],
+      head_to_head: h2h,
+      common_weight_class: f1.weight_class === f2.weight_class ? f1.weight_class : null
+    });
+  }
+  res.json(result);
 }));
 
 // Biomechanics calculation endpoint
 app.get('/api/biomechanics/estimate', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
   const bodyMassKg = parseFloat(req.query.mass) || 77;
   const strikeType = req.query.strike || 'right_cross';
   const target = req.query.target || 'head';
@@ -253,6 +308,7 @@ app.get('/api/biomechanics/estimate', (req, res) => {
 
 // Kinetic chain for a strike type
 app.get('/api/biomechanics/chain', (req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
   const bodyMassKg = parseFloat(req.query.mass) || 77;
   const strikeType = req.query.strike || 'right_cross';
 
@@ -263,6 +319,7 @@ app.get('/api/biomechanics/chain', (req, res) => {
 
 // Available strike types
 app.get('/api/biomechanics/strikes', (_req, res) => {
+  res.setHeader('Cache-Control', 'public, max-age=86400');
   res.json({
     strikes: Object.entries(bio.REFERENCE).map(([type, ref]) => ({
       type,
@@ -286,6 +343,7 @@ app.use(express.static(path.join(__dirname, 'public'), {
 }));
 
 app.get('/healthz', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.json({
     status: 'ok', service: 'ufc-tactical',
     version: ver.version, build: ver.full, buildTime: ver.buildTime,
@@ -295,6 +353,7 @@ app.get('/healthz', (_req, res) => {
 
 // Version endpoint (consumed by frontend)
 app.get('/api/version', (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
   res.json({ version: ver.version, build: ver.full, sha: ver.buildSha, buildTime: ver.buildTime });
 });
 
@@ -312,10 +371,15 @@ app.get('/api/admin/db-stats', requireAdmin, (_req, res) => {
   res.json(db.getDbStats());
 });
 
-// Save — persist current DB state to disk
+// Save — persist current DB state to disk + invalidate cache
 app.post('/api/admin/save', requireAdmin, (_req, res) => {
   const ok = db.save();
-  res.json({ status: ok ? 'saved' : 'not_persistent', dbPath: process.env.DB_PATH || null });
+  if (ok) {
+    cache.invalidateAll();
+    warmCache();
+    console.log(`[cache] invalidated and re-warmed (${cache.size()} entries)`);
+  }
+  res.json({ status: ok ? 'saved' : 'not_persistent', dbPath: process.env.DB_PATH || null, cacheEntries: cache.size() });
 });
 
 app.use((req, res) => {
@@ -324,11 +388,58 @@ app.use((req, res) => {
 });
 
 // ============================================================
+// CACHE WARM-UP
+// ============================================================
+const LEADER_STATS = ['knockdowns','sig_strikes','sig_accuracy','takedowns','td_accuracy','control_time','sub_attempts','fights'];
+
+function warmCache() {
+  const t0 = Date.now();
+
+  // Events list
+  cache.set('events:all', db.getAllEvents());
+
+  // Fighters list (default limit)
+  cache.set('fighters:all:500', db.getAllFighters(500));
+
+  // Stat leaders for all stat types at default limit
+  for (const stat of LEADER_STATS) {
+    const leaders = db.getStatLeaders(stat, 10);
+    cache.set(`leaders:${stat}:10`, { stat, leaders });
+  }
+
+  // All tactical analyses — also populates per-fight and per-event keys
+  const events = db.getAllEvents();
+  const allAnalyses = [];
+  for (const event of events) {
+    const card = db.getEventCard(event.id);
+    const eventAnalyses = [];
+    for (const bout of card) {
+      const fight = db.getFight(bout.id);
+      if (!fight) continue;
+      const red = db.getFighter(fight.red_fighter_id);
+      const blue = db.getFighter(fight.blue_fighter_id);
+      const roundStats = db.getRoundStats(bout.id);
+      try {
+        const analysis = tactical.analyzeFight(fight, red, blue, roundStats);
+        cache.set(`tactical:fight:${bout.id}`, analysis);
+        eventAnalyses.push(analysis);
+        allAnalyses.push(analysis);
+      } catch (e) { /* skip failed analyses */ }
+    }
+    cache.set(`tactical:event:${event.id}`, { event, analyses: eventAnalyses });
+  }
+  cache.set('tactical:all', { count: allAnalyses.length, analyses: allAnalyses });
+
+  console.log(`[cache] warmed ${cache.size()} entries in ${Date.now() - t0}ms`);
+}
+
+// ============================================================
 // START (async for db init)
 // ============================================================
 (async () => {
   await db.init();
   console.log('[db] SQLite initialized and seeded');
+  warmCache();
 
   const server = app.listen(PORT, () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

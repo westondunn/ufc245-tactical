@@ -13,7 +13,7 @@ module.exports = defineConfig({
     trace: 'retain-on-failure',
   },
   webServer: {
-    command: 'PORT=3737 node server.js',
+    command: process.platform === 'win32' ? 'set PORT=3737 && node server.js' : 'PORT=3737 node server.js',
     port: 3737,
     timeout: 15_000,
     reuseExistingServer: !process.env.CI,
