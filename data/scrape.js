@@ -17,7 +17,7 @@ const fs = require('fs');
 const path = require('path');
 
 const BASE = 'http://ufcstats.com';
-const DELAY_MS = 1000;
+const DELAY_MS = 200;
 const sleep = ms => new Promise(r => setTimeout(r, ms));
 
 // ── HTTP fetch with retry ──
