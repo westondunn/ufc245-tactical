@@ -228,6 +228,363 @@ addFS(171, 45, 115, 260, 0, 2, 4, 85, 63, 29, 23, 1);
 addFS(172, 13, 12, 28, 1, 0, 0, 0, 8, 2, 2);
 addFS(172, 124, 18, 35, 1, 0, 0, 0, 11, 4, 3);
 
+// UFC 320: Zalal vs Emmett (fight 392)
+addFS(392, 386, 15, 28, 0, 1, 1, 42, 8, 4, 3, 1);
+addFS(392, 60, 8, 22, 0, 0, 0, 0, 4, 2, 2);
+
+// UFC 274: Namajunas vs Esparza (fight 28)
+addFS(28, 80, 35, 105, 0, 0, 0, 0, 19, 9, 7);
+addFS(28, 93, 45, 120, 0, 5, 8, 280, 25, 11, 9);
+
+// UFC 274: Chandler vs Ferguson (fight 29)
+addFS(29, 48, 8, 15, 1, 0, 0, 0, 5, 2, 1);
+addFS(29, 46, 5, 12, 0, 0, 0, 0, 3, 1, 1);
+
+// UFC 271: Lewis vs Tuivasa (fight 34)
+addFS(34, 4, 18, 38, 0, 0, 0, 0, 10, 5, 3);
+addFS(34, 10, 25, 52, 1, 0, 0, 0, 14, 6, 5);
+
+// UFC 268: Usman vs Covington 2 (fight 39)
+addFS(39, 31, 166, 381, 1, 0, 3, 0, 91, 42, 33);
+addFS(39, 32, 152, 336, 0, 0, 1, 0, 84, 38, 30);
+
+// UFC 268: Gaethje vs Chandler (fight 41)
+addFS(41, 44, 90, 178, 1, 0, 0, 0, 50, 22, 18);
+addFS(41, 48, 88, 182, 1, 0, 1, 0, 48, 22, 18);
+
+// UFC 267: Blachowicz vs Teixeira (fight 42)
+addFS(42, 14, 25, 55, 0, 0, 1, 0, 14, 6, 5);
+addFS(42, 12, 35, 68, 0, 3, 4, 185, 19, 9, 7, 1);
+
+// UFC 267: Yan vs Sandhagen (fight 43)
+addFS(43, 62, 110, 238, 0, 3, 6, 165, 60, 28, 22);
+addFS(43, 69, 85, 195, 0, 0, 1, 0, 47, 21, 17);
+
+// UFC 266: Volkanovski vs Ortega (fight 44)
+addFS(44, 54, 125, 270, 1, 3, 7, 120, 69, 31, 25);
+addFS(44, 57, 72, 158, 0, 0, 2, 0, 40, 18, 14, 2);
+
+// UFC 266: Shevchenko vs Murphy (fight 45)
+addFS(45, 79, 85, 165, 1, 2, 3, 90, 47, 21, 17);
+addFS(45, 95, 32, 88, 0, 0, 1, 0, 18, 8, 6);
+
+// UFC 264: Poirier vs McGregor 3 (fight 46)
+addFS(46, 43, 32, 48, 0, 0, 0, 0, 18, 8, 6);
+addFS(46, 42, 18, 35, 0, 0, 0, 0, 10, 4, 4);
+
+// UFC 263: Adesanya vs Vettori (fight 47)
+addFS(47, 19, 68, 168, 0, 0, 0, 0, 37, 17, 14);
+addFS(47, 96, 58, 155, 0, 3, 8, 85, 32, 14, 12);
+
+// UFC 263: Figueiredo vs Moreno 2 (fight 48)
+addFS(48, 73, 48, 110, 0, 1, 2, 42, 26, 12, 10);
+addFS(48, 74, 62, 128, 0, 2, 4, 85, 34, 15, 13, 1);
+
+// UFC 263: Edwards vs Diaz (fight 49)
+addFS(49, 36, 88, 195, 0, 4, 7, 185, 48, 22, 18);
+addFS(49, 97, 65, 155, 0, 0, 1, 0, 36, 16, 13);
+
+// UFC 261: Usman vs Masvidal 2 (fight 50)
+addFS(50, 31, 34, 72, 1, 1, 2, 45, 19, 8, 7);
+addFS(50, 33, 15, 38, 0, 0, 0, 0, 8, 4, 3);
+
+// UFC 261: Zhang vs Namajunas (fight 51)
+addFS(51, 81, 4, 8, 0, 0, 0, 0, 2, 1, 1);
+addFS(51, 80, 5, 10, 1, 0, 0, 0, 3, 1, 1);
+
+// UFC 261: Shevchenko vs Andrade (fight 52)
+addFS(52, 79, 48, 95, 1, 0, 0, 0, 26, 12, 10);
+addFS(52, 83, 18, 45, 0, 1, 2, 22, 10, 4, 4);
+
+// UFC 261: Weidman vs Hall (fight 53)
+addFS(53, 26, 1, 2, 0, 0, 0, 0, 1, 0, 0);
+addFS(53, 30, 2, 3, 0, 0, 0, 0, 1, 1, 0);
+
+// UFC 259: Blachowicz vs Adesanya (fight 54)
+addFS(54, 14, 72, 158, 0, 3, 5, 120, 40, 18, 14);
+addFS(54, 19, 55, 135, 0, 0, 0, 0, 30, 14, 11);
+
+// UFC 259: Nunes vs Anderson (fight 55)
+addFS(55, 76, 15, 28, 0, 1, 1, 65, 8, 4, 3, 1);
+addFS(55, 98, 3, 8, 0, 0, 0, 0, 2, 1, 0);
+
+// UFC 259: Yan vs Sterling (fight 56)
+addFS(56, 62, 85, 178, 0, 0, 1, 0, 47, 21, 17);
+addFS(56, 63, 32, 88, 0, 3, 5, 85, 18, 8, 6);
+
+// UFC 258: Usman vs Burns (fight 57)
+addFS(57, 31, 48, 95, 1, 0, 2, 15, 26, 12, 10);
+addFS(57, 35, 38, 82, 1, 2, 4, 42, 21, 9, 8);
+
+// UFC 257: Poirier vs McGregor 2 (fight 58)
+addFS(58, 43, 45, 85, 1, 0, 0, 0, 25, 11, 9);
+addFS(58, 42, 38, 72, 0, 0, 0, 0, 21, 9, 8);
+
+// UFC 257: Chandler vs Hooker (fight 59)
+addFS(59, 48, 22, 38, 1, 0, 0, 0, 12, 6, 4);
+addFS(59, 99, 8, 18, 0, 0, 0, 0, 4, 2, 2);
+
+// UFC 254: Khabib vs Gaethje (fight 60)
+addFS(60, 41, 35, 62, 0, 3, 4, 195, 19, 9, 7, 1);
+addFS(60, 44, 28, 55, 0, 0, 0, 0, 15, 7, 6);
+
+// UFC 253: Adesanya vs Costa (fight 61)
+addFS(61, 19, 48, 95, 2, 0, 0, 0, 26, 12, 10);
+addFS(61, 21, 18, 42, 0, 0, 0, 0, 10, 4, 4);
+
+// UFC 253: Reyes vs Blachowicz (fight 62)
+addFS(62, 15, 85, 195, 0, 0, 0, 0, 47, 21, 17);
+addFS(62, 14, 92, 205, 1, 3, 5, 65, 51, 23, 18);
+
+// UFC 251: Usman vs Masvidal (fight 63)
+addFS(63, 31, 52, 118, 0, 2, 5, 285, 29, 13, 10);
+addFS(63, 33, 28, 68, 0, 0, 0, 0, 15, 7, 6);
+
+// UFC 251: Volkanovski vs Holloway 2 (fight 64)
+addFS(64, 54, 88, 195, 0, 1, 3, 45, 48, 22, 18);
+addFS(64, 55, 78, 178, 1, 0, 0, 0, 43, 19, 16);
+
+// UFC 251: Yan vs Aldo (fight 65)
+addFS(65, 62, 95, 198, 1, 0, 0, 0, 52, 24, 19);
+addFS(65, 56, 58, 138, 0, 0, 0, 0, 32, 14, 12);
+
+// UFC 249: Ferguson vs Gaethje (fight 66)
+addFS(66, 46, 68, 158, 0, 0, 0, 0, 37, 17, 14);
+addFS(66, 44, 118, 238, 3, 0, 0, 0, 65, 29, 24);
+
+// UFC 249: Cejudo vs Cruz (fight 67)
+addFS(67, 65, 38, 75, 1, 4, 5, 225, 21, 9, 8);
+addFS(67, 67, 22, 48, 0, 0, 1, 0, 12, 5, 5);
+
+// UFC 249: Ngannou vs Rozenstruik (fight 68)
+addFS(68, 3, 3, 5, 1, 0, 0, 0, 2, 1, 0);
+addFS(68, 100, 0, 2, 0, 0, 0, 0, 0, 0, 0);
+
+// UFC 248: Adesanya vs Romero (fight 69)
+addFS(69, 19, 48, 118, 0, 0, 0, 0, 26, 12, 10);
+addFS(69, 101, 40, 82, 0, 0, 1, 0, 22, 10, 8);
+
+// UFC 248: Zhang vs Joanna (fight 70)
+addFS(70, 81, 165, 368, 1, 1, 2, 22, 91, 41, 33);
+addFS(70, 82, 186, 408, 0, 0, 0, 0, 102, 46, 38);
+
+// UFC 246: McGregor vs Cerrone (fight 71)
+addFS(71, 42, 8, 12, 1, 0, 0, 0, 4, 2, 2);
+addFS(71, 51, 1, 4, 0, 0, 0, 0, 1, 0, 0);
+
+// UFC 246: Holm vs Pennington (fight 72)
+addFS(72, 78, 55, 135, 0, 0, 0, 0, 30, 14, 11);
+addFS(72, 102, 38, 95, 0, 0, 0, 0, 21, 9, 8);
+
+// UFC 243: Whittaker vs Adesanya (fight 77)
+addFS(77, 20, 22, 48, 1, 0, 2, 0, 12, 5, 5);
+addFS(77, 19, 28, 55, 2, 0, 0, 0, 15, 7, 6);
+
+// UFC 242: Khabib vs Poirier (fight 78)
+addFS(78, 41, 42, 72, 0, 4, 6, 250, 23, 10, 9, 1);
+addFS(78, 43, 28, 58, 0, 0, 1, 0, 15, 7, 6);
+
+// UFC 241: Cormier vs Miocic 2 (fight 79)
+addFS(79, 2, 55, 118, 1, 3, 5, 120, 30, 14, 11);
+addFS(79, 1, 52, 108, 1, 0, 1, 0, 29, 13, 10);
+
+// UFC 241: Diaz vs Pettis (fight 80)
+addFS(80, 97, 72, 165, 0, 0, 0, 0, 40, 18, 14);
+addFS(80, 50, 55, 128, 0, 0, 0, 0, 30, 14, 11);
+
+// UFC 239: Jones vs Santos (fight 81)
+addFS(81, 7, 72, 158, 0, 1, 3, 15, 40, 18, 14);
+addFS(81, 103, 65, 148, 0, 0, 0, 0, 36, 16, 13);
+
+// UFC 239: Nunes vs Holm (fight 82)
+addFS(82, 76, 22, 42, 1, 1, 1, 45, 12, 6, 4);
+addFS(82, 78, 15, 35, 0, 0, 0, 0, 8, 4, 3);
+
+// UFC 236: Holloway vs Poirier 2 (fight 83)
+addFS(83, 55, 110, 258, 0, 0, 0, 0, 60, 28, 22);
+addFS(83, 43, 88, 195, 0, 0, 1, 0, 48, 22, 18);
+
+// UFC 236: Gastelum vs Adesanya (fight 84)
+addFS(84, 22, 92, 218, 1, 0, 1, 0, 51, 23, 18);
+addFS(84, 19, 95, 215, 2, 0, 0, 0, 52, 24, 19);
+
+// UFC 235: Jones vs Smith (fight 85)
+addFS(85, 7, 52, 115, 0, 2, 3, 65, 29, 13, 10);
+addFS(85, 16, 28, 75, 0, 0, 0, 0, 15, 7, 6);
+
+// UFC 235: Usman vs Woodley (fight 86)
+addFS(86, 31, 75, 168, 0, 2, 5, 320, 41, 19, 15);
+addFS(86, 34, 32, 82, 0, 0, 0, 0, 18, 8, 6);
+
+// UFC 235: Askren vs Lawler (fight 87)
+addFS(87, 39, 3, 5, 0, 1, 1, 85, 2, 1, 0, 1);
+addFS(87, 38, 12, 22, 0, 0, 0, 0, 7, 3, 2);
+
+// UFC 232: Jones vs Gustafsson 2 (fight 88)
+addFS(88, 7, 42, 82, 1, 0, 1, 0, 23, 10, 9);
+addFS(88, 104, 18, 42, 0, 0, 0, 0, 10, 4, 4);
+
+// UFC 232: Nunes vs Cyborg (fight 89)
+addFS(89, 76, 15, 22, 2, 0, 0, 0, 8, 4, 3);
+addFS(89, 105, 8, 15, 0, 0, 0, 0, 4, 2, 2);
+
+// UFC 226: Miocic vs Cormier (fight 93)
+addFS(93, 1, 25, 48, 1, 0, 0, 0, 14, 6, 5);
+addFS(93, 2, 18, 35, 1, 1, 2, 55, 10, 4, 4);
+
+// UFC 226: Ngannou vs Lewis (fight 94)
+addFS(94, 3, 11, 18, 0, 0, 0, 0, 6, 3, 2);
+addFS(94, 4, 5, 12, 0, 0, 0, 0, 3, 1, 1);
+
+// UFC 223: Khabib vs Iaquinta (fight 95)
+addFS(95, 41, 68, 135, 0, 4, 7, 180, 37, 17, 14);
+addFS(95, 106, 28, 65, 0, 0, 1, 0, 15, 7, 6);
+
+// UFC 223: Namajunas vs Joanna 2 (fight 96)
+addFS(96, 80, 62, 145, 1, 0, 0, 0, 34, 15, 13);
+addFS(96, 82, 45, 108, 0, 0, 0, 0, 25, 11, 9);
+
+// UFC 220: Miocic vs Ngannou (fight 97)
+addFS(97, 1, 48, 95, 0, 3, 5, 180, 26, 12, 10);
+addFS(97, 3, 22, 52, 0, 0, 0, 0, 12, 5, 5);
+
+// UFC 220: Cormier vs Oezdemir (fight 98)
+addFS(98, 2, 22, 38, 0, 3, 4, 195, 12, 5, 5);
+addFS(98, 107, 8, 18, 0, 0, 0, 0, 4, 2, 2);
+
+// UFC 217: Bisping vs GSP (fight 99)
+addFS(99, 23, 32, 62, 0, 0, 1, 0, 18, 8, 6);
+addFS(99, 24, 22, 38, 1, 3, 5, 195, 12, 5, 5, 1);
+
+// UFC 217: Dillashaw vs Garbrandt (fight 100)
+addFS(100, 64, 18, 38, 0, 0, 0, 0, 10, 4, 4);
+addFS(100, 66, 25, 45, 1, 0, 0, 0, 14, 6, 5);
+
+// UFC 217: Namajunas vs Joanna (fight 101)
+addFS(101, 80, 18, 32, 1, 0, 0, 0, 10, 4, 4);
+addFS(101, 82, 12, 28, 0, 0, 0, 0, 7, 3, 2);
+
+// UFC 214: Cormier vs Jones 2 (fight 102)
+addFS(102, 2, 38, 82, 0, 0, 1, 0, 21, 9, 8);
+addFS(102, 7, 42, 88, 1, 0, 0, 0, 23, 10, 9);
+
+// UFC 214: Woodley vs Thompson (fight 103)
+addFS(103, 34, 18, 42, 0, 0, 2, 0, 10, 4, 4);
+addFS(103, 40, 8, 18, 0, 1, 4, 52, 4, 2, 2);
+
+// UFC 214: Cyborg vs Evinger (fight 104)
+addFS(104, 105, 28, 48, 1, 0, 1, 0, 15, 7, 6);
+addFS(104, 108, 5, 12, 0, 0, 0, 0, 3, 1, 1);
+
+// UFC 212: Aldo vs Holloway (fight 105)
+addFS(105, 56, 28, 62, 0, 0, 0, 0, 15, 7, 6);
+addFS(105, 55, 42, 82, 1, 0, 0, 0, 23, 10, 9);
+
+// UFC 209: Woodley vs Thompson 2 (fight 106)
+addFS(106, 34, 48, 105, 1, 3, 5, 120, 26, 12, 10);
+addFS(106, 40, 52, 118, 0, 0, 0, 0, 29, 13, 10);
+
+// UFC 207: Nunes vs Rousey (fight 107)
+addFS(107, 76, 18, 28, 2, 0, 0, 0, 10, 4, 4);
+addFS(107, 77, 0, 3, 0, 0, 0, 0, 0, 0, 0);
+
+// UFC 207: Garbrandt vs Cruz (fight 108)
+addFS(108, 66, 68, 145, 1, 0, 0, 0, 37, 17, 14);
+addFS(108, 67, 55, 128, 0, 4, 8, 52, 30, 14, 11);
+
+// UFC 205: Alvarez vs McGregor (fight 109)
+addFS(109, 49, 8, 18, 0, 0, 0, 0, 4, 2, 2);
+addFS(109, 42, 52, 88, 3, 0, 0, 0, 29, 13, 10);
+
+// UFC 205: Woodley vs Thompson (fight 110)
+addFS(110, 34, 38, 82, 1, 3, 6, 85, 21, 9, 8);
+addFS(110, 40, 42, 98, 0, 0, 0, 0, 23, 10, 9);
+
+// UFC 205: Jedrzejczyk vs Kowalkiewicz (fight 111)
+addFS(111, 82, 72, 155, 0, 0, 0, 0, 40, 18, 14);
+addFS(111, 109, 32, 82, 0, 0, 0, 0, 18, 8, 6);
+
+// UFC 202: Diaz vs McGregor 2 (fight 112)
+addFS(112, 97, 85, 185, 1, 0, 0, 0, 47, 21, 17);
+addFS(112, 42, 95, 198, 1, 0, 0, 0, 52, 24, 19);
+
+// UFC 200: Tate vs Nunes (fight 113)
+addFS(113, 86, 22, 48, 0, 1, 3, 42, 12, 5, 5);
+addFS(113, 76, 28, 55, 1, 0, 0, 0, 15, 7, 6);
+
+// UFC 200: Cormier vs Silva (fight 114)
+addFS(114, 2, 45, 92, 0, 3, 5, 185, 25, 11, 9);
+addFS(114, 27, 28, 62, 0, 0, 0, 0, 15, 7, 6);
+
+// UFC 200: Lesnar vs Overeem (fight 115)
+addFS(115, 110, 15, 28, 0, 4, 6, 280, 8, 4, 3);
+addFS(115, 9, 18, 38, 0, 0, 0, 0, 10, 4, 4);
+
+// UFC 196: McGregor vs Diaz (fight 116)
+addFS(116, 42, 52, 108, 1, 0, 0, 0, 29, 13, 10);
+addFS(116, 97, 22, 42, 0, 1, 2, 55, 12, 5, 5, 1);
+
+// UFC 196: Tate vs Holm (fight 117)
+addFS(117, 86, 28, 62, 0, 2, 4, 55, 15, 7, 6, 1);
+addFS(117, 78, 65, 145, 0, 0, 2, 0, 36, 16, 13);
+
+// UFC 194: Aldo vs McGregor (fight 118)
+addFS(118, 56, 1, 2, 0, 0, 0, 0, 1, 0, 0);
+addFS(118, 42, 2, 3, 1, 0, 0, 0, 1, 1, 0);
+
+// UFC 194: Weidman vs Rockhold (fight 119)
+addFS(119, 26, 8, 18, 0, 0, 0, 0, 4, 2, 2);
+addFS(119, 25, 38, 58, 0, 1, 1, 185, 21, 9, 8);
+
+// UFC 194: Gastelum vs Jacare (fight 120)
+addFS(120, 22, 48, 98, 0, 0, 1, 0, 26, 12, 10);
+addFS(120, 111, 42, 88, 0, 1, 2, 22, 23, 10, 9);
+
+// UFC 193: Rousey vs Holm (fight 121)
+addFS(121, 77, 8, 18, 0, 1, 2, 22, 4, 2, 2);
+addFS(121, 78, 38, 72, 1, 0, 0, 0, 21, 9, 8);
+
+// UFC 189: McGregor vs Mendes (fight 122)
+addFS(122, 112, 28, 52, 1, 0, 0, 0, 15, 7, 6);
+addFS(122, 42, 15, 28, 0, 3, 3, 145, 8, 4, 3);
+
+// UFC 189: Lawler vs MacDonald 2 (fight 123)
+addFS(123, 38, 68, 138, 1, 0, 0, 0, 37, 17, 14);
+addFS(123, 113, 62, 128, 0, 0, 2, 0, 34, 15, 13);
+
+// UFC 187: Johnson vs Cormier (fight 124)
+addFS(124, 125, 25, 55, 0, 0, 0, 0, 14, 6, 5);
+addFS(124, 2, 42, 82, 0, 4, 6, 250, 23, 10, 9);
+
+// UFC 187: Weidman vs Belfort (fight 125)
+addFS(125, 26, 15, 28, 0, 1, 1, 65, 8, 4, 3);
+addFS(125, 126, 12, 22, 0, 0, 0, 0, 7, 3, 2);
+
+// UFC 182: Jones vs Cormier (fight 126)
+addFS(126, 7, 88, 195, 0, 5, 9, 95, 48, 22, 18);
+addFS(126, 2, 65, 148, 0, 0, 2, 0, 36, 16, 13);
+
+// UFC 168: Weidman vs Silva 2 (fight 127)
+addFS(127, 26, 12, 22, 0, 1, 1, 42, 7, 3, 2);
+addFS(127, 27, 15, 28, 0, 0, 0, 0, 8, 4, 3);
+
+// UFC 168: Rousey vs Tate 2 (fight 128)
+addFS(128, 77, 12, 22, 0, 1, 1, 55, 7, 3, 2, 1);
+addFS(128, 86, 18, 38, 0, 0, 2, 0, 10, 4, 4);
+
+// UFC 162: Silva vs Weidman (fight 129)
+addFS(129, 27, 18, 32, 0, 0, 0, 0, 10, 4, 4);
+addFS(129, 26, 12, 22, 1, 1, 1, 42, 7, 3, 2);
+
+// ── Fix has_stats for fights that have fight_stats but flag is 0 ──
+const statsSetPost = new Set(seed.fight_stats.map(fs => fs.fight_id));
+for (const f of seed.fights) {
+  if (!f.has_stats && statsSetPost.has(f.id)) {
+    f.has_stats = 1;
+    fightStatsAdded++; // count as newly resolved
+  }
+}
+
 // ── Add per-round stats for marquee title fights ──
 function addRoundStats(fightId, redId, blueId, rounds) {
   if (!seed.round_stats) seed.round_stats = [];
