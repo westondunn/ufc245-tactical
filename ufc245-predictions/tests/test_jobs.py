@@ -105,8 +105,40 @@ def test_weekly_retrain_uses_point_in_time_as_of():
         print("  PASS: weekly_retrain requests as_of point-in-time stats")
 
 
+def test_sync_unsynced_marks_posted_rows_only():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.environ["PREDICTIONS_DB_PATH"] = os.path.join(tmpdir, "predictions.db")
+        init_db()
+
+        id1 = log_prediction(1001, 10, 20, 0.6, 0.4, "v.sync", "h1", "2026-02-01")
+        id2 = log_prediction(1002, 11, 21, 0.55, 0.45, "v.sync", "h2", "2026-02-02")
+        id3 = log_prediction(1003, 12, 22, 0.52, 0.48, "v.sync", "h3", "2026-02-03")
+
+        posted = []
+
+        def fake_post_json(path, body):
+            posted.append((path, body))
+            return {"status": "ok"}
+
+        with patched(jobs, "_post_json", fake_post_json):
+            synced = jobs.sync_unsynced(limit=2)
+
+        assert synced == 2
+        assert posted, "Expected sync payload"
+        payload = posted[0][1]["predictions"]
+        sent_ids = {p["fight_id"] for p in payload}
+        assert sent_ids == {1001, 1002}
+
+        unsynced_after = get_unsynced_predictions()
+        unsynced_ids = {row["id"] for row in unsynced_after}
+        assert id3 in unsynced_ids
+        assert id1 not in unsynced_ids and id2 not in unsynced_ids
+        print("  PASS: sync_unsynced only marks posted rows")
+
+
 if __name__ == "__main__":
     print("\n=== UFC Predictions Job Tests ===\n")
     test_daily_predict_marks_only_current_batch_synced()
     test_weekly_retrain_uses_point_in_time_as_of()
-    print("\n=== All 2 job tests passed ===\n")
+    test_sync_unsynced_marks_posted_rows_only()
+    print("\n=== All 3 job tests passed ===\n")

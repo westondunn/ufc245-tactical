@@ -87,6 +87,7 @@ def test_db_operations():
         unsynced = get_unsynced_predictions()
         assert len(unsynced) == 1
         assert unsynced[0]["fight_id"] == 1
+        assert len(get_unsynced_predictions(limit=1)) == 1
         print("  PASS: log_prediction + get_unsynced")
 
         mark_synced([unsynced[0]["id"]])

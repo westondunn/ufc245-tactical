@@ -88,11 +88,14 @@ def log_prediction(fight_id: int, red_id: int, blue_id: int,
     return int(cursor.lastrowid)
 
 
-def get_unsynced_predictions() -> list[dict]:
+def get_unsynced_predictions(limit: int | None = None) -> list[dict]:
     conn = get_conn()
-    rows = conn.execute(
-        "SELECT * FROM prediction_log WHERE synced = 0 ORDER BY predicted_at"
-    ).fetchall()
+    sql = "SELECT * FROM prediction_log WHERE synced = 0 ORDER BY predicted_at"
+    params: tuple = ()
+    if limit is not None and limit > 0:
+        sql += " LIMIT ?"
+        params = (limit,)
+    rows = conn.execute(sql, params).fetchall()
     conn.close()
     return [dict(r) for r in rows]
 

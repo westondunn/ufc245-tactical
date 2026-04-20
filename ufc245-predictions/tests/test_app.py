@@ -21,7 +21,9 @@ def test_scheduler_starts_once():
 
         assert app_mod.scheduler is not None
         assert app_mod.scheduler.running
-        assert len(app_mod.scheduler.get_jobs()) == 4
+        job_ids = sorted([job.id for job in app_mod.scheduler.get_jobs()])
+        assert len(job_ids) == 5
+        assert "sync_unsynced" in job_ids
 
         app_mod.shutdown()
         print("  PASS: app startup registers scheduler exactly once")

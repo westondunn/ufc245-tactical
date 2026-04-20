@@ -2,105 +2,105 @@
 
 ## Quick start (automated)
 
+### Single service (default)
 ```bash
-# 1. Log in to Railway (interactive, one-time)
 railway login
-
-# 2. Link to your existing project (if not already linked)
 railway link
-
-# 3. Run setup — creates/updates the single predictions service
 bash scripts/railway-setup.sh
-
-# 4. After deploy is healthy, bootstrap + verify end-to-end
 bash scripts/railway-bootstrap.sh
 ```
 
-The setup script will:
-- Generate a shared `PREDICTION_SERVICE_KEY`
-- Set it on your existing main app service
-- Create/find a single `predictions` service
-- Set required env vars (`MAIN_APP_URL`, `PREDICTION_SERVICE_KEY`, `PREDICTIONS_DB_PATH`, `MODEL_DIR`, `ENABLE_SCHEDULER`)
-- Trigger deploys for main app and predictions service
+### Split services (web + worker)
+```bash
+railway login
+railway link
+bash scripts/railway-setup.sh --split
+bash scripts/railway-bootstrap.sh --split
+```
 
-The bootstrap script will hard-verify:
-- `/healthz` returns healthy with scheduler running
-- `/trigger/retrain` succeeds and a model exists
+## What setup script does
+
+- Generates shared `PREDICTION_SERVICE_KEY`
+- Sets key on main app service
+- Configures prediction services (single or split)
+- Sets required env vars (`MAIN_APP_URL`, `PREDICTION_SERVICE_KEY`, `PREDICTIONS_DB_PATH`, `MODEL_DIR`)
+- Deploys services
+
+## What bootstrap script verifies
+
+- `/healthz` reachable
+- `/trigger/retrain` succeeds and model exists
 - `/trigger/predict` succeeds
-- Main app `/api/predictions?upcoming=1` is reachable and returns JSON
+- `/trigger/sync` succeeds
+- Main app `/api/predictions?upcoming=1` returns JSON array
 
-## Architecture
+## Topologies
+
+### Single mode
 
 ```
-Railway Project
-  |
-  +-- main app (existing)         Node/Express
-  |     PREDICTION_SERVICE_KEY=xxx
-  |     DB_PATH=/data/ufc.db
-  |
-  +-- predictions (new/updated)   FastAPI + APScheduler (single process)
-        MAIN_APP_URL=https://main-app.railway.app
-        PREDICTION_SERVICE_KEY=xxx
-        PREDICTIONS_DB_PATH=/data/predictions.db
-        MODEL_DIR=/data/model_store
-        ENABLE_SCHEDULER=1
+main app
+  └─ predictions (FastAPI + in-process scheduler)
 ```
 
-## Manual setup (if scripts don't work)
-
-### Env vars
-
-Main app:
-```
-PREDICTION_SERVICE_KEY=<random 32-48 char secret>
-```
-
-Predictions service:
+Predictions env:
 ```
 MAIN_APP_URL=https://your-main-app.railway.app
-PREDICTION_SERVICE_KEY=<same key>
+PREDICTION_SERVICE_KEY=<same key as main app>
 PREDICTIONS_DB_PATH=/data/predictions.db
 MODEL_DIR=/data/model_store
 ENABLE_SCHEDULER=1
+DEPLOYMENT_MODE=single
 NIXPACKS_CONFIG_FILE=ufc245-predictions/nixpacks.toml
 ```
 
-### Railway service
+### Split mode
 
-**predictions:**
-- Root directory: repo root (Nixpacks config points to `ufc245-predictions/`)
-- Start command: `uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}`
-- Health check: `/healthz`
-
-## Manual bootstrap
-
-```bash
-# Train model
-curl -X POST https://predictions.railway.app/trigger/retrain \
-  -H "x-prediction-key: YOUR_KEY"
-
-# Generate predictions
-curl -X POST https://predictions.railway.app/trigger/predict \
-  -H "x-prediction-key: YOUR_KEY"
-
-# Verify main app ingestion
-curl https://your-main-app.railway.app/api/predictions?upcoming=1
+```
+main app
+  ├─ predictions-web (API)
+  └─ predictions-worker (API runtime with scheduler enabled)
 ```
 
-## API routes on main app
+`predictions-web` env:
+```
+MAIN_APP_URL=https://your-main-app.railway.app
+PREDICTION_SERVICE_KEY=<same key as main app>
+PREDICTIONS_DB_PATH=/data/predictions-web.db
+MODEL_DIR=/data/model-web-store
+ENABLE_SCHEDULER=0
+DEPLOYMENT_MODE=split-web
+NIXPACKS_CONFIG_FILE=ufc245-predictions/nixpacks.web.toml
+```
+
+`predictions-worker` env:
+```
+MAIN_APP_URL=https://your-main-app.railway.app
+PREDICTION_SERVICE_KEY=<same key as main app>
+PREDICTIONS_DB_PATH=/data/predictions-worker.db
+MODEL_DIR=/data/model-worker-store
+ENABLE_SCHEDULER=1
+DEPLOYMENT_MODE=split-worker
+NIXPACKS_CONFIG_FILE=ufc245-predictions/nixpacks.worker.toml
+```
+
+Note: in split mode, web and worker keep separate local runtime state.
+
+## Main app prediction routes
 
 | Route | Method | Auth | Description |
 |-------|--------|------|-------------|
-| `/api/predictions` | GET | Public | Get predictions (query: `fight_id`, `upcoming`, `from`, `to`, `limit`) |
-| `/api/predictions/accuracy` | GET | Public | Model accuracy stats |
-| `/api/predictions/ingest` | POST | `x-prediction-key` | Ingest predictions from microservice |
-| `/api/predictions/reconcile` | POST | `x-prediction-key` | Reconcile with actual results |
+| `/api/predictions` | GET | Public | Query predictions (`fight_id`, `upcoming`, `from`, `to`, `limit`) |
+| `/api/predictions/accuracy` | GET | Public | Accuracy summary |
+| `/api/predictions/ingest` | POST | `x-prediction-key` | Ingest prediction batch |
+| `/api/predictions/reconcile` | POST | `x-prediction-key` | Reconcile outcomes |
 
-## Scheduler cron (in-process)
+## Prediction service trigger routes
 
-| Job | Schedule (UTC) | Description |
-|-----|----------------|-------------|
-| `daily_predict` | 06:00 daily | Predict next 14 days |
-| `refresh_near` | 08:00, 14:00, 20:00 | Refresh next 48h |
-| `daily_reconcile` | 07:00 daily | Reconcile last 7 days |
-| `weekly_retrain` | Monday 05:00 | Retrain on all data |
+| Route | Method | Auth | Description |
+|-------|--------|------|-------------|
+| `/trigger/retrain` | POST | `x-prediction-key` | Train model |
+| `/trigger/predict` | POST | `x-prediction-key` | Predict upcoming fights |
+| `/trigger/refresh` | POST | `x-prediction-key` | Refresh near-term predictions |
+| `/trigger/reconcile` | POST | `x-prediction-key` | Reconcile recent outcomes |
+| `/trigger/sync` | POST | `x-prediction-key` | Sync unsynced local backlog to main app |

@@ -7,7 +7,7 @@ from fastapi import FastAPI, HTTPException, Header
 from pydantic import BaseModel
 
 from db import init_db, get_latest_model, get_unsynced_predictions
-from jobs import daily_predict, refresh_near, daily_reconcile, weekly_retrain
+from jobs import daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 logger = logging.getLogger("app")
@@ -17,6 +17,7 @@ app = FastAPI(title="UFC Tactical Predictions", version="0.1.0")
 PREDICTION_SERVICE_KEY = os.getenv("PREDICTION_SERVICE_KEY", "")
 MAIN_APP_URL = os.getenv("MAIN_APP_URL", "http://localhost:3000")
 ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "1").lower() not in {"0", "false", "no"}
+DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "single")
 scheduler: BackgroundScheduler | None = None
 
 
@@ -34,6 +35,8 @@ def _configure_scheduler() -> BackgroundScheduler:
                       id="daily_reconcile", replace_existing=True)
     scheduler.add_job(weekly_retrain, "cron", day_of_week="mon", hour=5, minute=0,
                       id="weekly_retrain", replace_existing=True)
+    scheduler.add_job(sync_unsynced, "cron", minute=30,
+                      id="sync_unsynced", replace_existing=True)
     return scheduler
 
 
@@ -65,6 +68,7 @@ def healthz():
         "model_accuracy": model["accuracy"] if model else None,
         "scheduler_running": bool(scheduler and scheduler.running),
         "main_app_url": MAIN_APP_URL,
+        "deployment_mode": DEPLOYMENT_MODE,
     }
 
 
@@ -72,13 +76,15 @@ def healthz():
 def status():
     model = get_latest_model()
     unsynced = get_unsynced_predictions()
-    jobs = scheduler.get_jobs() if scheduler and scheduler.running else []
+    scheduled_jobs = scheduler.get_jobs() if scheduler and scheduler.running else []
     return {
         "model": model,
         "unsynced_count": len(unsynced),
         "scheduler_running": bool(scheduler and scheduler.running),
-        "job_count": len(jobs),
+        "job_count": len(scheduled_jobs),
+        "jobs": [job.id for job in scheduled_jobs],
         "main_app_url": MAIN_APP_URL,
+        "deployment_mode": DEPLOYMENT_MODE,
     }
 
 
@@ -121,3 +127,14 @@ def trigger_retrain(x_prediction_key: str = Header(default="")):
     _require_key(x_prediction_key)
     weekly_retrain()
     return TriggerResponse(status="ok", job="weekly_retrain")
+
+
+@app.post("/trigger/sync")
+def trigger_sync(x_prediction_key: str = Header(default="")):
+    _require_key(x_prediction_key)
+    synced = sync_unsynced(limit=1000)
+    return {
+        "status": "ok",
+        "job": "sync_unsynced",
+        "synced": synced
+    }

@@ -5,6 +5,7 @@ Four cron jobs:
   2. refresh_near    — 3x daily refresh for next 48h
   3. daily_reconcile — reconcile last 7 days of results
   4. weekly_retrain  — retrain model on all labeled data
+  5. sync_unsynced   — sync local backlog to main app
 """
 import os
 import logging
@@ -16,7 +17,7 @@ import numpy as np
 from model import engineer_features, feature_hash, predict, train, load_model, FEATURE_NAMES
 from db import (
     get_latest_model, save_model_record, log_prediction,
-    mark_synced, init_db
+    mark_synced, init_db, get_unsynced_predictions
 )
 
 logger = logging.getLogger("jobs")
@@ -68,6 +69,36 @@ def _sync_predictions(predictions: list[dict], local_ids: list[int], label: str)
     if result:
         mark_synced(local_ids)
         logger.info(f"Synced {len(predictions)} predictions ({label})")
+
+
+def sync_unsynced(limit: int = 500) -> int:
+    """Sync locally queued unsynced predictions to the main app."""
+    init_db()
+    queued = get_unsynced_predictions(limit=limit)
+    if not queued:
+        logger.info("No unsynced prediction backlog")
+        return 0
+
+    predictions = [{
+        "fight_id": row["fight_id"],
+        "red_fighter_id": row["red_fighter_id"],
+        "blue_fighter_id": row["blue_fighter_id"],
+        "red_win_prob": row["red_win_prob"],
+        "blue_win_prob": row["blue_win_prob"],
+        "model_version": row["model_version"],
+        "feature_hash": row["feature_hash"],
+        "predicted_at": row["predicted_at"],
+        "event_date": row["event_date"]
+    } for row in queued]
+
+    result = _post_json("/api/predictions/ingest", {"predictions": predictions})
+    if not result:
+        logger.warning("Backlog sync failed")
+        return 0
+
+    mark_synced([row["id"] for row in queued])
+    logger.info(f"Synced {len(queued)} queued predictions")
+    return len(queued)
 
 
 def daily_predict():
