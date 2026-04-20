@@ -18,6 +18,23 @@ bash scripts/railway-setup.sh --split
 bash scripts/railway-bootstrap.sh --split
 ```
 
+## Main app database backend
+
+Main app now supports two DB backends:
+
+- `DATABASE_URL` set → PostgreSQL backend (recommended on Railway)
+- `DATABASE_URL` unset → existing sql.js/SQLite backend (`DB_PATH` optional)
+
+For Railway with a Postgres plugin attached to the main app service:
+
+```bash
+railway variables set DATABASE_URL="${{Postgres.DATABASE_URL}}" --service <main-service>
+```
+
+Notes:
+- Keep `DB_PATH` only if you intentionally want SQLite fallback in non-Postgres environments.
+- Existing API contracts are unchanged.
+
 ## What setup script does
 
 - Generates shared `PREDICTION_SERVICE_KEY`
@@ -104,3 +121,86 @@ Note: in split mode, web and worker keep separate local runtime state.
 | `/trigger/refresh` | POST | `x-prediction-key` | Refresh near-term predictions |
 | `/trigger/reconcile` | POST | `x-prediction-key` | Reconcile recent outcomes |
 | `/trigger/sync` | POST | `x-prediction-key` | Sync unsynced local backlog to main app |
+
+## Railway Function (copy/paste)
+
+Use this in a Railway HTTP Function (Bun runtime) for operational triggers.
+Set function env vars:
+- `PREDICTIONS_URL` (e.g. `https://predictions.railway.app`)
+- `MAIN_APP_URL` (e.g. `https://main.railway.app`)
+- `PREDICTION_SERVICE_KEY`
+
+```ts
+const PREDICTIONS_URL = (process.env.PREDICTIONS_URL || "").replace(/\/+$/, "");
+const MAIN_APP_URL = (process.env.MAIN_APP_URL || "").replace(/\/+$/, "");
+const KEY = process.env.PREDICTION_SERVICE_KEY || "";
+
+function json(status: number, body: unknown) {
+  return new Response(JSON.stringify(body, null, 2), {
+    status,
+    headers: { "content-type": "application/json" }
+  });
+}
+
+async function call(path: string, method = "POST") {
+  const res = await fetch(`${PREDICTIONS_URL}${path}`, {
+    method,
+    headers: { "x-prediction-key": KEY }
+  });
+  const text = await res.text();
+  let data: unknown = text;
+  try { data = JSON.parse(text); } catch {}
+  return { ok: res.ok, status: res.status, data };
+}
+
+Bun.serve({
+  port: Number(process.env.PORT || 3000),
+  async fetch(req) {
+    if (!PREDICTIONS_URL || !MAIN_APP_URL || !KEY) {
+      return json(500, { error: "missing_env", required: ["PREDICTIONS_URL", "MAIN_APP_URL", "PREDICTION_SERVICE_KEY"] });
+    }
+
+    const url = new URL(req.url);
+    const action = (url.searchParams.get("action") || "daily").toLowerCase();
+
+    try {
+      if (action === "health") {
+        const p = await fetch(`${PREDICTIONS_URL}/healthz`);
+        const m = await fetch(`${MAIN_APP_URL}/healthz`);
+        return json(200, { predictions: p.status, main: m.status });
+      }
+
+      if (action === "retrain") {
+        const retrain = await call("/trigger/retrain");
+        return json(retrain.ok ? 200 : 502, { action, retrain });
+      }
+
+      if (action === "predict") {
+        const predict = await call("/trigger/predict");
+        const sync = await call("/trigger/sync");
+        const upcoming = await fetch(`${MAIN_APP_URL}/api/predictions?upcoming=1`);
+        const upcomingData = await upcoming.json();
+        return json(predict.ok && sync.ok ? 200 : 502, { action, predict, sync, upcoming_count: Array.isArray(upcomingData) ? upcomingData.length : null });
+      }
+
+      // default: daily run
+      const predict = await call("/trigger/predict");
+      const reconcile = await call("/trigger/reconcile");
+      const sync = await call("/trigger/sync");
+      const upcoming = await fetch(`${MAIN_APP_URL}/api/predictions?upcoming=1`);
+      const upcomingData = await upcoming.json();
+
+      const ok = predict.ok && reconcile.ok && sync.ok;
+      return json(ok ? 200 : 502, {
+        action: "daily",
+        predict,
+        reconcile,
+        sync,
+        upcoming_count: Array.isArray(upcomingData) ? upcomingData.length : null
+      });
+    } catch (err) {
+      return json(500, { error: "function_failed", message: err instanceof Error ? err.message : String(err) });
+    }
+  }
+});
+```

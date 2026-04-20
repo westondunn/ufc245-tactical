@@ -338,7 +338,7 @@ async function run() {
   assertTruthy(nullFighterAnalysis, 'analyzeFight handles null fighters');
 
   // generateAllAnalyses
-  const allAnalyses = tactical.generateAllAnalyses(db);
+  const allAnalyses = await tactical.generateAllAnalyses(db);
   assertGt(allAnalyses.length, 0, 'generateAllAnalyses returns results');
   assertTruthy(allAnalyses[0].fight_id, 'bulk analysis entries have fight_id');
 

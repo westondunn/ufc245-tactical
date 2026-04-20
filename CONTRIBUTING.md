@@ -42,7 +42,9 @@ node tests/run.js  # run test suite
 
 ```
 server.js              → Express server + API routes
-db/index.js            → SQLite (sql.js) database layer
+db/index.js            → DB backend selector (Postgres or SQLite)
+db/postgres.js         → PostgreSQL database layer
+db/sqlite.js           → SQLite (sql.js) database layer
 lib/biomechanics.js    → Force calculation framework
 lib/version.js         → Centralized version module
 data/seed.json         → Fight database (generated)
@@ -53,7 +55,7 @@ tests/run.js           → Test suite
 
 **Key design decisions:**
 - **Single HTML file** — the dashboard is self-contained for simplicity. CSS, JS, SVG all inline.
-- **SQLite in-memory** — seeds from JSON on boot. No persistent storage needed. Swap to PostgreSQL by changing only `db/index.js`.
+- **Dual backend support** — uses PostgreSQL when `DATABASE_URL` is set, otherwise sql.js/SQLite seeded from JSON.
 - **Biomechanics framework** — all force estimates use allometric scaling from peer-reviewed literature. Every number has a citation.
 - **Three.js 3D** — the fight recreation uses a WebGL scene that reads joint positions from a hidden SVG layer.
 

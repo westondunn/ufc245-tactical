@@ -1,13 +1,16 @@
 # Nixpacks config for predictions web service (API only)
 
 [phases.setup]
-nixPkgs = ["python313"]
+nixPkgs = ["python312", "python312Packages.pip"]
 
 [phases.install]
-cmds = ["pip install -r ufc245-predictions/requirements.txt"]
+cmds = [
+  "pip --version",
+  "if [ -f requirements.txt ]; then pip install --break-system-packages -r requirements.txt; else pip install --break-system-packages -r ufc245-predictions/requirements.txt; fi"
+]
 
 [phases.build]
-cmds = ["python -m compileall ufc245-predictions/"]
+cmds = ["if [ -f app.py ]; then python3 -m compileall .; else python3 -m compileall ufc245-predictions/; fi"]
 
 [start]
-cmd = "cd ufc245-predictions && uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}"
+cmd = "if [ -f app.py ]; then uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}; else cd ufc245-predictions && uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}; fi"

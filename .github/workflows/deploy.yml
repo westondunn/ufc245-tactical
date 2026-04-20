@@ -110,12 +110,109 @@ jobs:
     runs-on: ubuntu-latest
     needs: version-bump
     if: always()
+    timeout-minutes: 20
+    env:
+      RAILWAY_WEB_URL: ${{ secrets.RAILWAY_WEB_URL }}
+      RAILWAY_PREDICTIONS_URL: ${{ secrets.RAILWAY_PREDICTIONS_URL }}
+      RAILWAY_FUNCTION_URL: ${{ secrets.RAILWAY_FUNCTION_URL }}
+      PREDICTION_SERVICE_KEY: ${{ secrets.PREDICTION_SERVICE_KEY }}
     steps:
-      - name: Wait for Railway build
+      - name: Validate required deploy secrets
         run: |
-          echo "Railway auto-deploys from main branch."
-          echo "Version ${{ needs.version-bump.outputs.new_version }} should be live shortly."
-          echo "Check your Railway dashboard for deployment status."
-          # If you add RAILWAY_DEPLOY_URL as a secret, uncomment below:
-          # sleep 120
-          # curl -f "${{ secrets.RAILWAY_DEPLOY_URL }}/healthz" || echo "Deploy verification skipped"
+          set -euo pipefail
+          for var in RAILWAY_WEB_URL RAILWAY_PREDICTIONS_URL RAILWAY_FUNCTION_URL PREDICTION_SERVICE_KEY; do
+            if [ -z "${!var:-}" ]; then
+              echo "::error::$var is required for deploy verification"
+              exit 1
+            fi
+          done
+
+      - name: Wait for web + predictions health
+        run: |
+          set -euo pipefail
+          check_health() {
+            local url="$1"
+            local name="$2"
+            local ok=0
+            for i in $(seq 1 36); do
+              code=$(curl -s -o /tmp/health.json -w "%{http_code}" "$url/healthz" || true)
+              if [ "$code" = "200" ]; then
+                ok=1
+                echo "$name healthy on attempt $i"
+                break
+              fi
+              echo "$name not ready yet (attempt $i/36, status=$code)"
+              sleep 10
+            done
+            if [ "$ok" -ne 1 ]; then
+              echo "::error::$name failed health check at $url/healthz"
+              exit 1
+            fi
+          }
+          check_health "$RAILWAY_WEB_URL" "web"
+          check_health "$RAILWAY_PREDICTIONS_URL" "predictions"
+
+      - name: Verify predictions contract + authenticated triggers
+        run: |
+          set -euo pipefail
+
+          HEALTH=$(curl -s "$RAILWAY_PREDICTIONS_URL/healthz")
+          echo "$HEALTH" | node -e "
+            let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => {
+              const j = JSON.parse(d);
+              if (!j.status || j.status !== 'ok') process.exit(1);
+              if (!Object.prototype.hasOwnProperty.call(j, 'scheduler_running')) process.exit(1);
+              if (!Object.prototype.hasOwnProperty.call(j, 'deployment_mode')) process.exit(1);
+              console.log('predictions health contract OK');
+            });
+          "
+
+          for route in retrain predict; do
+            code=$(curl -s -o /tmp/${route}.json -w "%{http_code}" \
+              -X POST "$RAILWAY_PREDICTIONS_URL/trigger/$route" \
+              -H "x-prediction-key: $PREDICTION_SERVICE_KEY" \
+              -H "Content-Type: application/json")
+            if [ "$code" != "200" ]; then
+              echo "::error::/trigger/$route failed with HTTP $code"
+              cat /tmp/${route}.json || true
+              exit 1
+            fi
+          done
+          echo "predictions trigger endpoints OK"
+
+      - name: Verify main app predictions endpoint
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/upcoming.json -w "%{http_code}" \
+            "$RAILWAY_WEB_URL/api/predictions?upcoming=1&limit=10")
+          if [ "$code" != "200" ]; then
+            echo "::error::main app /api/predictions failed (HTTP $code)"
+            exit 1
+          fi
+          cat /tmp/upcoming.json | node -e "
+            let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => {
+              const j = JSON.parse(d);
+              if (!Array.isArray(j)) process.exit(1);
+              console.log('main app predictions contract OK; rows=' + j.length);
+            });
+          "
+
+      - name: Verify function orchestration health endpoint
+        run: |
+          set -euo pipefail
+          code=$(curl -s -o /tmp/function-health.json -w "%{http_code}" \
+            "$RAILWAY_FUNCTION_URL/api/health")
+          if [ "$code" != "200" ]; then
+            echo "::error::function health endpoint failed (HTTP $code)"
+            cat /tmp/function-health.json || true
+            exit 1
+          fi
+          cat /tmp/function-health.json | node -e "
+            let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => {
+              const j = JSON.parse(d);
+              if (!Object.prototype.hasOwnProperty.call(j, 'predictions')) process.exit(1);
+              if (!Object.prototype.hasOwnProperty.call(j, 'main')) process.exit(1);
+              if (j.predictions !== 200 || j.main !== 200) process.exit(1);
+              console.log('function health contract OK');
+            });
+          "

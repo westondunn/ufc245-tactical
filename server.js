@@ -73,8 +73,8 @@ app.use('/api', (req, res, next) => {
 
 // Error wrapper for async-safe route handlers
 function apiHandler(fn) {
-  return (req, res) => {
-    try { fn(req, res); }
+  return async (req, res) => {
+    try { await fn(req, res); }
     catch (err) {
       console.error(`[API ERROR] ${req.method} ${req.path}:`, err.message);
       res.status(500).json({ error: 'internal_error', message: NODE_ENV === 'development' ? err.message : 'An error occurred' });
@@ -99,22 +99,22 @@ function fighterMassKg(fighter) {
 }
 
 // Fighter search (autocomplete)
-app.get('/api/fighters/search', apiHandler((req, res) => {
+app.get('/api/fighters/search', apiHandler(async (req, res) => {
   const q = (req.query.q || '').trim();
   if (q.length < 2) return res.json([]);
-  res.json(db.searchFighters(q));
+  res.json(await db.searchFighters(q));
 }));
 
 // Fighter profile
-app.get('/api/fighters/:id', apiHandler((req, res) => {
-  const fighter = db.getFighter(parseInt(req.params.id, 10));
+app.get('/api/fighters/:id', apiHandler(async (req, res) => {
+  const fighter = await db.getFighter(parseInt(req.params.id, 10));
   if (!fighter) return res.status(404).json({ error: 'fighter_not_found' });
   res.json(fighter);
 }));
 
 // Fighter's event history (all UFC cards they appeared on)
-app.get('/api/fighters/:id/events', apiHandler((req, res) => {
-  const events = db.getFighterEvents(parseInt(req.params.id, 10));
+app.get('/api/fighters/:id/events', apiHandler(async (req, res) => {
+  const events = await db.getFighterEvents(parseInt(req.params.id, 10));
   const grouped = {};
   for (const row of events) {
     if (!grouped[row.id]) {
@@ -131,122 +131,124 @@ app.get('/api/fighters/:id/events', apiHandler((req, res) => {
 }));
 
 // All events
-app.get('/api/events', apiHandler((req, res) => {
+app.get('/api/events', apiHandler(async (req, res) => {
   const key = 'events:all';
   let result = cache.get(key);
-  if (!result) { result = cache.set(key, db.getAllEvents()); }
+  if (!result) { result = cache.set(key, await db.getAllEvents()); }
   res.json(result);
 }));
 
 // Event detail + full card
-app.get('/api/events/:id/card', apiHandler((req, res) => {
+app.get('/api/events/:id/card', apiHandler(async (req, res) => {
   const eventId = parseInt(req.params.id, 10);
   if (isNaN(eventId)) return res.status(400).json({ error: 'invalid_id' });
-  const event = db.getEvent(eventId);
+  const event = await db.getEvent(eventId);
   if (!event) return res.status(404).json({ error: 'event_not_found' });
-  const card = db.getEventCard(eventId);
+  const card = await db.getEventCard(eventId);
   res.json({ event, card });
 }));
 
 // Event by UFC number (e.g., /api/events/number/245)
-app.get('/api/events/number/:num', apiHandler((req, res) => {
+app.get('/api/events/number/:num', apiHandler(async (req, res) => {
   const num = parseInt(req.params.num, 10);
   if (isNaN(num)) return res.status(400).json({ error: 'invalid_number' });
-  const event = db.getEventByNumber(num);
+  const event = await db.getEventByNumber(num);
   if (!event) return res.status(404).json({ error: 'event_not_found' });
-  const card = db.getEventCard(event.id);
+  const card = await db.getEventCard(event.id);
   res.json({ event, card });
 }));
 
 // Fight detail with stats
-app.get('/api/fights/:id', apiHandler((req, res) => {
-  const fight = db.getFight(parseInt(req.params.id, 10));
+app.get('/api/fights/:id', apiHandler(async (req, res) => {
+  const fight = await db.getFight(parseInt(req.params.id, 10));
   if (!fight) return res.status(404).json({ error: 'fight_not_found' });
   res.json(fight);
 }));
 
 // Fight detail with per-round stats
-app.get('/api/fights/:id/rounds', apiHandler((req, res) => {
-  const fight = db.getFightWithRounds(parseInt(req.params.id, 10));
+app.get('/api/fights/:id/rounds', apiHandler(async (req, res) => {
+  const fight = await db.getFightWithRounds(parseInt(req.params.id, 10));
   if (!fight) return res.status(404).json({ error: 'fight_not_found' });
   res.json(fight);
 }));
 
 // Tactical breakdown for a single fight
-app.get('/api/fights/:id/tactical', apiHandler((req, res) => {
+app.get('/api/fights/:id/tactical', apiHandler(async (req, res) => {
   const fightId = parseInt(req.params.id, 10);
   const key = `tactical:fight:${fightId}`;
   let result = cache.get(key);
   if (!result) {
-    const fight = db.getFight(fightId);
+    const fight = await db.getFight(fightId);
     if (!fight) return res.status(404).json({ error: 'fight_not_found' });
-    const red = db.getFighter(fight.red_fighter_id);
-    const blue = db.getFighter(fight.blue_fighter_id);
-    const roundStats = db.getRoundStats(fightId);
+    const red = await db.getFighter(fight.red_fighter_id);
+    const blue = await db.getFighter(fight.blue_fighter_id);
+    const roundStats = await db.getRoundStats(fightId);
     result = cache.set(key, tactical.analyzeFight(fight, red, blue, roundStats));
   }
   res.json(result);
 }));
 
 // Tactical breakdowns for an entire event card
-app.get('/api/events/:id/tactical', apiHandler((req, res) => {
+app.get('/api/events/:id/tactical', apiHandler(async (req, res) => {
   const eventId = parseInt(req.params.id, 10);
   if (isNaN(eventId)) return res.status(400).json({ error: 'invalid_id' });
   const key = `tactical:event:${eventId}`;
   let result = cache.get(key);
   if (!result) {
-    const event = db.getEvent(eventId);
+    const event = await db.getEvent(eventId);
     if (!event) return res.status(404).json({ error: 'event_not_found' });
-    const card = db.getEventCard(eventId);
-    const analyses = card.map(bout => {
-      const fight = db.getFight(bout.id);
-      if (!fight) return null;
-      const red = db.getFighter(fight.red_fighter_id);
-      const blue = db.getFighter(fight.blue_fighter_id);
-      const roundStats = db.getRoundStats(bout.id);
-      return tactical.analyzeFight(fight, red, blue, roundStats);
-    }).filter(Boolean);
+    const card = await db.getEventCard(eventId);
+    const analyses = [];
+    for (const bout of card) {
+      const fight = await db.getFight(bout.id);
+      if (!fight) continue;
+      const red = await db.getFighter(fight.red_fighter_id);
+      const blue = await db.getFighter(fight.blue_fighter_id);
+      const roundStats = await db.getRoundStats(bout.id);
+      const analysis = tactical.analyzeFight(fight, red, blue, roundStats);
+      if (analysis) analyses.push(analysis);
+    }
     result = cache.set(key, { event, analyses });
   }
   res.json(result);
 }));
 
 // All tactical breakdowns (bulk)
-app.get('/api/tactical/all', apiHandler((req, res) => {
+app.get('/api/tactical/all', apiHandler(async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=7200');
   const key = 'tactical:all';
   let result = cache.get(key);
   if (!result) {
-    const analyses = tactical.generateAllAnalyses(db);
+    const analyses = await tactical.generateAllAnalyses(db);
     result = cache.set(key, { count: analyses.length, analyses });
   }
   res.json(result);
 }));
 
 // Stat leaders
-app.get('/api/stats/leaders', apiHandler((req, res) => {
+app.get('/api/stats/leaders', apiHandler(async (req, res) => {
   const stat = req.query.stat || 'sig_strikes';
   const limit = Math.min(parseInt(req.query.limit) || 10, 50);
   const key = `leaders:${stat}:${limit}`;
   let result = cache.get(key);
   if (!result) {
-    const leaders = db.getStatLeaders(stat, limit);
+    const leaders = await db.getStatLeaders(stat, limit);
     result = cache.set(key, { stat, leaders });
   }
   res.json(result);
 }));
 
 // All fighters (paginated)
-app.get('/api/fighters', apiHandler((req, res) => {
+app.get('/api/fighters', apiHandler(async (req, res) => {
   const limit = Math.min(parseInt(req.query.limit) || 500, 1000);
   const key = `fighters:all:${limit}`;
   let result = cache.get(key);
-  if (!result) { result = cache.set(key, db.getAllFighters(limit)); }
+  if (!result) { result = cache.set(key, await db.getAllFighters(limit)); }
   res.json(result);
 }));
 
 // Fighter career stats (aggregated)
-app.get('/api/fighters/:id/career-stats', apiHandler((req, res) => {
+app.get('/api/fighters/:id/career-stats', apiHandler(async (req, res) => {
   const id = parseInt(req.params.id, 10);
   const asOf = req.query.as_of ? String(req.query.as_of).trim() : null;
   if (asOf && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
@@ -255,31 +257,31 @@ app.get('/api/fighters/:id/career-stats', apiHandler((req, res) => {
   const key = `career:${id}:${asOf || 'latest'}`;
   let result = cache.get(key);
   if (!result) {
-    const fighter = db.getFighter(id);
+    const fighter = await db.getFighter(id);
     if (!fighter) return res.status(404).json({ error: 'fighter_not_found' });
-    const stats = db.getCareerStats(id, asOf);
-    const record = db.getFighterRecord(id);
+    const stats = await db.getCareerStats(id, asOf);
+    const record = await db.getFighterRecord(id);
     result = cache.set(key, { fighter, stats, record });
   }
   res.json(result);
 }));
 
 // Compare two fighters
-app.get('/api/fighters/:id1/compare/:id2', apiHandler((req, res) => {
+app.get('/api/fighters/:id1/compare/:id2', apiHandler(async (req, res) => {
   const id1 = parseInt(req.params.id1, 10);
   const id2 = parseInt(req.params.id2, 10);
   const key = `compare:${id1}:${id2}`;
   let result = cache.get(key);
   if (!result) {
-    const f1 = db.getFighter(id1);
-    const f2 = db.getFighter(id2);
+    const f1 = await db.getFighter(id1);
+    const f2 = await db.getFighter(id2);
     if (!f1 || !f2) return res.status(404).json({ error: 'fighter_not_found' });
 
-    const stats1 = db.getCareerStats(id1);
-    const stats2 = db.getCareerStats(id2);
-    const record1 = db.getFighterRecord(id1);
-    const record2 = db.getFighterRecord(id2);
-    const h2h = db.getHeadToHead(id1, id2);
+    const stats1 = await db.getCareerStats(id1);
+    const stats2 = await db.getCareerStats(id2);
+    const record1 = await db.getFighterRecord(id1);
+    const record2 = await db.getFighterRecord(id2);
+    const h2h = await db.getHeadToHead(id1, id2);
 
     const massKg1 = fighterMassKg(f1);
     const massKg2 = fighterMassKg(f2);
@@ -348,46 +350,46 @@ function requirePredictionKey(req, res, next) {
 }
 
 // Public: get predictions (upcoming or by fight)
-app.get('/api/predictions', apiHandler((req, res) => {
+app.get('/api/predictions', apiHandler(async (req, res) => {
   const opts = {};
   if (req.query.fight_id) opts.fight_id = parseInt(req.query.fight_id, 10);
   if (req.query.upcoming === '1') opts.upcoming = true;
   if (req.query.from) opts.event_date_from = req.query.from;
   if (req.query.to) opts.event_date_to = req.query.to;
   if (req.query.limit) opts.limit = Math.min(parseInt(req.query.limit) || 50, 200);
-  res.json(db.getPredictions(opts));
+  res.json(await db.getPredictions(opts));
 }));
 
 // Public: prediction accuracy stats
-app.get('/api/predictions/accuracy', apiHandler((_req, res) => {
-  res.json(db.getPredictionAccuracy());
+app.get('/api/predictions/accuracy', apiHandler(async (_req, res) => {
+  res.json(await db.getPredictionAccuracy());
 }));
 
 // Protected: ingest predictions from microservice
-app.post('/api/predictions/ingest', requirePredictionKey, apiHandler((req, res) => {
+app.post('/api/predictions/ingest', requirePredictionKey, apiHandler(async (req, res) => {
   const predictions = req.body.predictions;
   if (!Array.isArray(predictions)) return res.status(400).json({ error: 'predictions array required' });
   let ingested = 0;
   for (const p of predictions) {
     if (!p.fight_id || p.red_win_prob == null || p.blue_win_prob == null || !p.model_version || !p.predicted_at) continue;
-    db.upsertPrediction(p);
+    await db.upsertPrediction(p);
     ingested++;
   }
-  if (ingested > 0) db.save();
+  if (ingested > 0) await db.save();
   res.json({ status: 'ok', ingested });
 }));
 
 // Protected: reconcile predictions with actual results
-app.post('/api/predictions/reconcile', requirePredictionKey, apiHandler((req, res) => {
+app.post('/api/predictions/reconcile', requirePredictionKey, apiHandler(async (req, res) => {
   const results = req.body.results;
   if (!Array.isArray(results)) return res.status(400).json({ error: 'results array required' });
   const reconciled = [];
   for (const r of results) {
     if (!r.fight_id || !r.actual_winner_id) continue;
-    const result = db.reconcilePrediction(r.fight_id, r.actual_winner_id);
+    const result = await db.reconcilePrediction(r.fight_id, r.actual_winner_id);
     if (result) reconciled.push(result);
   }
-  if (reconciled.length > 0) db.save();
+  if (reconciled.length > 0) await db.save();
   res.json({ status: 'ok', reconciled: reconciled.length, results: reconciled });
 }));
 
@@ -427,20 +429,20 @@ function requireAdmin(req, res, next) {
 }
 
 // DB statistics — shows current state, persistence info
-app.get('/api/admin/db-stats', requireAdmin, (_req, res) => {
-  res.json(db.getDbStats());
-});
+app.get('/api/admin/db-stats', requireAdmin, apiHandler(async (_req, res) => {
+  res.json(await db.getDbStats());
+}));
 
 // Save — persist current DB state to disk + invalidate cache
-app.post('/api/admin/save', requireAdmin, (_req, res) => {
-  const ok = db.save();
+app.post('/api/admin/save', requireAdmin, apiHandler(async (_req, res) => {
+  const ok = await db.save();
   if (ok) {
     cache.invalidateAll();
-    warmCache();
+    await warmCache();
     console.log(`[cache] invalidated and re-warmed (${cache.size()} entries)`);
   }
-  res.json({ status: ok ? 'saved' : 'not_persistent', dbPath: process.env.DB_PATH || null, cacheEntries: cache.size() });
-});
+  res.json({ status: ok ? 'saved' : 'not_persistent', dbPath: process.env.DB_PATH || process.env.DATABASE_URL || null, cacheEntries: cache.size() });
+}));
 
 app.use((req, res) => {
   if (req.accepts('html')) return res.status(200).sendFile(path.join(__dirname, 'public', 'index.html'));
@@ -452,33 +454,33 @@ app.use((req, res) => {
 // ============================================================
 const LEADER_STATS = ['knockdowns','sig_strikes','sig_accuracy','takedowns','td_accuracy','control_time','sub_attempts','fights'];
 
-function warmCache() {
+async function warmCache() {
   const t0 = Date.now();
 
   // Events list
-  cache.set('events:all', db.getAllEvents());
+  cache.set('events:all', await db.getAllEvents());
 
   // Fighters list (default limit)
-  cache.set('fighters:all:500', db.getAllFighters(500));
+  cache.set('fighters:all:500', await db.getAllFighters(500));
 
   // Stat leaders for all stat types at default limit
   for (const stat of LEADER_STATS) {
-    const leaders = db.getStatLeaders(stat, 10);
+    const leaders = await db.getStatLeaders(stat, 10);
     cache.set(`leaders:${stat}:10`, { stat, leaders });
   }
 
   // All tactical analyses — also populates per-fight and per-event keys
-  const events = db.getAllEvents();
+  const events = await db.getAllEvents();
   const allAnalyses = [];
   for (const event of events) {
-    const card = db.getEventCard(event.id);
+    const card = await db.getEventCard(event.id);
     const eventAnalyses = [];
     for (const bout of card) {
-      const fight = db.getFight(bout.id);
+      const fight = await db.getFight(bout.id);
       if (!fight) continue;
-      const red = db.getFighter(fight.red_fighter_id);
-      const blue = db.getFighter(fight.blue_fighter_id);
-      const roundStats = db.getRoundStats(bout.id);
+      const red = await db.getFighter(fight.red_fighter_id);
+      const blue = await db.getFighter(fight.blue_fighter_id);
+      const roundStats = await db.getRoundStats(bout.id);
       try {
         const analysis = tactical.analyzeFight(fight, red, blue, roundStats);
         cache.set(`tactical:fight:${bout.id}`, analysis);
@@ -498,8 +500,8 @@ function warmCache() {
 // ============================================================
 (async () => {
   await db.init();
-  console.log('[db] SQLite initialized and seeded');
-  warmCache();
+  console.log('[db] initialized');
+  await warmCache();
 
   const server = app.listen(PORT, () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');

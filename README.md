@@ -112,7 +112,11 @@ CMD ["node", "server.js"]
 | `restartPolicyType` | `ON_FAILURE` | Auto-restart on crash |
 | `restartPolicyMaxRetries` | `10` | Then give up |
 
-The `PORT` env var is injected by Railway — the server reads `process.env.PORT` and falls back to `3000` locally. No other env vars needed.
+The `PORT` env var is injected by Railway — the server reads `process.env.PORT` and falls back to `3000` locally.
+
+Database backend selection:
+- Set `DATABASE_URL` to use PostgreSQL (recommended on Railway).
+- If `DATABASE_URL` is unset, the app uses the built-in sql.js/SQLite backend (`DB_PATH` optional for file persistence).
 
 ---
 
