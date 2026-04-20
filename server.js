@@ -332,6 +332,60 @@ app.get('/api/biomechanics/strikes', (_req, res) => {
 });
 
 // ============================================================
+// PREDICTIONS API (communicates with prediction microservice)
+// ============================================================
+const PREDICTION_SERVICE_KEY = process.env.PREDICTION_SERVICE_KEY || null;
+
+function requirePredictionKey(req, res, next) {
+  if (!PREDICTION_SERVICE_KEY) return res.status(503).json({ error: 'predictions_disabled', message: 'Set PREDICTION_SERVICE_KEY env var to enable' });
+  const key = req.headers['x-prediction-key'];
+  if (key !== PREDICTION_SERVICE_KEY) return res.status(401).json({ error: 'unauthorized' });
+  next();
+}
+
+// Public: get predictions (upcoming or by fight)
+app.get('/api/predictions', apiHandler((req, res) => {
+  const opts = {};
+  if (req.query.fight_id) opts.fight_id = parseInt(req.query.fight_id, 10);
+  if (req.query.upcoming === '1') opts.upcoming = true;
+  if (req.query.from) opts.event_date_from = req.query.from;
+  if (req.query.to) opts.event_date_to = req.query.to;
+  if (req.query.limit) opts.limit = Math.min(parseInt(req.query.limit) || 50, 200);
+  res.json(db.getPredictions(opts));
+}));
+
+// Public: prediction accuracy stats
+app.get('/api/predictions/accuracy', apiHandler((_req, res) => {
+  res.json(db.getPredictionAccuracy());
+}));
+
+// Protected: ingest predictions from microservice
+app.post('/api/predictions/ingest', requirePredictionKey, apiHandler((req, res) => {
+  const predictions = req.body.predictions;
+  if (!Array.isArray(predictions)) return res.status(400).json({ error: 'predictions array required' });
+  let ingested = 0;
+  for (const p of predictions) {
+    if (!p.fight_id || p.red_win_prob == null || p.blue_win_prob == null || !p.model_version || !p.predicted_at) continue;
+    db.upsertPrediction(p);
+    ingested++;
+  }
+  res.json({ status: 'ok', ingested });
+}));
+
+// Protected: reconcile predictions with actual results
+app.post('/api/predictions/reconcile', requirePredictionKey, apiHandler((req, res) => {
+  const results = req.body.results;
+  if (!Array.isArray(results)) return res.status(400).json({ error: 'results array required' });
+  const reconciled = [];
+  for (const r of results) {
+    if (!r.fight_id || !r.actual_winner_id) continue;
+    const result = db.reconcilePrediction(r.fight_id, r.actual_winner_id);
+    if (result) reconciled.push(result);
+  }
+  res.json({ status: 'ok', reconciled: reconciled.length, results: reconciled });
+}));
+
+// ============================================================
 // STATIC + HEALTH + FALLBACK
 // ============================================================
 

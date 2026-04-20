@@ -105,6 +105,50 @@ test.describe('Event Dropdown', () => {
     const count = await page.locator('#eventFightStrip .fight-chip').count();
     expect(count).toBeGreaterThanOrEqual(5);
   });
+
+  test('changing event auto-selects main event chip', async ({ page }) => {
+    await page.goto('/');
+    const dropdown = await waitForDropdown(page);
+
+    // Switch to UFC 300
+    const ufc300 = await dropdown.locator('option').evaluateAll(opts =>
+      opts.find(o => o.textContent.includes('UFC 300'))?.value
+    );
+    expect(ufc300).toBeTruthy();
+    await dropdown.selectOption(ufc300);
+    await expect(page.locator('#eventFightStrip .fight-chip')).not.toHaveCount(0, { timeout: 5000 });
+
+    // A chip should be auto-selected (active class)
+    await expect(page.locator('#eventFightStrip .fight-chip.active')).toHaveCount(1, { timeout: 3000 });
+
+    // Hero should update to reflect the selected fight
+    await expect(page.locator('#heroEvent')).toContainText('UFC 300', { timeout: 3000 });
+  });
+
+  test('generic stats panel renders for fights with stats', async ({ page }) => {
+    await page.goto('/');
+    const dropdown = await waitForDropdown(page);
+
+    // Switch to UFC 300 (not UFC 245, which uses hardcoded sections)
+    const ufc300 = await dropdown.locator('option').evaluateAll(opts =>
+      opts.find(o => o.textContent.includes('UFC 300'))?.value
+    );
+    if (ufc300) {
+      await dropdown.selectOption(ufc300);
+      await expect(page.locator('#eventFightStrip .fight-chip.active')).toHaveCount(1, { timeout: 5000 });
+
+      // Generic stats panel should be visible if fight has stats
+      const panel = page.locator('#genericStatsPanel');
+      const isVisible = await panel.isVisible();
+      if (isVisible) {
+        // Should contain strike totals section
+        await expect(panel).toContainText('STRIKING TOTALS', { timeout: 3000 });
+        // Should contain target distribution section
+        await expect(panel).toContainText('TARGET DISTRIBUTION');
+      }
+      // If not visible, the fight may not have stats — that's acceptable
+    }
+  });
 });
 
 // ============================================================

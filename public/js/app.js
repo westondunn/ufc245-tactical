@@ -2391,6 +2391,10 @@ function selectFight(fightId){
   setHtml('heroBlueStyle', fight.blue.style);
 
   // ── SCOPE DETAILED SECTIONS ──
+  // Hide generic stats panel when viewing full UFC 245 breakdown
+  const gsp = document.getElementById('genericStatsPanel');
+  if (gsp) gsp.style.display = 'none';
+
   if (fight.full){
     SCOPED_SECTIONS.forEach(id => {
       const sec = document.getElementById(id);
@@ -2525,9 +2529,173 @@ async function loadEventFightStrip(eventId){
         '<br><span style="font-size:8px;color:var(--muted)">' + escHtml(method) + (isDraw ? '' : ' R' + (f.round||'')) + '</span>' +
         '</button>';
     }).join('');
+
+    // Auto-select the main event chip (or first chip if no main)
+    const mainChip = strip.querySelector('.fight-chip[data-main="1"]') || strip.querySelector('.fight-chip');
+    if (mainChip) mainChip.click();
   } catch(e){
     strip.innerHTML = '<span style="font-family:var(--f-mono);font-size:9px;color:var(--red)">Error</span>';
   }
+}
+
+// Render a generic stats panel for any fight with stats data
+function renderGenericStatsPanel(f) {
+  const panel = document.getElementById('genericStatsPanel');
+  const body = document.getElementById('gspBody');
+  if (!panel || !body) return;
+
+  const hasStats = f.stats && f.stats.length >= 2;
+  const hasRounds = f.has_round_stats && f.round_stats && f.round_stats.length > 0;
+  if (!hasStats && !hasRounds) { panel.style.display = 'none'; return; }
+
+  const setHtml = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
+  setHtml('gspTitle', escHtml(f.red_name) + ' vs ' + escHtml(f.blue_name));
+  setHtml('gspSub', 'UFC ' + (f.event_number || '') + ' · ' + escHtml(f.method || '') +
+    (f.round ? ' R' + f.round : '') + (f.time ? ' ' + escHtml(f.time) : '') +
+    ' · Source: UFCStats.com');
+
+  let html = '';
+
+  // -- Totals table --
+  if (hasStats) {
+    const rs = f.stats.find(s => s.fighter_id === f.red_fighter_id) || f.stats[0];
+    const bs = f.stats.find(s => s.fighter_id === f.blue_fighter_id) || f.stats[1];
+    const rName = escHtml((f.red_name || '').split(' ').pop());
+    const bName = escHtml((f.blue_name || '').split(' ').pop());
+
+    const rSig = rs.sig_str_landed || 0;
+    const bSig = bs.sig_str_landed || 0;
+    const rSigAtt = rs.sig_str_attempted || 0;
+    const bSigAtt = bs.sig_str_attempted || 0;
+    const rAcc = rSigAtt > 0 ? Math.round(rSig / rSigAtt * 100) : 0;
+    const bAcc = bSigAtt > 0 ? Math.round(bSig / bSigAtt * 100) : 0;
+    const rKd = rs.knockdowns || 0;
+    const bKd = bs.knockdowns || 0;
+    const rTd = rs.takedowns_landed || 0;
+    const bTd = bs.takedowns_landed || 0;
+    const rTdAtt = rs.takedowns_attempted || 0;
+    const bTdAtt = bs.takedowns_attempted || 0;
+    const rCtrl = rs.control_time_sec || 0;
+    const bCtrl = bs.control_time_sec || 0;
+    const fmtCtrl = (s) => Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0');
+
+    html += '<div style="display:grid;grid-template-columns:1fr 1fr;gap:16px;margin-bottom:24px">';
+
+    // Totals card
+    html += '<div style="background:var(--bg-card);border:1px solid var(--border);padding:20px">' +
+      '<div style="font-family:var(--f-disp);font-size:14px;font-weight:700;letter-spacing:.15em;margin-bottom:14px;color:var(--fg)">STRIKING TOTALS</div>' +
+      '<table style="width:100%;font-family:var(--f-mono);font-size:11px;letter-spacing:.06em;border-collapse:collapse">' +
+      '<thead><tr style="color:var(--muted);font-size:9px;letter-spacing:.15em">' +
+      '<th style="text-align:left;padding:4px 0">STAT</th>' +
+      '<th style="text-align:center;padding:4px 0;color:var(--red)">' + rName + '</th>' +
+      '<th style="text-align:center;padding:4px 0;color:var(--blue)">' + bName + '</th></tr></thead><tbody>';
+
+    const statRow = (label, rv, bv, hi) => {
+      const rStyle = hi && rv > bv ? 'color:var(--green);font-weight:700' : 'color:var(--fg)';
+      const bStyle = hi && bv > rv ? 'color:var(--green);font-weight:700' : 'color:var(--fg)';
+      return '<tr style="border-top:1px solid var(--border-soft)"><td style="padding:6px 0;color:var(--muted)">' + label + '</td>' +
+        '<td style="text-align:center;padding:6px 0;' + rStyle + '">' + rv + '</td>' +
+        '<td style="text-align:center;padding:6px 0;' + bStyle + '">' + bv + '</td></tr>';
+    };
+
+    html += statRow('Sig. Strikes', rSig + '/' + rSigAtt, bSig + '/' + bSigAtt, false);
+    html += statRow('Accuracy', rAcc + '%', bAcc + '%', true);
+    html += statRow('Knockdowns', rKd, bKd, true);
+    html += statRow('Takedowns', rTd + '/' + rTdAtt, bTd + '/' + bTdAtt, false);
+    html += statRow('Control Time', fmtCtrl(rCtrl), fmtCtrl(bCtrl), true);
+    html += statRow('Sub. Attempts', rs.sub_attempts || 0, bs.sub_attempts || 0, true);
+    html += '</tbody></table></div>';
+
+    // Target distribution card
+    const rHead = rs.head_landed || 0;
+    const rBody = rs.body_landed || 0;
+    const rLeg = rs.leg_landed || 0;
+    const bHead = bs.head_landed || 0;
+    const bBody = bs.body_landed || 0;
+    const bLeg = bs.leg_landed || 0;
+    const rTotal = rHead + rBody + rLeg || 1;
+    const bTotal = bHead + bBody + bLeg || 1;
+
+    html += '<div style="background:var(--bg-card);border:1px solid var(--border);padding:20px">' +
+      '<div style="font-family:var(--f-disp);font-size:14px;font-weight:700;letter-spacing:.15em;margin-bottom:14px;color:var(--fg)">TARGET DISTRIBUTION</div>';
+
+    const targetBar = (name, color, head, body, leg, total) => {
+      const hPct = Math.round(head / total * 100);
+      const bPct = Math.round(body / total * 100);
+      const lPct = Math.round(leg / total * 100);
+      return '<div style="margin-bottom:14px">' +
+        '<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:' + color + ';margin-bottom:6px">' + name + '</div>' +
+        '<div style="display:flex;gap:2px;height:18px;margin-bottom:4px">' +
+        '<div style="flex:' + hPct + ';background:' + color + ';opacity:.9;border-radius:2px 0 0 2px"></div>' +
+        '<div style="flex:' + bPct + ';background:' + color + ';opacity:.55"></div>' +
+        '<div style="flex:' + lPct + ';background:' + color + ';opacity:.3;border-radius:0 2px 2px 0"></div></div>' +
+        '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted);letter-spacing:.08em">' +
+        'Head ' + hPct + '% (' + head + ') · Body ' + bPct + '% (' + body + ') · Leg ' + lPct + '% (' + leg + ')</div></div>';
+    };
+
+    html += targetBar(rName, 'var(--red)', rHead, rBody, rLeg, rTotal);
+    html += targetBar(bName, 'var(--blue)', bHead, bBody, bLeg, bTotal);
+    html += '</div></div>';
+  }
+
+  // -- Per-round table --
+  if (hasRounds) {
+    const rounds = {};
+    f.round_stats.forEach(rs => {
+      if (!rounds[rs.round]) rounds[rs.round] = {};
+      if (rs.fighter_id === f.red_fighter_id) rounds[rs.round].red = rs;
+      else rounds[rs.round].blue = rs;
+    });
+    const rNums = Object.keys(rounds).map(Number).sort();
+    const rName = escHtml((f.red_name || '').split(' ').pop());
+    const bName = escHtml((f.blue_name || '').split(' ').pop());
+
+    html += '<div style="background:var(--bg-card);border:1px solid var(--border);padding:20px;margin-top:0">' +
+      '<div style="font-family:var(--f-disp);font-size:14px;font-weight:700;letter-spacing:.15em;margin-bottom:14px;color:var(--fg)">ROUND-BY-ROUND</div>' +
+      '<table style="width:100%;font-family:var(--f-mono);font-size:10px;letter-spacing:.06em;border-collapse:collapse">' +
+      '<thead><tr style="color:var(--muted);font-size:9px;letter-spacing:.15em">' +
+      '<th style="text-align:left;padding:4px 0">RD</th>' +
+      '<th style="text-align:center;padding:4px 0;color:var(--red)">' + rName + ' SIG</th>' +
+      '<th style="text-align:center;padding:4px 0;color:var(--blue)">' + bName + ' SIG</th>' +
+      '<th style="text-align:center;padding:4px 0">KD</th>' +
+      '<th style="text-align:center;padding:4px 0">TD</th>' +
+      '<th style="text-align:center;padding:4px 0">CTRL</th></tr></thead><tbody>';
+
+    const fmtCtrl = (s) => s > 0 ? Math.floor(s / 60) + ':' + String(s % 60).padStart(2, '0') : '-';
+
+    for (const rn of rNums) {
+      const r = rounds[rn];
+      const rSig = (r.red ? r.red.sig_str_landed : 0) || 0;
+      const bSig = (r.blue ? r.blue.sig_str_landed : 0) || 0;
+      const rKd = (r.red ? r.red.kd : 0) || 0;
+      const bKd = (r.blue ? r.blue.kd : 0) || 0;
+      const rTd = (r.red ? r.red.td_landed : 0) || 0;
+      const bTd = (r.blue ? r.blue.td_landed : 0) || 0;
+      const rCtrl = (r.red ? r.red.ctrl_sec : 0) || 0;
+      const bCtrl = (r.blue ? r.blue.ctrl_sec : 0) || 0;
+
+      html += '<tr style="border-top:1px solid var(--border-soft)">' +
+        '<td style="padding:5px 0;color:var(--muted)">R' + rn + '</td>' +
+        '<td style="text-align:center;padding:5px 0;color:' + (rSig > bSig ? 'var(--green)' : 'var(--fg)') + '">' + rSig + '</td>' +
+        '<td style="text-align:center;padding:5px 0;color:' + (bSig > rSig ? 'var(--green)' : 'var(--fg)') + '">' + bSig + '</td>' +
+        '<td style="text-align:center;padding:5px 0;color:var(--fg)">' +
+          (rKd > 0 ? '<span style="color:var(--red)">' + rKd + '</span>' : '') +
+          (rKd > 0 && bKd > 0 ? '/' : '') +
+          (bKd > 0 ? '<span style="color:var(--blue)">' + bKd + '</span>' : '') +
+          (rKd === 0 && bKd === 0 ? '-' : '') + '</td>' +
+        '<td style="text-align:center;padding:5px 0;color:var(--fg)">' +
+          (rTd > 0 ? '<span style="color:var(--red)">' + rTd + '</span>' : '') +
+          (rTd > 0 && bTd > 0 ? '/' : '') +
+          (bTd > 0 ? '<span style="color:var(--blue)">' + bTd + '</span>' : '') +
+          (rTd === 0 && bTd === 0 ? '-' : '') + '</td>' +
+        '<td style="text-align:center;padding:5px 0;color:var(--fg)">' +
+          (rCtrl > 0 || bCtrl > 0 ? fmtCtrl(rCtrl) + '/' + fmtCtrl(bCtrl) : '-') + '</td></tr>';
+    }
+    html += '</tbody></table></div>';
+  }
+
+  body.innerHTML = html;
+  panel.style.display = 'block';
 }
 
 // Select a fight from the DB and update the dashboard hero
@@ -2567,6 +2735,9 @@ async function selectDbFight(fightId, chipEl){
       if (sec){ sec.style.opacity = '0.18'; sec.style.pointerEvents = 'none'; }
     });
     document.querySelectorAll('.scope-msg').forEach(e => e.classList.add('show'));
+
+    // Show generic stats panel if fight has data
+    renderGenericStatsPanel(f);
 
     try {
       document.getElementById('fighterPanel').style.display = 'none';

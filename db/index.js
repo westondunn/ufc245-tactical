@@ -114,6 +114,24 @@ const SCHEMA = `
     time_in_round TEXT,
     notes TEXT
   );
+  CREATE TABLE IF NOT EXISTS predictions (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    fight_id INTEGER REFERENCES fights(id),
+    red_fighter_id INTEGER REFERENCES fighters(id),
+    blue_fighter_id INTEGER REFERENCES fighters(id),
+    red_win_prob REAL NOT NULL,
+    blue_win_prob REAL NOT NULL,
+    model_version TEXT NOT NULL,
+    feature_hash TEXT,
+    predicted_at TEXT NOT NULL,
+    event_date TEXT,
+    is_stale INTEGER DEFAULT 0,
+    actual_winner_id INTEGER,
+    reconciled_at TEXT,
+    correct INTEGER
+  );
+  CREATE INDEX IF NOT EXISTS idx_predictions_fight ON predictions(fight_id);
+  CREATE INDEX IF NOT EXISTS idx_predictions_event_date ON predictions(event_date);
   CREATE TABLE IF NOT EXISTS db_meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -362,6 +380,54 @@ function getStatLeaders(stat, limit = 10) {
 
 function getAllFighters(limit = 500) { return allRows('SELECT * FROM fighters ORDER BY name LIMIT ?', [limit]); }
 
+/* ── PREDICTIONS ── */
+
+function upsertPrediction(p) {
+  run(
+    `INSERT OR REPLACE INTO predictions
+     (fight_id, red_fighter_id, blue_fighter_id, red_win_prob, blue_win_prob,
+      model_version, feature_hash, predicted_at, event_date, is_stale)
+     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+    [p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
+     p.model_version, p.feature_hash || null, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
+  );
+}
+
+function getPredictions(opts = {}) {
+  let sql = `SELECT p.*, fr.name as red_name, fb.name as blue_name
+    FROM predictions p
+    LEFT JOIN fighters fr ON p.red_fighter_id = fr.id
+    LEFT JOIN fighters fb ON p.blue_fighter_id = fb.id
+    WHERE 1=1`;
+  const params = [];
+  if (opts.fight_id) { sql += ' AND p.fight_id = ?'; params.push(opts.fight_id); }
+  if (opts.upcoming) { sql += ' AND p.actual_winner_id IS NULL AND p.is_stale = 0'; }
+  if (opts.event_date_from) { sql += ' AND p.event_date >= ?'; params.push(opts.event_date_from); }
+  if (opts.event_date_to) { sql += ' AND p.event_date <= ?'; params.push(opts.event_date_to); }
+  sql += ' ORDER BY p.event_date ASC, p.predicted_at DESC';
+  if (opts.limit) { sql += ' LIMIT ?'; params.push(opts.limit); }
+  return allRows(sql, params);
+}
+
+function reconcilePrediction(fightId, actualWinnerId) {
+  const pred = oneRow('SELECT * FROM predictions WHERE fight_id = ? ORDER BY predicted_at DESC LIMIT 1', [fightId]);
+  if (!pred) return null;
+  const correct = (actualWinnerId === pred.red_fighter_id && pred.red_win_prob > 0.5) ||
+                  (actualWinnerId === pred.blue_fighter_id && pred.blue_win_prob > 0.5) ? 1 : 0;
+  run('UPDATE predictions SET actual_winner_id = ?, reconciled_at = ?, correct = ? WHERE id = ?',
+    [actualWinnerId, new Date().toISOString(), correct, pred.id]);
+  return { ...pred, actual_winner_id: actualWinnerId, correct };
+}
+
+function getPredictionAccuracy() {
+  return oneRow(
+    `SELECT COUNT(*) as total,
+       SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) as correct_count,
+       ROUND(CAST(SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS REAL) / NULLIF(COUNT(*), 0) * 100, 1) as accuracy_pct
+     FROM predictions WHERE reconciled_at IS NOT NULL`
+  );
+}
+
 module.exports = {
   init, save, getDbStats,
   searchFighters, getFighter, getFighterEvents,
@@ -369,5 +435,6 @@ module.exports = {
   getCareerStats, getHeadToHead, getFighterRecord,
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats,
+  upsertPrediction, getPredictions, reconcilePrediction, getPredictionAccuracy,
   nextId, run, allRows, oneRow
 };
