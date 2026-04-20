@@ -23,3 +23,8 @@ Thumbs.db
 playwright-report/
 test-results/
 blob-report/
+
+# Local predictions artifacts
+.claude/
+predictions.db
+model_store/
