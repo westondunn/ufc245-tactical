@@ -14,4 +14,4 @@ cmds = [
 cmds = ["if [ -f app.py ]; then python3 -m compileall .; else python3 -m compileall ufc245-predictions/; fi"]
 
 [start]
-cmd = "if [ -f app.py ]; then uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}; else cd ufc245-predictions && uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}; fi"
+cmd = "if [ -f app.py ]; then python3 -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}; else cd ufc245-predictions && python3 -m uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}; fi"

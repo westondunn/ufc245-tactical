@@ -9,6 +9,9 @@ DEFAULT_DB_PATH = "predictions.db"
 
 def get_conn() -> sqlite3.Connection:
     db_path = os.getenv("PREDICTIONS_DB_PATH", DEFAULT_DB_PATH)
+    db_dir = os.path.dirname(os.path.abspath(db_path))
+    if db_dir and db_dir != ".":
+        os.makedirs(db_dir, exist_ok=True)
     conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
