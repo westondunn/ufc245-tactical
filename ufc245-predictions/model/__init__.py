@@ -15,7 +15,11 @@ from sklearn.model_selection import cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
-MODEL_DIR = os.getenv("MODEL_DIR", "model_store")
+MODEL_DIR = "model_store"
+
+
+def _model_dir() -> str:
+    return os.getenv("MODEL_DIR", MODEL_DIR)
 
 # Feature names used in the current model version
 FEATURE_NAMES = [
@@ -72,7 +76,8 @@ def train(X: np.ndarray, y: np.ndarray) -> tuple:
 
     Returns (pipeline, cv_accuracy, version_string).
     """
-    os.makedirs(MODEL_DIR, exist_ok=True)
+    model_dir = _model_dir()
+    os.makedirs(model_dir, exist_ok=True)
 
     pipe = Pipeline([
         ("scaler", StandardScaler()),
@@ -93,7 +98,7 @@ def train(X: np.ndarray, y: np.ndarray) -> tuple:
     pipe.fit(X, y)
 
     version = f"v0.1.{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
-    blob_path = os.path.join(MODEL_DIR, f"{version}.joblib")
+    blob_path = os.path.join(model_dir, f"{version}.joblib")
     joblib.dump(pipe, blob_path)
 
     return pipe, cv_acc, version, blob_path

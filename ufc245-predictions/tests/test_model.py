@@ -44,7 +44,7 @@ def test_feature_hash():
 
 
 def test_train_and_predict():
-    from model import train, predict, MODEL_DIR
+    from model import train, predict
     # Use temp dir for model storage
     with tempfile.TemporaryDirectory() as tmpdir:
         os.environ["MODEL_DIR"] = tmpdir
@@ -58,6 +58,7 @@ def test_train_and_predict():
         assert 0.0 <= cv_acc <= 1.0
         assert version.startswith("v0.1.")
         assert os.path.exists(blob_path)
+        assert blob_path.startswith(tmpdir)
         print(f"  PASS: train (cv_acc={cv_acc:.3f}, version={version})")
 
         # Predict
@@ -81,7 +82,8 @@ def test_db_operations():
         assert model["version"] == "v0.1.test"
         print("  PASS: save/get model record")
 
-        log_prediction(1, 10, 20, 0.6, 0.4, "v0.1.test", "abc123", "2026-05-01")
+        pred_id = log_prediction(1, 10, 20, 0.6, 0.4, "v0.1.test", "abc123", "2026-05-01")
+        assert pred_id > 0
         unsynced = get_unsynced_predictions()
         assert len(unsynced) == 1
         assert unsynced[0]["fight_id"] == 1

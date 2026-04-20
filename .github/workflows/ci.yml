@@ -73,6 +73,20 @@ jobs:
       - name: Run test suite
         run: node tests/run.js
 
+      - name: Setup Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.13'
+
+      - name: Install prediction service dependencies
+        run: pip install -r ufc245-predictions/requirements.txt
+
+      - name: Run prediction service tests
+        run: |
+          python ufc245-predictions/tests/test_model.py
+          python ufc245-predictions/tests/test_jobs.py
+          python ufc245-predictions/tests/test_app.py
+
       - name: Check HTML structure
         run: |
           node -e "

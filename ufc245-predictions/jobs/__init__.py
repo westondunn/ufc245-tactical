@@ -16,7 +16,7 @@ import numpy as np
 from model import engineer_features, feature_hash, predict, train, load_model, FEATURE_NAMES
 from db import (
     get_latest_model, save_model_record, log_prediction,
-    get_unsynced_predictions, mark_synced, init_db
+    mark_synced, init_db
 )
 
 logger = logging.getLogger("jobs")
@@ -55,6 +55,21 @@ def _post_json(path: str, body: dict) -> dict | None:
         return None
 
 
+def _career_stats_path(fighter_id: int, as_of: str | None = None) -> str:
+    if as_of:
+        return f"/api/fighters/{fighter_id}/career-stats?as_of={as_of}"
+    return f"/api/fighters/{fighter_id}/career-stats"
+
+
+def _sync_predictions(predictions: list[dict], local_ids: list[int], label: str):
+    if not predictions:
+        return
+    result = _post_json("/api/predictions/ingest", {"predictions": predictions})
+    if result:
+        mark_synced(local_ids)
+        logger.info(f"Synced {len(predictions)} predictions ({label})")
+
+
 def daily_predict():
     """Predict outcomes for fights in the next 14 days."""
     logger.info("=== daily_predict start ===")
@@ -73,6 +88,7 @@ def daily_predict():
 
     events = _get_json("/api/events") or []
     predictions = []
+    local_prediction_ids = []
 
     for ev in events:
         if not ev.get("date"):
@@ -89,8 +105,8 @@ def daily_predict():
             continue
 
         for bout in card["card"]:
-            red_stats = _get_json(f"/api/fighters/{bout['red_id']}/career-stats")
-            blue_stats = _get_json(f"/api/fighters/{bout['blue_id']}/career-stats")
+            red_stats = _get_json(_career_stats_path(bout["red_id"]))
+            blue_stats = _get_json(_career_stats_path(bout["blue_id"]))
             red_fighter = red_stats.get("fighter", {}) if red_stats else {}
             blue_fighter = blue_stats.get("fighter", {}) if blue_stats else {}
             r_career = red_stats.get("stats") if red_stats else {}
@@ -100,7 +116,7 @@ def daily_predict():
             fhash = feature_hash(X)
             red_prob, blue_prob = predict(pipe, X)
 
-            log_prediction(
+            local_id = log_prediction(
                 fight_id=bout["id"],
                 red_id=bout["red_id"],
                 blue_id=bout["blue_id"],
@@ -110,6 +126,7 @@ def daily_predict():
                 feature_hash=fhash,
                 event_date=ev["date"]
             )
+            local_prediction_ids.append(local_id)
             predictions.append({
                 "fight_id": bout["id"],
                 "red_fighter_id": bout["red_id"],
@@ -122,13 +139,7 @@ def daily_predict():
                 "event_date": ev["date"]
             })
 
-    # Sync to main app
-    if predictions:
-        result = _post_json("/api/predictions/ingest", {"predictions": predictions})
-        if result:
-            unsynced = get_unsynced_predictions()
-            mark_synced([p["id"] for p in unsynced])
-            logger.info(f"Synced {len(predictions)} predictions")
+    _sync_predictions(predictions, local_prediction_ids, "daily_predict")
 
     logger.info(f"=== daily_predict done ({len(predictions)} predictions) ===")
 
@@ -150,6 +161,7 @@ def refresh_near():
 
     events = _get_json("/api/events") or []
     predictions = []
+    local_prediction_ids = []
 
     for ev in events:
         if not ev.get("date"):
@@ -166,15 +178,27 @@ def refresh_near():
             continue
 
         for bout in card["card"]:
-            red_stats = _get_json(f"/api/fighters/{bout['red_id']}/career-stats")
-            blue_stats = _get_json(f"/api/fighters/{bout['blue_id']}/career-stats")
+            red_stats = _get_json(_career_stats_path(bout["red_id"]))
+            blue_stats = _get_json(_career_stats_path(bout["blue_id"]))
             r_career = red_stats.get("stats") if red_stats else {}
             b_career = blue_stats.get("stats") if blue_stats else {}
             red_fighter = red_stats.get("fighter", {}) if red_stats else {}
             blue_fighter = blue_stats.get("fighter", {}) if blue_stats else {}
 
             X = engineer_features(r_career, b_career, red_fighter, blue_fighter)
+            fhash = feature_hash(X)
             red_prob, blue_prob = predict(pipe, X)
+            local_id = log_prediction(
+                fight_id=bout["id"],
+                red_id=bout["red_id"],
+                blue_id=bout["blue_id"],
+                red_prob=red_prob,
+                blue_prob=blue_prob,
+                model_version=version,
+                feature_hash=fhash,
+                event_date=ev["date"]
+            )
+            local_prediction_ids.append(local_id)
 
             predictions.append({
                 "fight_id": bout["id"],
@@ -183,14 +207,12 @@ def refresh_near():
                 "red_win_prob": red_prob,
                 "blue_win_prob": blue_prob,
                 "model_version": version,
-                "feature_hash": feature_hash(X),
+                "feature_hash": fhash,
                 "predicted_at": datetime.utcnow().isoformat(),
                 "event_date": ev["date"]
             })
 
-    if predictions:
-        _post_json("/api/predictions/ingest", {"predictions": predictions})
-        logger.info(f"Refreshed {len(predictions)} near-term predictions")
+    _sync_predictions(predictions, local_prediction_ids, "refresh_near")
 
     logger.info("=== refresh_near done ===")
 
@@ -243,6 +265,9 @@ def weekly_retrain():
     X_all, y_all = [], []
 
     for ev in events:
+        as_of = ev.get("date")
+        if not as_of:
+            continue
         card = _get_json(f"/api/events/{ev['id']}/card")
         if not card or "card" not in card:
             continue
@@ -251,8 +276,8 @@ def weekly_retrain():
             if not bout.get("winner_id"):
                 continue
 
-            red_stats = _get_json(f"/api/fighters/{bout['red_id']}/career-stats")
-            blue_stats = _get_json(f"/api/fighters/{bout['blue_id']}/career-stats")
+            red_stats = _get_json(_career_stats_path(bout["red_id"], as_of=as_of))
+            blue_stats = _get_json(_career_stats_path(bout["blue_id"], as_of=as_of))
             r_career = red_stats.get("stats") if red_stats else {}
             b_career = blue_stats.get("stats") if blue_stats else {}
             red_fighter = red_stats.get("fighter", {}) if red_stats else {}

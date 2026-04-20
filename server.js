@@ -248,12 +248,16 @@ app.get('/api/fighters', apiHandler((req, res) => {
 // Fighter career stats (aggregated)
 app.get('/api/fighters/:id/career-stats', apiHandler((req, res) => {
   const id = parseInt(req.params.id, 10);
-  const key = `career:${id}`;
+  const asOf = req.query.as_of ? String(req.query.as_of).trim() : null;
+  if (asOf && !/^\d{4}-\d{2}-\d{2}$/.test(asOf)) {
+    return res.status(400).json({ error: 'invalid_as_of', message: 'Expected YYYY-MM-DD' });
+  }
+  const key = `career:${id}:${asOf || 'latest'}`;
   let result = cache.get(key);
   if (!result) {
     const fighter = db.getFighter(id);
     if (!fighter) return res.status(404).json({ error: 'fighter_not_found' });
-    const stats = db.getCareerStats(id);
+    const stats = db.getCareerStats(id, asOf);
     const record = db.getFighterRecord(id);
     result = cache.set(key, { fighter, stats, record });
   }
@@ -369,6 +373,7 @@ app.post('/api/predictions/ingest', requirePredictionKey, apiHandler((req, res) 
     db.upsertPrediction(p);
     ingested++;
   }
+  if (ingested > 0) db.save();
   res.json({ status: 'ok', ingested });
 }));
 
@@ -382,6 +387,7 @@ app.post('/api/predictions/reconcile', requirePredictionKey, apiHandler((req, re
     const result = db.reconcilePrediction(r.fight_id, r.actual_winner_id);
     if (result) reconciled.push(result);
   }
+  if (reconciled.length > 0) db.save();
   res.json({ status: 'ok', reconciled: reconciled.length, results: reconciled });
 }));
 

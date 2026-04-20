@@ -157,6 +157,7 @@ async function init(options = {}) {
     const buf = fs.readFileSync(dbPath);
     db = new SQL.Database(buf);
     db.run(SCHEMA); // safe — IF NOT EXISTS
+    migratePredictionsUniqueness();
     const c = oneRow('SELECT COUNT(*) as c FROM fighters');
     console.log('[db] loaded from ' + dbPath + ': ' + (c ? c.c : 0) + ' fighters');
     return db;
@@ -171,6 +172,7 @@ async function init(options = {}) {
     seedFromFile(seedPath);
   }
 
+  migratePredictionsUniqueness();
   if (dbPath) { save(); console.log('[db] persisted to ' + dbPath); }
   return db;
 }
@@ -263,6 +265,31 @@ function run(sql, params = []) {
   db.run(sql, params);
 }
 
+function migratePredictionsUniqueness() {
+  // Keep only the latest row per (fight_id, model_version) before enforcing uniqueness.
+  run(`
+    DELETE FROM predictions
+    WHERE id NOT IN (
+      SELECT id FROM (
+        SELECT p.id
+        FROM predictions p
+        WHERE p.id = (
+          SELECT p2.id
+          FROM predictions p2
+          WHERE p2.fight_id = p.fight_id
+            AND p2.model_version = p.model_version
+          ORDER BY p2.predicted_at DESC, p2.id DESC
+          LIMIT 1
+        )
+      )
+    )
+  `);
+  run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_fight_model
+    ON predictions(fight_id, model_version)
+  `);
+}
+
 /* ── UPSERT (for scraper) ── */
 function upsertFighter(f) {
   run('INSERT OR REPLACE INTO fighters (id,name,nickname,height_cm,reach_cm,stance,weight_class,nationality,dob,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
@@ -336,10 +363,71 @@ function getFight(fightId) {
 
 function getAllEvents() { return allRows('SELECT * FROM events ORDER BY date DESC'); }
 
-function getCareerStats(fighterId) {
-  return oneRow(
-    'SELECT fighter_id, COUNT(*) as total_fights, SUM(sig_str_landed) as total_sig_landed, SUM(sig_str_attempted) as total_sig_attempted, ROUND(CAST(SUM(sig_str_landed) AS REAL) / NULLIF(SUM(sig_str_attempted),0) * 100, 1) as sig_accuracy_pct, SUM(knockdowns) as total_knockdowns, SUM(takedowns_landed) as total_td_landed, SUM(takedowns_attempted) as total_td_attempted, ROUND(CAST(SUM(takedowns_landed) AS REAL) / NULLIF(SUM(takedowns_attempted),0) * 100, 1) as td_accuracy_pct, SUM(sub_attempts) as total_sub_attempts, SUM(control_time_sec) as total_control_sec, SUM(head_landed) as total_head, SUM(body_landed) as total_body, SUM(leg_landed) as total_leg, SUM(distance_landed) as total_distance, SUM(clinch_landed) as total_clinch, SUM(ground_landed) as total_ground, ROUND(CAST(SUM(sig_str_landed) AS REAL) / NULLIF(COUNT(*),0), 1) as avg_sig_per_fight, ROUND(CAST(SUM(knockdowns) AS REAL) / NULLIF(COUNT(*),0), 2) as avg_kd_per_fight FROM fight_stats WHERE fighter_id = ?',
-    [fighterId]);
+function getCareerStats(fighterId, asOf = null) {
+  const params = [fighterId];
+  let dateFilter = '';
+  if (asOf) {
+    dateFilter = ' AND e.date < ?';
+    params.push(asOf);
+  }
+
+  const stats = oneRow(
+    `SELECT
+      fs.fighter_id,
+      COUNT(*) as total_fights,
+      SUM(fs.sig_str_landed) as total_sig_landed,
+      SUM(fs.sig_str_attempted) as total_sig_attempted,
+      ROUND(CAST(SUM(fs.sig_str_landed) AS REAL) / NULLIF(SUM(fs.sig_str_attempted),0) * 100, 1) as sig_accuracy_pct,
+      SUM(fs.knockdowns) as total_knockdowns,
+      SUM(fs.takedowns_landed) as total_td_landed,
+      SUM(fs.takedowns_attempted) as total_td_attempted,
+      ROUND(CAST(SUM(fs.takedowns_landed) AS REAL) / NULLIF(SUM(fs.takedowns_attempted),0) * 100, 1) as td_accuracy_pct,
+      SUM(fs.sub_attempts) as total_sub_attempts,
+      SUM(fs.control_time_sec) as total_control_sec,
+      SUM(fs.head_landed) as total_head,
+      SUM(fs.body_landed) as total_body,
+      SUM(fs.leg_landed) as total_leg,
+      SUM(fs.distance_landed) as total_distance,
+      SUM(fs.clinch_landed) as total_clinch,
+      SUM(fs.ground_landed) as total_ground,
+      ROUND(CAST(SUM(fs.sig_str_landed) AS REAL) / NULLIF(COUNT(*),0), 1) as avg_sig_per_fight,
+      ROUND(CAST(SUM(fs.knockdowns) AS REAL) / NULLIF(COUNT(*),0), 2) as avg_kd_per_fight
+    FROM fight_stats fs
+    JOIN fights f ON f.id = fs.fight_id
+    JOIN events e ON e.id = f.event_id
+    WHERE fs.fighter_id = ?${dateFilter}
+    GROUP BY fs.fighter_id`,
+    params
+  );
+
+  if (!stats) return null;
+
+  const recentParams = [fighterId, fighterId];
+  let recentDateFilter = '';
+  if (asOf) {
+    recentDateFilter = ' AND e.date < ?';
+    recentParams.push(asOf);
+  }
+
+  const last3 = allRows(
+    `SELECT f.winner_id
+     FROM fights f
+     JOIN events e ON e.id = f.event_id
+     WHERE (f.red_fighter_id = ? OR f.blue_fighter_id = ?)
+       AND f.winner_id IS NOT NULL${recentDateFilter}
+     ORDER BY e.date DESC, f.id DESC
+     LIMIT 3`,
+    recentParams
+  );
+
+  if (!last3.length) {
+    stats.win_pct_last3 = 0.5;
+  } else {
+    const wins = last3.filter((r) => Number(r.winner_id) === fighterId).length;
+    stats.win_pct_last3 = Number((wins / last3.length).toFixed(2));
+  }
+
+  return stats;
 }
 
 function getHeadToHead(id1, id2) {
@@ -384,10 +472,19 @@ function getAllFighters(limit = 500) { return allRows('SELECT * FROM fighters OR
 
 function upsertPrediction(p) {
   run(
-    `INSERT OR REPLACE INTO predictions
+    `INSERT INTO predictions
      (fight_id, red_fighter_id, blue_fighter_id, red_win_prob, blue_win_prob,
       model_version, feature_hash, predicted_at, event_date, is_stale)
-     VALUES (?,?,?,?,?,?,?,?,?,?)`,
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(fight_id, model_version) DO UPDATE SET
+       red_fighter_id = excluded.red_fighter_id,
+       blue_fighter_id = excluded.blue_fighter_id,
+       red_win_prob = excluded.red_win_prob,
+       blue_win_prob = excluded.blue_win_prob,
+       feature_hash = excluded.feature_hash,
+       predicted_at = excluded.predicted_at,
+       event_date = excluded.event_date,
+       is_stale = excluded.is_stale`,
     [p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
      p.model_version, p.feature_hash || null, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
   );
@@ -401,7 +498,18 @@ function getPredictions(opts = {}) {
     WHERE 1=1`;
   const params = [];
   if (opts.fight_id) { sql += ' AND p.fight_id = ?'; params.push(opts.fight_id); }
-  if (opts.upcoming) { sql += ' AND p.actual_winner_id IS NULL AND p.is_stale = 0'; }
+  if (opts.upcoming) {
+    sql += ` AND p.actual_winner_id IS NULL AND p.is_stale = 0
+      AND p.id = (
+        SELECT p2.id
+        FROM predictions p2
+        WHERE p2.fight_id = p.fight_id
+          AND p2.actual_winner_id IS NULL
+          AND p2.is_stale = 0
+        ORDER BY p2.predicted_at DESC, p2.id DESC
+        LIMIT 1
+      )`;
+  }
   if (opts.event_date_from) { sql += ' AND p.event_date >= ?'; params.push(opts.event_date_from); }
   if (opts.event_date_to) { sql += ' AND p.event_date <= ?'; params.push(opts.event_date_to); }
   sql += ' ORDER BY p.event_date ASC, p.predicted_at DESC';
@@ -410,7 +518,16 @@ function getPredictions(opts = {}) {
 }
 
 function reconcilePrediction(fightId, actualWinnerId) {
-  const pred = oneRow('SELECT * FROM predictions WHERE fight_id = ? ORDER BY predicted_at DESC LIMIT 1', [fightId]);
+  let pred = oneRow(
+    'SELECT * FROM predictions WHERE fight_id = ? AND actual_winner_id IS NULL ORDER BY predicted_at DESC, id DESC LIMIT 1',
+    [fightId]
+  );
+  if (!pred) {
+    pred = oneRow(
+      'SELECT * FROM predictions WHERE fight_id = ? ORDER BY predicted_at DESC, id DESC LIMIT 1',
+      [fightId]
+    );
+  }
   if (!pred) return null;
   const correct = (actualWinnerId === pred.red_fighter_id && pred.red_win_prob > 0.5) ||
                   (actualWinnerId === pred.blue_fighter_id && pred.blue_win_prob > 0.5) ? 1 : 0;

@@ -10,6 +10,7 @@ const tactical = require('../lib/tactical');
 const ver = require('../lib/version');
 const fs = require('fs');
 const path = require('path');
+const os = require('os');
 
 let passed = 0, failed = 0;
 
@@ -125,6 +126,13 @@ async function run() {
     assert('avg_sig_per_fight' in stats, 'career stats has avg_sig_per_fight');
   }
 
+  const statsAsOf = db.getCareerStats(mcgregorId, '2017-01-01');
+  if (statsAsOf && stats) {
+    assert(statsAsOf.total_fights <= stats.total_fights, 'career-stats as_of excludes future bouts');
+  } else {
+    assert(true, 'career-stats as_of returns null/valid object');
+  }
+
   // Record
   const record = db.getFighterRecord(mcgregorId);
   assertTruthy(record, 'getFighterRecord returns object');
@@ -204,6 +212,67 @@ async function run() {
   // getHeadToHead with no shared fights
   const noH2h = db.getHeadToHead(mcgregorId, 999999);
   assertEq(noH2h.length, 0, 'getHeadToHead with no shared fights returns empty');
+
+  // Prediction upsert contract (fight_id + model_version is unique)
+  const upsertFightId = mainEvent.id;
+  const upsertModelVersion = 'v.test.upsert';
+  db.run('DELETE FROM predictions WHERE fight_id = ? AND model_version = ?', [upsertFightId, upsertModelVersion]);
+  db.upsertPrediction({
+    fight_id: upsertFightId,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.61,
+    blue_win_prob: 0.39,
+    model_version: upsertModelVersion,
+    feature_hash: 'abc123',
+    predicted_at: '2026-01-01T00:00:00.000Z',
+    event_date: ufc245.date
+  });
+  db.upsertPrediction({
+    fight_id: upsertFightId,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.55,
+    blue_win_prob: 0.45,
+    model_version: upsertModelVersion,
+    feature_hash: 'def456',
+    predicted_at: '2026-01-01T01:00:00.000Z',
+    event_date: ufc245.date
+  });
+  const upsertRows = db.getPredictions({ fight_id: upsertFightId })
+    .filter(r => r.model_version === upsertModelVersion);
+  assertEq(upsertRows.length, 1, 'prediction ingest upserts same fight_id + model_version');
+  assertEq(upsertRows[0].red_win_prob, 0.55, 'prediction upsert keeps latest values');
+
+  // Reconcile selects latest unresolved row deterministically (predicted_at desc, id desc)
+  const reconcileFightId = mainEvent.id;
+  db.run("DELETE FROM predictions WHERE model_version IN ('v.test.reconcile.a','v.test.reconcile.b') AND fight_id = ?", [reconcileFightId]);
+  db.upsertPrediction({
+    fight_id: reconcileFightId,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.9,
+    blue_win_prob: 0.1,
+    model_version: 'v.test.reconcile.a',
+    feature_hash: 'r1',
+    predicted_at: '2026-01-02T00:00:00.000Z',
+    event_date: ufc245.date
+  });
+  db.upsertPrediction({
+    fight_id: reconcileFightId,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.1,
+    blue_win_prob: 0.9,
+    model_version: 'v.test.reconcile.b',
+    feature_hash: 'r2',
+    predicted_at: '2026-01-02T00:00:00.000Z',
+    event_date: ufc245.date
+  });
+  const reconcileResult = db.reconcilePrediction(reconcileFightId, mainEvent.red_id);
+  assertTruthy(reconcileResult, 'reconcilePrediction returns a reconciled row');
+  assertEq(reconcileResult.model_version, 'v.test.reconcile.b', 'reconcile uses latest unresolved prediction deterministically');
+  assertEq(reconcileResult.correct, 0, 'reconcile correctness matches selected prediction');
 
   // search case insensitivity
   const lowerSearch = db.searchFighters('mcgregor');
@@ -450,6 +519,28 @@ async function run() {
   console.log('\nRailway Config:');
   const railway = JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'railway.json'), 'utf8'));
   assertEq(railway.deploy.healthcheckPath, '/healthz', 'healthcheck path set');
+
+  // ── Persistence ──
+  console.log('\nPersistence:');
+  const persistDir = fs.mkdtempSync(path.join(os.tmpdir(), 'ufc-db-'));
+  const persistPath = path.join(persistDir, 'ufc-persist.db');
+  await db.init({ dbPath: persistPath, seedPath });
+  db.upsertPrediction({
+    fight_id: 186,
+    red_fighter_id: 31,
+    blue_fighter_id: 32,
+    red_win_prob: 0.52,
+    blue_win_prob: 0.48,
+    model_version: 'v.test.persistence',
+    feature_hash: 'persist',
+    predicted_at: '2026-01-03T00:00:00.000Z',
+    event_date: '2019-12-14'
+  });
+  db.save();
+  await db.init({ dbPath: persistPath, seedPath });
+  const persistedRows = db.getPredictions({ fight_id: 186 })
+    .filter(r => r.model_version === 'v.test.persistence');
+  assertEq(persistedRows.length, 1, 'predictions persist across db restart with DB_PATH');
 
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);

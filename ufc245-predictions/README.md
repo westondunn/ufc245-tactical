@@ -4,8 +4,7 @@ Fight outcome prediction microservice for the UFC Tactical Dashboard.
 
 ## Architecture
 
-- **Web process** (`app.py`): FastAPI server with health check, status, and manual trigger endpoints
-- **Worker process** (`scheduler.py`): APScheduler with 4 cron jobs
+- **Single process** (`app.py`): FastAPI server with health/status, manual trigger endpoints, and in-process APScheduler cron jobs
 - **Model** (`model/`): Logistic regression with 12 engineered features
 - **Local DB** (`db/`): SQLite for model blobs and prediction log
 
@@ -23,11 +22,8 @@ Copy `.env.example` to `.env` and set your values.
 ## Running locally
 
 ```bash
-# Web process
+# Single process (API + scheduler)
 uvicorn app:app --port 8000
-
-# Worker process (separate terminal)
-python scheduler.py
 ```
 
 ## Smoke tests
@@ -63,6 +59,7 @@ curl -X POST http://localhost:8000/trigger/retrain \
 | `PORT` | No | Web server port (default: 8000) |
 | `PREDICTIONS_DB_PATH` | No | SQLite path (default: predictions.db) |
 | `MODEL_DIR` | No | Model blob directory (default: model_store) |
+| `ENABLE_SCHEDULER` | No | Set to `0` to disable in-process cron scheduler |
 
 ## Features (12)
 

@@ -4,11 +4,12 @@ import os
 import json
 from datetime import datetime
 
-DB_PATH = os.getenv("PREDICTIONS_DB_PATH", "predictions.db")
+DEFAULT_DB_PATH = "predictions.db"
 
 
 def get_conn() -> sqlite3.Connection:
-    conn = sqlite3.connect(DB_PATH)
+    db_path = os.getenv("PREDICTIONS_DB_PATH", DEFAULT_DB_PATH)
+    conn = sqlite3.connect(db_path)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
     return conn
@@ -72,9 +73,9 @@ def get_latest_model() -> dict | None:
 def log_prediction(fight_id: int, red_id: int, blue_id: int,
                    red_prob: float, blue_prob: float,
                    model_version: str, feature_hash: str,
-                   event_date: str | None = None):
+                   event_date: str | None = None) -> int:
     conn = get_conn()
-    conn.execute(
+    cursor = conn.execute(
         """INSERT INTO prediction_log
            (fight_id, red_fighter_id, blue_fighter_id, red_win_prob,
             blue_win_prob, model_version, feature_hash, predicted_at, event_date)
@@ -84,6 +85,7 @@ def log_prediction(fight_id: int, red_id: int, blue_id: int,
     )
     conn.commit()
     conn.close()
+    return int(cursor.lastrowid)
 
 
 def get_unsynced_predictions() -> list[dict]:

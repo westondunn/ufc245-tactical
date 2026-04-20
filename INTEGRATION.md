@@ -9,83 +9,81 @@ railway login
 # 2. Link to your existing project (if not already linked)
 railway link
 
-# 3. Run the setup script — creates services, generates keys, deploys
+# 3. Run setup — creates/updates the single predictions service
 bash scripts/railway-setup.sh
 
-# 4. Wait for deploys to go healthy, then bootstrap
+# 4. After deploy is healthy, bootstrap + verify end-to-end
 bash scripts/railway-bootstrap.sh
 ```
 
-That's it. The setup script will:
+The setup script will:
 - Generate a shared `PREDICTION_SERVICE_KEY`
 - Set it on your existing main app service
-- Create `predictions-web` and `predictions-worker` services
-- Wire all env vars
-- Trigger deploys on all three services
+- Create/find a single `predictions` service
+- Set required env vars (`MAIN_APP_URL`, `PREDICTION_SERVICE_KEY`, `PREDICTIONS_DB_PATH`, `MODEL_DIR`, `ENABLE_SCHEDULER`)
+- Trigger deploys for main app and predictions service
 
-The bootstrap script will:
-- Health-check the predictions service
-- Train the initial model
-- Run the first prediction batch
-- Verify the pipeline end-to-end
+The bootstrap script will hard-verify:
+- `/healthz` returns healthy with scheduler running
+- `/trigger/retrain` succeeds and a model exists
+- `/trigger/predict` succeeds
+- Main app `/api/predictions?upcoming=1` is reachable and returns JSON
 
 ## Architecture
 
 ```
 Railway Project
   |
-  +-- main app (existing)          Node/Express on port 3000
+  +-- main app (existing)         Node/Express
   |     PREDICTION_SERVICE_KEY=xxx
   |     DB_PATH=/data/ufc.db
   |
-  +-- predictions-web (new)        FastAPI on port 8000
-  |     MAIN_APP_URL=https://main-app.railway.app
-  |     PREDICTION_SERVICE_KEY=xxx
-  |
-  +-- predictions-worker (new)     APScheduler (no port)
+  +-- predictions (new/updated)   FastAPI + APScheduler (single process)
         MAIN_APP_URL=https://main-app.railway.app
         PREDICTION_SERVICE_KEY=xxx
+        PREDICTIONS_DB_PATH=/data/predictions.db
+        MODEL_DIR=/data/model_store
+        ENABLE_SCHEDULER=1
 ```
 
 ## Manual setup (if scripts don't work)
 
 ### Env vars
 
-Main app — add:
+Main app:
 ```
-PREDICTION_SERVICE_KEY=<random 32-char hex>
+PREDICTION_SERVICE_KEY=<random 32-48 char secret>
 ```
 
-Predictions services — add:
+Predictions service:
 ```
 MAIN_APP_URL=https://your-main-app.railway.app
 PREDICTION_SERVICE_KEY=<same key>
+PREDICTIONS_DB_PATH=/data/predictions.db
+MODEL_DIR=/data/model_store
+ENABLE_SCHEDULER=1
+NIXPACKS_CONFIG_FILE=ufc245-predictions/nixpacks.toml
 ```
 
-### Railway services
+### Railway service
 
-**predictions-web:**
-- Root directory: `ufc245-predictions/`
+**predictions:**
+- Root directory: repo root (Nixpacks config points to `ufc245-predictions/`)
 - Start command: `uvicorn app:app --host 0.0.0.0 --port ${PORT:-8000}`
 - Health check: `/healthz`
 
-**predictions-worker:**
-- Root directory: `ufc245-predictions/`
-- Start command: `python scheduler.py`
-- No health check (background worker)
-
-### Bootstrap
+## Manual bootstrap
 
 ```bash
-# Train the model
-curl -X POST https://predictions-web.railway.app/trigger/retrain \
+# Train model
+curl -X POST https://predictions.railway.app/trigger/retrain \
   -H "x-prediction-key: YOUR_KEY"
 
-# Run first predictions
-curl -X POST https://predictions-web.railway.app/trigger/predict \
+# Generate predictions
+curl -X POST https://predictions.railway.app/trigger/predict \
   -H "x-prediction-key: YOUR_KEY"
 
-# Verify
+# Verify main app ingestion
 curl https://your-main-app.railway.app/api/predictions?upcoming=1
 ```
 
@@ -93,37 +91,16 @@ curl https://your-main-app.railway.app/api/predictions?upcoming=1
 
 | Route | Method | Auth | Description |
 |-------|--------|------|-------------|
-| `/api/predictions` | GET | Public | Get predictions (query: fight_id, upcoming, from, to, limit) |
+| `/api/predictions` | GET | Public | Get predictions (query: `fight_id`, `upcoming`, `from`, `to`, `limit`) |
 | `/api/predictions/accuracy` | GET | Public | Model accuracy stats |
-| `/api/predictions/ingest` | POST | x-prediction-key | Ingest predictions from microservice |
-| `/api/predictions/reconcile` | POST | x-prediction-key | Reconcile with actual results |
+| `/api/predictions/ingest` | POST | `x-prediction-key` | Ingest predictions from microservice |
+| `/api/predictions/reconcile` | POST | `x-prediction-key` | Reconcile with actual results |
 
-## Cron schedule (predictions-worker)
+## Scheduler cron (in-process)
 
-| Job | Schedule | Description |
-|-----|----------|-------------|
-| `daily_predict` | 06:00 UTC daily | Predict next 14 days |
-| `refresh_near` | 08:00, 14:00, 20:00 UTC | Refresh next 48h |
-| `daily_reconcile` | 07:00 UTC daily | Reconcile last 7 days |
-| `weekly_retrain` | Monday 05:00 UTC | Retrain on all data |
-
-## DB schema (added to main app)
-
-```sql
-CREATE TABLE predictions (
-    id INTEGER PRIMARY KEY AUTOINCREMENT,
-    fight_id INTEGER REFERENCES fights(id),
-    red_fighter_id INTEGER REFERENCES fighters(id),
-    blue_fighter_id INTEGER REFERENCES fighters(id),
-    red_win_prob REAL NOT NULL,
-    blue_win_prob REAL NOT NULL,
-    model_version TEXT NOT NULL,
-    feature_hash TEXT,
-    predicted_at TEXT NOT NULL,
-    event_date TEXT,
-    is_stale INTEGER DEFAULT 0,
-    actual_winner_id INTEGER,
-    reconciled_at TEXT,
-    correct INTEGER
-);
-```
+| Job | Schedule (UTC) | Description |
+|-----|----------------|-------------|
+| `daily_predict` | 06:00 daily | Predict next 14 days |
+| `refresh_near` | 08:00, 14:00, 20:00 | Refresh next 48h |
+| `daily_reconcile` | 07:00 daily | Reconcile last 7 days |
+| `weekly_retrain` | Monday 05:00 | Retrain on all data |
