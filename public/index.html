@@ -136,11 +136,32 @@
       <div class="profile-modal__hint">
         Save your ID before clearing browser data — it's the only way to sign back in.
       </div>
-      <div class="profile-actions-buttons">
+      <div class="profile-actions-buttons" id="profileMainActions">
         <button class="rec-btn" id="profileActionEdit">Edit name / avatar</button>
         <button class="rec-btn" id="profileActionCopy">Copy ID</button>
         <button class="rec-btn" id="profileActionSwitch">Switch profile (paste ID)</button>
         <button class="rec-btn" id="profileActionSignout" style="color:var(--red)">Sign out</button>
+      </div>
+      <!-- Inline switch-profile form (shown when Switch profile is clicked) -->
+      <div class="profile-switch-form" id="profileSwitchForm" style="display:none">
+        <label class="profile-modal__label" for="profileSwitchInput">Paste the ID you want to sign in as</label>
+        <input class="profile-modal__input" id="profileSwitchInput" type="text"
+               placeholder="00000000-0000-0000-0000-000000000000" autocomplete="off">
+        <div class="profile-modal__error" id="profileSwitchError" style="display:none"></div>
+        <div class="profile-actions-buttons" style="flex-direction:row;margin-top:10px">
+          <button class="rec-btn" id="profileSwitchCancel" style="flex:1">Cancel</button>
+          <button class="rec-btn rec-btn--primary" id="profileSwitchApply" style="flex:1">Sign in</button>
+        </div>
+      </div>
+      <!-- Inline sign-out confirmation (shown when Sign out is clicked) -->
+      <div class="profile-signout-confirm" id="profileSignoutConfirm" style="display:none">
+        <div class="profile-modal__hint" style="color:var(--red);margin-top:14px">
+          Sign out? Your picks stay on the server. Save your ID first if you want to sign back in later.
+        </div>
+        <div class="profile-actions-buttons" style="flex-direction:row;margin-top:10px">
+          <button class="rec-btn" id="profileSignoutCancel" style="flex:1">Cancel</button>
+          <button class="rec-btn" id="profileSignoutConfirmBtn" style="flex:1;color:var(--red);border-color:var(--red)">Sign out</button>
+        </div>
       </div>
     </div>
     <div class="profile-modal__foot">

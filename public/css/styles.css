@@ -1961,10 +1961,15 @@ footer{
   transition:border-color .15s ease;
   font-family:var(--f-mono);font-size:11px;letter-spacing:.08em;
   color:var(--fg);
+  max-width:240px;
 }
 .profile-chip:hover{border-color:var(--cyan)}
-.profile-chip__name{color:var(--fg);font-weight:600}
-.profile-chip__caret{color:var(--muted-dim);font-size:9px;margin-left:2px}
+.profile-chip__name{
+  color:var(--fg);font-weight:600;
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+  min-width:0;
+}
+.profile-chip__caret{color:var(--muted-dim);font-size:9px;margin-left:2px;flex-shrink:0}
 
 /* Empty state in Picks body */
 .picks-empty{

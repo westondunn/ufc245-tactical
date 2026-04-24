@@ -3174,9 +3174,15 @@ function activatePrimaryTab(target){
   if (target === 'stats' && !_tabsLoaded.stats) { loadStatsTab(); _tabsLoaded.stats = true; }
   // Leaving Picks → clear subview TC override so other tabs use their own labels
   if (target !== 'picks' && _tcForceSet) _tcForceSet(null);
-  // Entering Picks → re-apply the current subview TC
-  if (target === 'picks' && _tcForceSet && typeof PICKS_TC_LABEL !== 'undefined') {
-    _tcForceSet(PICKS_TC_LABEL[_picksState ? _picksState.view : 'upcoming'] || 'YOUR PICKS');
+  // Entering Picks → re-apply the current subview TC + maybe auto-open create modal
+  if (target === 'picks') {
+    if (_tcForceSet && typeof PICKS_TC_LABEL !== 'undefined') {
+      _tcForceSet(PICKS_TC_LABEL[_picksState ? _picksState.view : 'upcoming'] || 'YOUR PICKS');
+    }
+    if (_picksFeatureEnabled && !_currentUser && !_picksAutoPrompted) {
+      _picksAutoPrompted = true;
+      setTimeout(() => { if (!_currentUser) openCreateProfileModal(null); }, 120);
+    }
   }
 }
 
@@ -3581,6 +3587,7 @@ const AVATAR_KEYS = Array.from({ length: 12 }, (_, i) => 'a' + (i + 1));
 let _picksFeatureEnabled = false;
 let _currentUser = null;
 let _selectedAvatarKey = 'a1';
+let _picksAutoPrompted = false;   // auto-open create modal once per session
 
 function getLocalProfile(){
   try {
@@ -3752,16 +3759,60 @@ function openProfileActionsModal(){
   openModal('profileActionsModal');
 }
 
-async function switchProfile(){
-  const id = prompt('Paste your user ID:');
-  if (!id) return;
-  const trimmed = id.trim();
-  const user = await validateProfileWithServer(trimmed);
-  if (!user) { alert('No profile found for that ID.'); return; }
+function openSwitchProfileForm(){
+  const form = document.getElementById('profileSwitchForm');
+  const input = document.getElementById('profileSwitchInput');
+  const err = document.getElementById('profileSwitchError');
+  const buttons = document.getElementById('profileMainActions');
+  if (!form) return;
+  form.style.display = '';
+  if (err) { err.textContent = ''; err.style.display = 'none'; }
+  if (input) { input.value = ''; setTimeout(() => input.focus(), 50); }
+  if (buttons) buttons.style.display = 'none';
+}
+
+function closeSwitchProfileForm(){
+  const form = document.getElementById('profileSwitchForm');
+  const buttons = document.getElementById('profileMainActions');
+  if (form) form.style.display = 'none';
+  if (buttons) buttons.style.display = '';
+}
+
+async function applySwitchProfile(){
+  const input = document.getElementById('profileSwitchInput');
+  const err = document.getElementById('profileSwitchError');
+  const applyBtn = document.getElementById('profileSwitchApply');
+  const raw = (input && input.value || '').trim();
+  if (!raw) {
+    if (err) { err.textContent = 'Paste an ID to continue.'; err.style.display = ''; }
+    return;
+  }
+  if (applyBtn) applyBtn.disabled = true;
+  const user = await validateProfileWithServer(raw);
+  if (applyBtn) applyBtn.disabled = false;
+  if (!user) {
+    if (err) { err.textContent = 'No profile found for that ID.'; err.style.display = ''; }
+    return;
+  }
   _currentUser = user;
   setLocalProfile(user);
   renderProfileChip();
+  closeSwitchProfileForm();
   closeModal('profileActionsModal');
+}
+
+function openSignoutConfirm(){
+  const confirmEl = document.getElementById('profileSignoutConfirm');
+  const buttons = document.getElementById('profileMainActions');
+  if (confirmEl) confirmEl.style.display = '';
+  if (buttons) buttons.style.display = 'none';
+}
+
+function closeSignoutConfirm(){
+  const confirmEl = document.getElementById('profileSignoutConfirm');
+  const buttons = document.getElementById('profileMainActions');
+  if (confirmEl) confirmEl.style.display = 'none';
+  if (buttons) buttons.style.display = '';
 }
 
 function copyProfileId(){
@@ -3773,10 +3824,10 @@ function copyProfileId(){
 }
 
 function signOutProfile(){
-  if (!confirm('Sign out?\n\nYour picks stay on the server. Save your ID first if you want to sign back in later.')) return;
   _currentUser = null;
   setLocalProfile(null);
   renderProfileChip();
+  closeSignoutConfirm();
   closeModal('profileActionsModal');
 }
 
@@ -3817,8 +3868,33 @@ function setupPicksUi(){
   const signout = document.getElementById('profileActionSignout');
   if (edit) edit.addEventListener('click', () => { closeModal('profileActionsModal'); openCreateProfileModal(_currentUser); });
   if (copy) copy.addEventListener('click', copyProfileId);
-  if (swt) swt.addEventListener('click', switchProfile);
-  if (signout) signout.addEventListener('click', signOutProfile);
+  if (swt) swt.addEventListener('click', openSwitchProfileForm);
+  if (signout) signout.addEventListener('click', openSignoutConfirm);
+
+  // Inline switch form
+  const switchCancel = document.getElementById('profileSwitchCancel');
+  const switchApply  = document.getElementById('profileSwitchApply');
+  const switchInput  = document.getElementById('profileSwitchInput');
+  if (switchCancel) switchCancel.addEventListener('click', closeSwitchProfileForm);
+  if (switchApply)  switchApply.addEventListener('click', applySwitchProfile);
+  if (switchInput)  switchInput.addEventListener('keydown', (e) => { if (e.key === 'Enter') applySwitchProfile(); });
+
+  // Inline sign-out confirmation
+  const signoutCancel  = document.getElementById('profileSignoutCancel');
+  const signoutConfirm = document.getElementById('profileSignoutConfirmBtn');
+  if (signoutCancel) signoutCancel.addEventListener('click', closeSignoutConfirm);
+  if (signoutConfirm) signoutConfirm.addEventListener('click', signOutProfile);
+
+  // Reset inline forms whenever actions modal closes
+  const actionsModal = document.getElementById('profileActionsModal');
+  if (actionsModal) {
+    actionsModal.querySelectorAll('[data-modal-close]').forEach(el => {
+      el.addEventListener('click', () => {
+        closeSwitchProfileForm();
+        closeSignoutConfirm();
+      });
+    });
+  }
 }
 
 async function initPicksFeature(){

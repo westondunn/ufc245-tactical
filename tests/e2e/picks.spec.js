@@ -234,8 +234,8 @@ test.describe('Picks UI — widget rendering', () => {
     await expect(picksBtn).toBeVisible();
     await picksBtn.click();
 
-    // Create profile
-    await page.locator('#picksCreateProfileBtn').click();
+    // Modal auto-opens on first Picks visit without a profile
+    await expect(page.locator('#profileModal')).toBeVisible();
     await page.locator('#profileDisplayName').fill('UI Tester');
     await page.locator('.avatar-pick[data-avatar-key="a4"]').click();
     await page.locator('#profileSubmitBtn').click();
@@ -261,7 +261,8 @@ test.describe('Picks UI — widget rendering', () => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
     await page.locator('#picksTabBtn').click();
-    await page.locator('#picksCreateProfileBtn').click();
+    // Modal auto-opens on first Picks visit
+    await expect(page.locator('#profileModal')).toBeVisible();
     await page.locator('#profileDisplayName').fill('Subnav Tester');
     await page.locator('#profileSubmitBtn').click();
 

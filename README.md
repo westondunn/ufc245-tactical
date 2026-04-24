@@ -135,6 +135,137 @@ Dashboard changes = just edit `public/index.html` and refresh. It's a single sel
 
 ---
 
+## Fight Picks
+
+An additive, feature-flagged pick-em layer: users create a local profile
+(display name + avatar — no email, no password), pick winners on any
+event's fight card with optional confidence / method / round / notes,
+and compete on event and all-time leaderboards after results reconcile.
+
+Every pick snapshots the current model prediction at the moment of
+writing, so "beating the model" is measurable per-pick and
+leaderboard-visible.
+
+### Enabling the feature
+
+The entire stack is gated by a single env var:
+
+```bash
+ENABLE_PICKS=true
+```
+
+When unset (the default), the Picks tab is hidden, `/api/version`
+reports `features.picks = false`, and every pick-related endpoint
+returns `503 picks_disabled`. Existing endpoints are unchanged.
+
+### Env vars
+
+| Var | Required | Default | Purpose |
+|---|---|---|---|
+| `ENABLE_PICKS` | yes | `false` | Master flag. Set to `true` to expose the Picks tab + API. |
+| `ADMIN_KEY` | for admin ops | — | Shared secret for `POST /api/admin/events/:id/lock-picks`, `/reconcile-picks`, `/api/admin/reconcile-all-picks`. |
+| `PREDICTION_SERVICE_KEY` | to ingest model preds | — | Existing key for the prediction microservice. The snapshots layer reads whichever predictions it has. |
+| `DATABASE_URL` | for Postgres | — | If set, picks persist there. Otherwise sqlite (see next row). |
+| `DB_PATH` | sqlite only | — | With the sqlite backend, set this to a writable path so picks + users survive restarts. Without it everything is in-memory. |
+| `PICKS_RATE_LIMIT_CREATE_USER` | no | `5` | Max new profiles per IP per hour. |
+| `PICKS_RATE_LIMIT_PER_MIN` | no | `60` | Max pick writes per user per minute. |
+
+### Scoring formula
+
+Deterministic, server-authoritative, idempotent on re-reconcile.
+Lives in [`lib/scoring.js`](lib/scoring.js).
+
+Per pick, after the fight's `winner_id` is set:
+
+| Component | Points | Trigger |
+|---|---|---|
+| Winner points | `round(10 × confidence / 50)` → 0–20 | Correct pick |
+| Method bonus | +5 | `method_pick` matches normalized actual method |
+| Round bonus | +5 | `round_pick` matches actual round |
+| Upset bonus | +5 | Correct AND disagreed with the model snapshot |
+
+**Max 35 points per fight · never negative.** Incorrect picks always
+score 0. Draws / No Contest void every pick on that fight
+(`correct = 0, points = 0`). Re-running reconcile produces identical
+point totals.
+
+### User flow
+
+1. User clicks the **Picks** tab → create-profile modal auto-opens
+   (first visit per session).
+2. Display name + one of 12 avatar colors → `POST /api/users` → the
+   server-issued UUID is stored in `localStorage['ufc_user']`.
+3. Back on the tab, the event picker defaults to UFC 245 (the demo
+   event). Switching events loads the card, existing picks, and
+   model-comparison in parallel.
+4. For each fight, users pick a winner, move the confidence slider
+   (0–100), optionally select method / round, and write notes up to
+   280 chars. Save → `POST /api/picks` with `X-User-Id` header.
+5. After event results land (`fights.winner_id` set), admin runs
+   `POST /api/admin/events/:id/reconcile-picks` or
+   `POST /api/admin/reconcile-all-picks` for the whole DB.
+6. History + leaderboard views update. The stats strip shows
+   Points / Accuracy / Beat-the-model / Avg-per-pick.
+
+### Key API endpoints
+
+All gated by `ENABLE_PICKS`. Writes need an `X-User-Id` header.
+
+| Method | Path | Protection |
+|---|---|---|
+| POST | `/api/users` | rate-limited per IP |
+| GET | `/api/users/:id` | none |
+| PATCH | `/api/users/:id` | `X-User-Id` must match `:id` |
+| GET | `/api/users/:id/picks` | none (query: `event_id`, `reconciled=0|1`) |
+| GET | `/api/users/:id/stats` | none |
+| POST | `/api/picks` | `X-User-Id` + rate limit |
+| DELETE | `/api/picks/:pickId` | `X-User-Id` must own pick |
+| GET | `/api/leaderboard` | none |
+| GET | `/api/events/:id/picks/leaderboard` | none |
+| GET | `/api/events/:id/picks/model-comparison` | none |
+| POST | `/api/admin/events/:id/lock-picks` | `X-Admin-Key` |
+| POST | `/api/admin/events/:id/reconcile-picks` | `X-Admin-Key` |
+| POST | `/api/admin/reconcile-all-picks` | `X-Admin-Key` |
+
+### Local demo data
+
+To populate the three subviews (Upcoming / History / Leaderboard)
+with realistic data during local dev, use the seeder script:
+
+```bash
+DB_PATH=/tmp/ufc-picks-demo.db node scripts/seed-demo-picks.js
+DB_PATH=/tmp/ufc-picks-demo.db \
+  ENABLE_PICKS=true ADMIN_KEY=test PORT=3100 node server.js
+```
+
+The script creates 4 demo users (Weston / Friend A / Friend B /
+Sharp Eye), ingests a `demo-v0.3` model prediction per fight on the
+5 most recent events, writes ~25–35 picks per user, and reconciles
+everything. The printed UUIDs can be pasted into the
+**Switch profile** flow in the UI for instant cross-user demos.
+The script is idempotent — rerunning deletes + recreates the demo
+users without touching other data.
+
+### Rollout checklist (Railway)
+
+1. Confirm `DATABASE_URL` is already set (predictions feature). If
+   on sqlite, set `DB_PATH=/data/ufc.db` or similar to a mounted
+   volume so picks + users persist.
+2. Set `ADMIN_KEY` to a strong random value.
+3. Flip the feature flag: `ENABLE_PICKS=true`.
+4. Deploy. After rollout, verify:
+   - `GET /healthz` reports `features.picks: true`
+   - `GET /api/version` reports `features.picks: true`
+   - Loading the app shows the **Picks** tab
+   - Creating a profile returns 200 (watch for 429 if rate limits
+     are too tight — tune `PICKS_RATE_LIMIT_*` if needed)
+5. Feature can be rolled back instantly by unsetting
+   `ENABLE_PICKS`. No schema migration is needed — all four new
+   tables (`users`, `user_picks`, `pick_model_snapshots`) are
+   additive and left alone when the flag is off.
+
+---
+
 ## Data sources & credits
 
 - **Strike-by-strike stats:** [UFCStats.com official fight page](http://ufcstats.com/fight-details/82177c0f91d9618a)
