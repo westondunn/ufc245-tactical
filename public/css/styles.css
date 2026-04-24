@@ -2109,6 +2109,69 @@ footer{
 
 /* Fight list */
 .picks-fights{display:flex;flex-direction:column;gap:14px}
+.picks-upcoming-layout{
+  display:grid;
+  grid-template-columns:minmax(0,1fr) 320px;
+  gap:18px;
+  align-items:start;
+}
+.picks-upcoming-main{min-width:0}
+.picks-card-summary{
+  position:sticky;
+  top:112px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  padding:16px;
+}
+.picks-card-summary__head{
+  display:flex;
+  justify-content:space-between;
+  gap:12px;
+  align-items:flex-start;
+  margin-bottom:12px;
+}
+.picks-card-summary__eyebrow{
+  font-family:var(--f-mono);font-size:9px;letter-spacing:.18em;
+  color:var(--cyan);text-transform:uppercase;margin-bottom:5px;
+}
+.picks-card-summary__title{
+  font-family:var(--f-disp);font-size:18px;font-weight:700;
+  color:var(--fg);line-height:1.1;
+}
+.picks-card-summary__count{
+  font-family:var(--f-disp);font-size:20px;font-weight:700;color:var(--cyan);
+  white-space:nowrap;
+}
+.picks-card-summary__bar{
+  height:4px;background:var(--border);overflow:hidden;margin-bottom:14px;
+}
+.picks-card-summary__bar div{height:100%;background:var(--cyan)}
+.picks-card-summary__list{display:flex;flex-direction:column;gap:10px}
+.picks-card-summary__row{
+  border-top:1px solid var(--border-soft);
+  padding-top:10px;
+}
+.picks-card-summary__matchup{
+  font-family:var(--f-mono);font-size:10px;line-height:1.4;color:var(--muted);
+}
+.picks-card-summary__matchup span{color:var(--muted-dim);text-transform:uppercase}
+.picks-card-summary__pick{
+  margin-top:4px;
+  display:flex;
+  justify-content:space-between;
+  gap:10px;
+  font-family:var(--f-mono);
+  font-size:11px;
+}
+.picks-card-summary__pick strong{color:var(--fg);font-weight:600}
+.picks-card-summary__pick span{color:var(--muted-dim);white-space:nowrap}
+.picks-card-summary__pick.red strong{color:var(--red)}
+.picks-card-summary__pick.blue strong{color:var(--blue)}
+.picks-card-summary__empty{
+  padding:18px 0;
+  font-family:var(--f-mono);font-size:11px;line-height:1.5;
+  color:var(--muted);letter-spacing:.06em;
+}
 
 /* Per-fight pick widget */
 .pick-fight{
@@ -2444,6 +2507,8 @@ footer{
   .picks-header{flex-direction:column;align-items:stretch}
   .profile-avatar-grid{grid-template-columns:repeat(4,1fr)}
   .profile-modal{padding:12px}
+  .picks-upcoming-layout{display:block}
+  .picks-card-summary{position:static;margin-top:16px}
   .pick-fight__head{grid-template-columns:1fr;text-align:center}
   .pick-fight__corner--red{text-align:center}
   .pick-fight__vs{order:-1;padding:4px 0;font-size:16px}

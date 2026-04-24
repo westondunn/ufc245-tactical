@@ -67,13 +67,20 @@
       <button class="rec-btn" id="picksCreateProfileBtn">Create profile</button>
     </div>
     <div class="picks-view" id="picksViewUpcoming" style="display:none">
-      <div class="picks-event-picker">
-        <span class="picks-event-picker__label">Event ▸</span>
-        <select class="event-dropdown" id="picksEventSelect"></select>
-        <span class="picks-event-picker__hint" id="picksEventHint"></span>
-      </div>
-      <div class="picks-fights" id="picksFights">
-        <div class="picks-loading" id="picksFightsLoading" style="display:none">Loading card…</div>
+      <div class="picks-upcoming-layout">
+        <div class="picks-upcoming-main">
+          <div class="picks-event-picker">
+            <span class="picks-event-picker__label">Event ▸</span>
+            <select class="event-dropdown" id="picksEventSelect"></select>
+            <span class="picks-event-picker__hint" id="picksEventHint"></span>
+          </div>
+          <div class="picks-fights" id="picksFights">
+            <div class="picks-loading" id="picksFightsLoading" style="display:none">Loading card…</div>
+          </div>
+        </div>
+        <aside class="picks-card-summary" id="picksCardSummary">
+          <div class="picks-card-summary__empty">Your saved picks for this event will appear here.</div>
+        </aside>
       </div>
     </div>
     <div class="picks-view" id="picksViewHistory" style="display:none">

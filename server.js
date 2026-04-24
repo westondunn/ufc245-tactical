@@ -634,8 +634,9 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
     if (!existing) { await db.upsertFight(f); added.fights++; }
   }
   await db.save();
+  cache.invalidateAll();
   console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights}`);
-  res.json({ status: 'ok', added });
+  res.json({ status: 'ok', added, cacheEntries: cache.size() });
 }));
 
 app.use((req, res) => {

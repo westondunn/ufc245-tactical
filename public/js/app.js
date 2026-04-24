@@ -3159,9 +3159,13 @@ function setupPrimaryTabs(){
       if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
     });
   });
+  const initial = { ...getStoredViewState(), ...parseViewHash() };
+  if (initial.tab && initial.tab !== 'dashboard') {
+    activatePrimaryTab(initial.tab, { persist:false });
+  }
 }
 
-function activatePrimaryTab(target){
+function activatePrimaryTab(target, opts = {}){
   const tab = document.querySelector('.primary-tab[data-tab="' + target + '"]');
   if (!tab) return;
   document.querySelectorAll('.primary-tab').forEach(t => t.classList.remove('active'));
@@ -3172,6 +3176,10 @@ function activatePrimaryTab(target){
   if (target === 'events' && !_tabsLoaded.events) { loadEventsTab(); _tabsLoaded.events = true; }
   if (target === 'fighters' && !_tabsLoaded.fighters) { loadFightersTab(); _tabsLoaded.fighters = true; }
   if (target === 'stats' && !_tabsLoaded.stats) { loadStatsTab(); _tabsLoaded.stats = true; }
+  if (opts.persist !== false) {
+    setStoredViewState({ tab: target });
+    updateViewHash(target, target === 'picks' && _picksState ? _picksState.view : null);
+  }
   // Leaving Picks → clear subview TC override so other tabs use their own labels
   if (target !== 'picks' && _tcForceSet) _tcForceSet(null);
   // Entering Picks → re-apply the current subview TC + maybe auto-open create modal
@@ -3583,11 +3591,42 @@ async function loadStatsTab(){
    the Picks tab and try to resume the local profile.
 ----------------------------------------------------------- */
 const PICKS_STORAGE_KEY = 'ufc_user';
+const VIEW_STORAGE_KEY = 'ufc_view_state';
 const AVATAR_KEYS = Array.from({ length: 12 }, (_, i) => 'a' + (i + 1));
 let _picksFeatureEnabled = false;
 let _currentUser = null;
 let _selectedAvatarKey = 'a1';
 let _picksAutoPrompted = false;   // auto-open create modal once per session
+
+function getStoredViewState(){
+  try {
+    const raw = localStorage.getItem(VIEW_STORAGE_KEY);
+    return raw ? JSON.parse(raw) || {} : {};
+  } catch { return {}; }
+}
+
+function setStoredViewState(patch){
+  try {
+    const next = { ...getStoredViewState(), ...patch };
+    localStorage.setItem(VIEW_STORAGE_KEY, JSON.stringify(next));
+  } catch { /* localStorage may be unavailable */ }
+}
+
+function parseViewHash(){
+  const raw = (window.location.hash || '').replace(/^#/, '').trim();
+  if (!raw) return {};
+  const parts = raw.split('/').filter(Boolean);
+  const tab = parts[0];
+  if (!['dashboard','events','fighters','stats','picks'].includes(tab)) return {};
+  const out = { tab };
+  if (tab === 'picks' && ['upcoming','history','leaderboard'].includes(parts[1])) out.picksView = parts[1];
+  return out;
+}
+
+function updateViewHash(tab, picksView){
+  const next = tab === 'picks' && picksView ? `#picks/${picksView}` : `#${tab}`;
+  if (window.location.hash !== next) history.replaceState(null, '', next);
+}
 
 function getLocalProfile(){
   try {
@@ -3931,6 +3970,15 @@ let _picksState = {
   modelByFightId: new Map(), // fight_id → { picked_fighter_id, confidence, version }
   lbScope: 'event'
 };
+{
+  const initialPicksState = { ...getStoredViewState(), ...parseViewHash() };
+  if (['upcoming','history','leaderboard'].includes(initialPicksState.picksView)) {
+    _picksState.view = initialPicksState.picksView;
+  }
+  if (Number.isFinite(parseInt(initialPicksState.picksEventId, 10))) {
+    _picksState.eventId = parseInt(initialPicksState.picksEventId, 10);
+  }
+}
 
 function setupPicksSubnav(){
   document.querySelectorAll('.picks-subnav__btn').forEach(btn => {
@@ -3950,6 +3998,8 @@ const PICKS_TC_LABEL = { upcoming:'PICKS · UPCOMING', history:'PICKS · HISTORY
 
 function activatePicksView(view){
   _picksState.view = view;
+  setStoredViewState({ tab:'picks', picksView:view });
+  updateViewHash('picks', view);
   document.querySelectorAll('.picks-subnav__btn').forEach(b => {
     b.classList.toggle('active', b.dataset.picksView === view);
   });
@@ -3992,10 +4042,13 @@ async function populatePicksEventSelect(){
       ? futureEvents[futureEvents.length - 1]   // earliest future (events sorted DESC)
       : events[0];                              // most recent otherwise
 
-    sel.value = String(defaultEvent.id);
+    const storedEvent = events.find(e => e.id === _picksState.eventId);
+    sel.value = String((storedEvent || defaultEvent).id);
     _picksState.eventId = parseInt(sel.value, 10);
+    setStoredViewState({ picksEventId: _picksState.eventId });
     sel.addEventListener('change', () => {
       _picksState.eventId = parseInt(sel.value, 10);
+      setStoredViewState({ tab:'picks', picksView:_picksState.view, picksEventId:_picksState.eventId });
       loadUpcomingView();
     });
   } catch (e) {
@@ -4062,11 +4115,64 @@ async function loadUpcomingView(){
       fightsEl.innerHTML = openFights.map(f => renderPickWidget(f)).join('');
       attachPickHandlers(fightsEl);
     }
+    renderPicksCardSummary(openFights);
   } catch (e) {
     fightsEl.innerHTML = '<div class="picks-placeholder">Failed to load this event\'s card.</div>';
+    renderPicksCardSummary([]);
   } finally {
     if (loadingEl) loadingEl.style.display = 'none';
   }
+}
+
+function renderPicksCardSummary(openFights){
+  const el = document.getElementById('picksCardSummary');
+  if (!el) return;
+  const fights = Array.isArray(openFights) ? openFights : (_picksState.eventCard || []).filter(f => f.winner_id == null);
+  const total = fights.length;
+  const saved = fights.filter(f => _picksState.userPicks.has(f.id));
+  const eventSelect = document.getElementById('picksEventSelect');
+  const eventLabel = eventSelect && eventSelect.selectedOptions[0]
+    ? eventSelect.selectedOptions[0].textContent.replace(/\s+/g, ' ').trim()
+    : 'Selected event';
+
+  if (!_currentUser) {
+    el.innerHTML = '<div class="picks-card-summary__empty">Create a profile to build your pick card.</div>';
+    return;
+  }
+
+  const rows = saved.map(f => {
+    const pick = _picksState.userPicks.get(f.id);
+    const pickedRed = pick && pick.picked_fighter_id === f.red_fighter_id;
+    const pickedBlue = pick && pick.picked_fighter_id === f.blue_fighter_id;
+    const pickedName = pickedRed ? f.red_name : (pickedBlue ? f.blue_name : '—');
+    const corner = pickedRed ? 'red' : (pickedBlue ? 'blue' : '');
+    const extras = [
+      pick.method_pick ? pick.method_pick : null,
+      pick.round_pick ? 'R' + pick.round_pick : null
+    ].filter(Boolean).join(' · ');
+    return `
+      <div class="picks-card-summary__row">
+        <div class="picks-card-summary__matchup">${escHtml(f.red_name || '—')} <span>vs</span> ${escHtml(f.blue_name || '—')}</div>
+        <div class="picks-card-summary__pick ${corner}">
+          <strong>${escHtml(pickedName)}</strong>
+          <span>${pick.confidence || 50}%${extras ? ' · ' + escHtml(extras) : ''}</span>
+        </div>
+      </div>`;
+  }).join('');
+
+  el.innerHTML = `
+    <div class="picks-card-summary__head">
+      <div>
+        <div class="picks-card-summary__eyebrow">My pick card</div>
+        <div class="picks-card-summary__title">${escHtml(eventLabel)}</div>
+      </div>
+      <div class="picks-card-summary__count">${saved.length}/${total}</div>
+    </div>
+    <div class="picks-card-summary__bar">
+      <div style="width:${total ? Math.round((saved.length / total) * 100) : 0}%"></div>
+    </div>
+    ${saved.length ? `<div class="picks-card-summary__list">${rows}</div>` : '<div class="picks-card-summary__empty">No saved picks yet. Pick winners on the left and save each fight.</div>'}
+  `;
 }
 
 function renderPickWidget(fight){
@@ -4306,6 +4412,7 @@ async function submitPickFromCard(card, fightId){
     _picksState.userPicks.set(fightId, data.pick);
     setPickStatus(card, 'saved', 'Saved', 'Pick recorded. Edit anytime until lock.');
     if (saveBtn) saveBtn.textContent = 'Update pick';
+    renderPicksCardSummary();
   } catch (e) {
     setPickStatus(card, 'error', 'Error', e.message || 'Network error');
   } finally {
@@ -4329,6 +4436,7 @@ async function deletePickFromCard(card, fightId){
       return;
     }
     _picksState.userPicks.delete(fightId);
+    renderPicksCardSummary();
     // Re-render the whole upcoming view so the card reflects no-pick state
     loadUpcomingView();
   } catch (e) {
