@@ -446,8 +446,17 @@
           </tr>
         </tbody>
       </table>
-      <div style="margin-top:14px;font-family:var(--f-mono);font-size:11px;color:var(--muted);letter-spacing:.08em;line-height:1.55">
-        <span style="color:var(--amber)">→</span> Entering R5: <strong style="color:var(--fg)">D'Amato 39-37 Covington · Colon 38-38 · Cleary 39-37 Usman</strong> <span style="font-size:10px;color:var(--muted)">(NSAC official scorecards)</span>
+      <div class="cards-callout">
+        <div class="cards-callout__kicker">Entering R5 · on the cards</div>
+        <div class="cards-callout__headline">Usman was <span class="cards-callout__emph">down 2–1</span> before the TKO</div>
+        <div class="cards-callout__detail">
+          <span><strong>D'Amato</strong> 39–37 Covington</span>
+          <span class="cards-callout__sep">·</span>
+          <span><strong>Colon</strong> 38–38 draw</span>
+          <span class="cards-callout__sep">·</span>
+          <span><strong>Cleary</strong> 39–37 Usman</span>
+        </div>
+        <div class="cards-callout__note">NSAC official scorecards · two judges had Covington ahead, one had it tied</div>
       </div>
     </div>
   </div>
@@ -534,7 +543,7 @@
   <div class="chart-panel">
     <div class="panel-head">
       <div class="panel-title">Significant Strikes Landed · Diverging Bars</div>
-      <div class="panel-meta">Hover for detail</div>
+      <div class="panel-meta panel-meta--responsive" data-desktop="Hover for detail" data-mobile="Tap for detail"></div>
     </div>
     <svg id="roundsChart" class="chart-svg" viewBox="0 0 1200 480" preserveAspectRatio="xMidYMid meet"></svg>
     <div class="chart-legend">
@@ -772,7 +781,7 @@
   <div class="timeline-wrap">
     <div class="panel-head">
       <div class="panel-title">Event Timeline</div>
-      <div class="panel-meta">Hover markers for detail</div>
+      <div class="panel-meta panel-meta--responsive" data-desktop="Hover markers for detail" data-mobile="Tap markers for detail"></div>
     </div>
     <svg id="timelineChart" class="timeline-svg" viewBox="0 0 1600 380" preserveAspectRatio="xMidYMid meet"></svg>
   </div>
@@ -1131,14 +1140,14 @@
 
       <!-- Fight context panel (bottom right) -->
       <g>
-        <text x="920" y="260" font-family="Barlow Condensed" font-size="14" font-weight="600" fill="#2DDCFF" letter-spacing="0.18em">FIGHT CONTEXT</text>
-        <text x="920" y="285" class="value" fill="#E8ECF5">Round 3 · approx 14:50 elapsed</text>
-        <text x="920" y="302" class="value">Usman's accuracy this rd: 58%</text>
-        <text x="920" y="319" class="value">Covington accuracy: 42% → 15%</text>
-        <text x="920" y="336" class="value">Covington output: 97 → 51 attempts</text>
-        <text x="920" y="353" class="value" fill="#FFB020">Between rounds · Covington jaw injury apparent</text>
-        <text x="920" y="370" class="value">Covington continues 9+ min with fractured jaw</text>
-        <text x="920" y="395" class="value" fill="#7CFFC8">R5 4:10 · TKO · Ref Goddard stoppage</text>
+        <text x="660" y="260" font-family="Barlow Condensed" font-size="14" font-weight="600" fill="#2DDCFF" letter-spacing="0.18em">FIGHT CONTEXT</text>
+        <text x="660" y="285" class="value" fill="#E8ECF5">Round 3 · approx 14:50 elapsed</text>
+        <text x="660" y="302" class="value">Usman's accuracy this rd: 58%</text>
+        <text x="660" y="319" class="value">Covington accuracy: 42% → 15%</text>
+        <text x="660" y="336" class="value">Covington output: 97 → 51 attempts</text>
+        <text x="660" y="353" class="value" fill="#FFB020">Between rounds · Covington jaw injury apparent</text>
+        <text x="660" y="370" class="value">Covington continues 9+ min with fractured jaw</text>
+        <text x="660" y="395" class="value" fill="#7CFFC8">R5 4:10 · TKO · Ref Goddard stoppage</text>
       </g>
 
       <!-- Left-side stance notes -->
@@ -1458,6 +1467,34 @@
         <li><strong>Resilience note:</strong> Fought ~10 minutes (R4 + R5) with a broken jaw · absorbed 59 head strikes post-fracture · matched Usman's output 36-to-35 in R4.</li>
       </ul>
     </div>
+  </div>
+</section>
+
+<!-- ============================================================
+     NEXT — EXIT RAMP
+============================================================ -->
+<section id="next" class="next-ramp">
+  <div class="section-head">
+    <div class="section-tag">End of report</div>
+    <h2 class="section-title">Keep digging</h2>
+    <div class="section-sub">Continue the analysis with another fight, fighter, or the full event card.</div>
+  </div>
+  <div class="next-ramp__grid">
+    <button class="next-ramp__card" data-nav-tab="events">
+      <div class="next-ramp__kicker">Events & Fights</div>
+      <div class="next-ramp__label">Browse all UFC events →</div>
+      <div class="next-ramp__meta">300+ events · sortable by date</div>
+    </button>
+    <button class="next-ramp__card" data-nav-tab="fighters">
+      <div class="next-ramp__kicker">Fighters</div>
+      <div class="next-ramp__label">Search the fighter directory →</div>
+      <div class="next-ramp__meta">Career stats · fight history</div>
+    </button>
+    <button class="next-ramp__card" data-nav-scroll="fightSelector">
+      <div class="next-ramp__kicker">This card</div>
+      <div class="next-ramp__label">Other UFC 245 fights →</div>
+      <div class="next-ramp__meta">Volkanovski · Holloway · Nunes · Aldana</div>
+    </button>
   </div>
 </section>
 

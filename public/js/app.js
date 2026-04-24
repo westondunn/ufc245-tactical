@@ -8,6 +8,31 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // XSS prevention
 function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+// Theme — single source of truth, reads from CSS :root tokens in styles.css.
+// Use these in new chart/viz code instead of hardcoded hex literals.
+const theme = (() => {
+  const s = getComputedStyle(document.documentElement);
+  const v = name => s.getPropertyValue(name).trim();
+  return {
+    red:      v('--red')            || '#FF2D3F',
+    blue:     v('--blue')           || '#2DB4FF',
+    green:    v('--green')          || '#7CFFC8',
+    amber:    v('--amber')          || '#FFB020',
+    cyan:     v('--cyan')           || '#2DDCFF',
+    warning:  v('--state-warning')  || '#FFB020',
+    positive: v('--state-positive') || '#7CFFC8',
+    ground:   v('--state-ground')   || '#7CFFC8',
+    clinch:   v('--state-clinch')   || '#FFB020',
+    fracture: v('--state-fracture') || '#FFB020',
+    muted:    v('--muted')          || '#7A8394',
+    mutedDim: v('--muted-dim')      || '#464E5C',
+    fg:       v('--fg')             || '#E8ECF5',
+    fgDim:    v('--fg-dim')         || '#B0B8C9',
+    border:   v('--border')         || '#1A2030',
+    bg:       v('--bg')             || '#04050A',
+  };
+})();
+
 /* -----------------------------------------------------------
    DATA MODEL — all verified from UFCStats.com
 ----------------------------------------------------------- */
@@ -298,9 +323,9 @@ function renderAccuracyChart(){
   const r3x = M.l + (2/4) * pw;
   el('rect', { x:r3x-60, y:M.t, width:120, height:ph, fill:'#FFB020', opacity:0.05 }, svg);
   el('line', { x1:r3x, y1:M.t+10, x2:r3x, y2:H-M.b, stroke:'#FFB020', 'stroke-width':1, 'stroke-dasharray':'4 3' }, svg);
-  el('text', { x:r3x, y:M.t-2, 'text-anchor':'middle', 'font-size':9, fill:'#FFB020', 'letter-spacing':'.1em' }, svg).textContent = 'JAW BREAK ZONE';
+  el('text', { x:r3x, y:M.t-18, 'text-anchor':'middle', 'font-size':9, fill:'#FFB020', 'letter-spacing':'.1em' }, svg).textContent = 'JAW BREAK ZONE';
 
-  function drawLine(data, color){
+  function drawLine(data, otherData, color){
     let pathD = '';
     data.forEach((v, i) => {
       const x = M.l + (i/4) * pw;
@@ -309,17 +334,19 @@ function renderAccuracyChart(){
     });
     // Line
     el('path', { d:pathD, stroke:color, 'stroke-width':2.5, fill:'none', 'stroke-linejoin':'round' }, svg);
-    // Points
+    // Points + collision-aware labels (push lower-valued series' label below its point when close)
     data.forEach((v, i) => {
       const x = M.l + (i/4) * pw;
       const y = M.t + ph - (v / 60 * ph);
+      const otherY = M.t + ph - (otherData[i] / 60 * ph);
       el('circle', { cx:x, cy:y, r:6, fill:'#04050A', stroke:color, 'stroke-width':2 }, svg);
       el('circle', { cx:x, cy:y, r:2.5, fill:color }, svg);
-      el('text', { x:x, y:y-14, 'text-anchor':'middle', 'font-size':11, 'font-weight':700, fill:color }, svg).textContent = v.toFixed(0) + '%';
+      const labelY = (Math.abs(y - otherY) < 22 && y > otherY) ? y + 20 : y - 14;
+      el('text', { x:x, y:labelY, 'text-anchor':'middle', 'font-size':11, 'font-weight':700, fill:color }, svg).textContent = v.toFixed(0) + '%';
     });
   }
-  drawLine(covAcc, '#2DB4FF');
-  drawLine(usmanAcc, '#FF2D3F');
+  drawLine(covAcc, usmanAcc, '#2DB4FF');
+  drawLine(usmanAcc, covAcc, '#FF2D3F');
 
   // Y-axis title
   el('text', { x:M.l-36, y:M.t+ph/2, 'text-anchor':'middle', 'font-size':10, fill:'#7A8394', 'letter-spacing':'.15em', transform:`rotate(-90 ${M.l-36} ${M.t+ph/2})` }, svg).textContent = 'ACCURACY %';
@@ -645,7 +672,7 @@ function renderPaceChart(){
   covPathD += ` L ${M.l + pw},${M.t+ph} L ${M.l},${M.t+ph} Z`;
   el('path', { d:covPathD, fill:'#2DB4FF', opacity:0.08 }, svg);
 
-  function drawLine(data, color, dash){
+  function drawLine(data, otherData, color, dash){
     let pathD = '';
     data.forEach((v, i) => {
       const x = M.l + (i/4) * pw;
@@ -656,13 +683,15 @@ function renderPaceChart(){
     data.forEach((v, i) => {
       const x = M.l + (i/4) * pw;
       const y = M.t + ph - (v / maxPPM * ph);
+      const otherY = M.t + ph - (otherData[i] / maxPPM * ph);
       el('circle', { cx:x, cy:y, r:5, fill:'#04050A', stroke:color, 'stroke-width':2 }, svg);
-      el('text', { x:x, y:y-12, 'text-anchor':'middle', 'font-size':10, 'font-weight':700, fill:color }, svg).textContent = v.toFixed(1);
+      const labelY = (Math.abs(y - otherY) < 20 && y > otherY) ? y + 18 : y - 12;
+      el('text', { x:x, y:labelY, 'text-anchor':'middle', 'font-size':10, 'font-weight':700, fill:color }, svg).textContent = v.toFixed(1);
     });
   }
 
-  drawLine(covPPM, '#2DB4FF');
-  drawLine(usmanPPM, '#FF2D3F');
+  drawLine(covPPM, usmanPPM, '#2DB4FF');
+  drawLine(usmanPPM, covPPM, '#FF2D3F');
 
   // Acts annotation
   const acts = [
@@ -2533,10 +2562,29 @@ async function loadEventFightStrip(eventId){
     // Auto-select the main event chip (or first chip if no main)
     const mainChip = strip.querySelector('.fight-chip[data-main="1"]') || strip.querySelector('.fight-chip');
     if (mainChip) mainChip.click();
+    updateFightStripScrollState(strip);
   } catch(e){
     strip.innerHTML = '<span style="font-family:var(--f-mono);font-size:9px;color:var(--red)">Error</span>';
   }
 }
+
+function updateFightStripScrollState(strip){
+  if (!strip) return;
+  const max = strip.scrollWidth - strip.clientWidth;
+  if (max <= 1) {
+    strip.classList.add('at-start','at-end');
+    return;
+  }
+  strip.classList.toggle('at-start', strip.scrollLeft <= 1);
+  strip.classList.toggle('at-end', strip.scrollLeft >= max - 1);
+}
+
+(function wireFightStripScroll(){
+  const strip = document.getElementById('eventFightStrip');
+  if (!strip) return;
+  strip.addEventListener('scroll', () => updateFightStripScrollState(strip), { passive:true });
+  window.addEventListener('resize', () => updateFightStripScrollState(strip));
+})();
 
 // Render a generic stats panel for any fight with stats data
 function renderGenericStatsPanel(f) {
@@ -3031,19 +3079,34 @@ let _tabsLoaded = {};
 
 function setupPrimaryTabs(){
   document.querySelectorAll('.primary-tab').forEach(tab => {
-    tab.addEventListener('click', () => {
-      document.querySelectorAll('.primary-tab').forEach(t => t.classList.remove('active'));
-      document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
-      tab.classList.add('active');
-      const target = tab.dataset.tab;
-      const panel = document.getElementById('tab-' + target);
-      if (panel) panel.classList.add('active');
-      // Lazy-load tab data on first visit
-      if (target === 'events' && !_tabsLoaded.events) { loadEventsTab(); _tabsLoaded.events = true; }
-      if (target === 'fighters' && !_tabsLoaded.fighters) { loadFightersTab(); _tabsLoaded.fighters = true; }
-      if (target === 'stats' && !_tabsLoaded.stats) { loadStatsTab(); _tabsLoaded.stats = true; }
+    tab.addEventListener('click', () => activatePrimaryTab(tab.dataset.tab));
+  });
+  // Exit-ramp CTAs on dashboard bottom
+  document.querySelectorAll('[data-nav-tab]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      activatePrimaryTab(btn.dataset.navTab);
+      window.scrollTo({ top:0, behavior:'smooth' });
     });
   });
+  document.querySelectorAll('[data-nav-scroll]').forEach(btn => {
+    btn.addEventListener('click', () => {
+      const el = document.getElementById(btn.dataset.navScroll);
+      if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
+    });
+  });
+}
+
+function activatePrimaryTab(target){
+  const tab = document.querySelector('.primary-tab[data-tab="' + target + '"]');
+  if (!tab) return;
+  document.querySelectorAll('.primary-tab').forEach(t => t.classList.remove('active'));
+  document.querySelectorAll('.tab-content').forEach(t => t.classList.remove('active'));
+  tab.classList.add('active');
+  const panel = document.getElementById('tab-' + target);
+  if (panel) panel.classList.add('active');
+  if (target === 'events' && !_tabsLoaded.events) { loadEventsTab(); _tabsLoaded.events = true; }
+  if (target === 'fighters' && !_tabsLoaded.fighters) { loadFightersTab(); _tabsLoaded.fighters = true; }
+  if (target === 'stats' && !_tabsLoaded.stats) { loadStatsTab(); _tabsLoaded.stats = true; }
 }
 
 // ── Events Tab — Inline Accordion ──
@@ -3345,18 +3408,25 @@ async function loadFightersTab(){
 
 function renderFighterDir(fighters){
   const dir = document.getElementById('fighterDir');
-  dir.innerHTML = fighters.map(f =>
-    '<div class="fighter-card" onclick="showFighterProfile(' + f.id + ')">' +
+  dir.innerHTML = fighters.map(f => {
+    const hasAnyMeta = f.weight_class || f.height_cm || f.reach_cm || f.stance;
+    const metaHtml = hasAnyMeta
+      ? '<div class="fighter-card__meta">' +
+          (f.weight_class ? escHtml(f.weight_class) : '—') + ' · ' +
+          (f.height_cm ? f.height_cm + 'cm' : '—') + ' · ' +
+          (f.reach_cm ? f.reach_cm + 'cm reach' : '—') + ' · ' +
+          (f.stance ? escHtml(f.stance) : '—') +
+        '</div>'
+      : '<div class="fighter-card__meta fighter-card__meta--empty">No profile data</div>';
+    const nickHtml = '<div class="fighter-card__nick">' +
+      (f.nickname ? '"' + escHtml(f.nickname) + '"' : '\u00A0') +
+      '</div>';
+    return '<div class="fighter-card" onclick="showFighterProfile(' + f.id + ')">' +
       '<div class="fighter-card__name">' + escHtml(f.name) + '</div>' +
-      (f.nickname ? '<div class="fighter-card__nick">"' + escHtml(f.nickname) + '"</div>' : '') +
-      '<div class="fighter-card__meta">' +
-        (f.weight_class ? escHtml(f.weight_class) + ' · ' : '') +
-        (f.height_cm ? f.height_cm + 'cm' : '') +
-        (f.reach_cm ? ' · ' + f.reach_cm + 'cm reach' : '') +
-        (f.stance ? ' · ' + escHtml(f.stance) : '') +
-      '</div>' +
-    '</div>'
-  ).join('');
+      nickHtml +
+      metaHtml +
+    '</div>';
+  }).join('');
 }
 
 async function showFighterProfile(fid){

@@ -28,3 +28,4 @@ blob-report/
 .claude/
 predictions.db
 model_store/
+.gstack/
