@@ -1,8 +1,9 @@
-"""Logistic regression fight prediction model.
+"""Fight outcome prediction model.
 
-Baseline: ~10 engineered features from striking/grappling deltas,
-physical attributes, and recent form. Designed for small datasets
-(n >= 50 labeled fights).
+The production model is intentionally compact: a regularized logistic
+regression over matchup deltas, point-in-time career aggregates, profile
+metrics, and recent form. It stays explainable and behaves well on the small,
+noisy labeled set available in this project.
 """
 import hashlib
 import os
@@ -11,7 +12,7 @@ from datetime import datetime
 import joblib
 import numpy as np
 from sklearn.linear_model import LogisticRegression
-from sklearn.model_selection import cross_val_score
+from sklearn.model_selection import StratifiedKFold, cross_val_score
 from sklearn.preprocessing import StandardScaler
 from sklearn.pipeline import Pipeline
 
@@ -21,20 +22,45 @@ MODEL_DIR = "model_store"
 def _model_dir() -> str:
     return os.getenv("MODEL_DIR", MODEL_DIR)
 
-# Feature names used in the current model version
 FEATURE_NAMES = [
     "red_sig_str_landed_avg",
     "blue_sig_str_landed_avg",
+    "sig_str_landed_avg_delta",
     "red_sig_accuracy",
     "blue_sig_accuracy",
+    "sig_accuracy_delta",
     "red_td_landed_avg",
     "blue_td_landed_avg",
+    "td_landed_avg_delta",
+    "red_td_accuracy",
+    "blue_td_accuracy",
+    "td_accuracy_delta",
     "red_ctrl_sec_avg",
     "blue_ctrl_sec_avg",
+    "ctrl_sec_avg_delta",
+    "red_knockdowns_avg",
+    "blue_knockdowns_avg",
+    "knockdowns_avg_delta",
+    "red_sub_attempts_avg",
+    "blue_sub_attempts_avg",
+    "sub_attempts_avg_delta",
     "reach_delta_cm",
     "height_delta_cm",
+    "red_profile_slpm",
+    "blue_profile_slpm",
+    "profile_slpm_delta",
+    "red_profile_str_def",
+    "blue_profile_str_def",
+    "profile_str_def_delta",
+    "red_profile_td_def",
+    "blue_profile_td_def",
+    "profile_td_def_delta",
     "red_win_pct_last3",
     "blue_win_pct_last3",
+    "win_pct_last3_delta",
+    "red_experience",
+    "blue_experience",
+    "experience_delta",
 ]
 
 
@@ -47,23 +73,56 @@ def engineer_features(red_stats: dict, blue_stats: dict,
     """
     def safe(d, key, default=0.0):
         v = d.get(key) if d else None
-        return float(v) if v is not None else default
+        try:
+            return float(v) if v is not None else default
+        except (TypeError, ValueError):
+            return default
+
+    def per_fight(stats, key):
+        return safe(stats, key) / max(safe(stats, "total_fights", 1), 1)
+
+    red_sig = safe(red_stats, "avg_sig_per_fight")
+    blue_sig = safe(blue_stats, "avg_sig_per_fight")
+    red_acc = safe(red_stats, "sig_accuracy_pct") / 100.0
+    blue_acc = safe(blue_stats, "sig_accuracy_pct") / 100.0
+    red_td = per_fight(red_stats, "total_td_landed")
+    blue_td = per_fight(blue_stats, "total_td_landed")
+    red_td_acc = safe(red_stats, "td_accuracy_pct") / 100.0
+    blue_td_acc = safe(blue_stats, "td_accuracy_pct") / 100.0
+    red_ctrl = per_fight(red_stats, "total_control_sec")
+    blue_ctrl = per_fight(blue_stats, "total_control_sec")
+    red_kd = per_fight(red_stats, "total_knockdowns")
+    blue_kd = per_fight(blue_stats, "total_knockdowns")
+    red_sub = per_fight(red_stats, "total_sub_attempts")
+    blue_sub = per_fight(blue_stats, "total_sub_attempts")
+    red_slpm = safe(red_fighter, "slpm")
+    blue_slpm = safe(blue_fighter, "slpm")
+    red_str_def = safe(red_fighter, "str_def") / 100.0
+    blue_str_def = safe(blue_fighter, "str_def") / 100.0
+    red_td_def = safe(red_fighter, "td_def") / 100.0
+    blue_td_def = safe(blue_fighter, "td_def") / 100.0
+    red_recent = safe(red_stats, "win_pct_last3", 0.5)
+    blue_recent = safe(blue_stats, "win_pct_last3", 0.5)
+    red_exp = safe(red_stats, "total_fights")
+    blue_exp = safe(blue_stats, "total_fights")
 
     features = [
-        safe(red_stats, "avg_sig_per_fight"),
-        safe(blue_stats, "avg_sig_per_fight"),
-        safe(red_stats, "sig_accuracy_pct") / 100.0,
-        safe(blue_stats, "sig_accuracy_pct") / 100.0,
-        safe(red_stats, "total_td_landed") / max(safe(red_stats, "total_fights", 1), 1),
-        safe(blue_stats, "total_td_landed") / max(safe(blue_stats, "total_fights", 1), 1),
-        safe(red_stats, "total_control_sec") / max(safe(red_stats, "total_fights", 1), 1),
-        safe(blue_stats, "total_control_sec") / max(safe(blue_stats, "total_fights", 1), 1),
+        red_sig, blue_sig, red_sig - blue_sig,
+        red_acc, blue_acc, red_acc - blue_acc,
+        red_td, blue_td, red_td - blue_td,
+        red_td_acc, blue_td_acc, red_td_acc - blue_td_acc,
+        red_ctrl, blue_ctrl, red_ctrl - blue_ctrl,
+        red_kd, blue_kd, red_kd - blue_kd,
+        red_sub, blue_sub, red_sub - blue_sub,
         safe(red_fighter, "reach_cm") - safe(blue_fighter, "reach_cm"),
         safe(red_fighter, "height_cm") - safe(blue_fighter, "height_cm"),
-        safe(red_stats, "win_pct_last3", 0.5),
-        safe(blue_stats, "win_pct_last3", 0.5),
+        red_slpm, blue_slpm, red_slpm - blue_slpm,
+        red_str_def, blue_str_def, red_str_def - blue_str_def,
+        red_td_def, blue_td_def, red_td_def - blue_td_def,
+        red_recent, blue_recent, red_recent - blue_recent,
+        red_exp, blue_exp, red_exp - blue_exp,
     ]
-    return np.array(features, dtype=np.float64)
+    return np.nan_to_num(np.array(features, dtype=np.float64), nan=0.0, posinf=0.0, neginf=0.0)
 
 
 def feature_hash(X: np.ndarray) -> str:
@@ -86,10 +145,14 @@ def train(X: np.ndarray, y: np.ndarray) -> tuple:
         ))
     ])
 
-    # Cross-validate
-    n_folds = min(5, len(y))
+    if len(np.unique(y)) < 2:
+        raise ValueError("Training labels must contain both red and blue wins")
+
+    _, class_counts = np.unique(y, return_counts=True)
+    n_folds = min(5, int(class_counts.min()))
     if n_folds >= 2:
-        scores = cross_val_score(pipe, X, y, cv=n_folds, scoring="accuracy")
+        cv = StratifiedKFold(n_splits=n_folds, shuffle=True, random_state=42)
+        scores = cross_val_score(pipe, X, y, cv=cv, scoring="accuracy")
         cv_acc = float(scores.mean())
     else:
         cv_acc = 0.0
@@ -97,7 +160,7 @@ def train(X: np.ndarray, y: np.ndarray) -> tuple:
     # Fit on all data
     pipe.fit(X, y)
 
-    version = f"v0.1.{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
+    version = f"v0.2.{datetime.utcnow().strftime('%Y%m%d%H%M%S')}"
     blob_path = os.path.join(model_dir, f"{version}.joblib")
     joblib.dump(pipe, blob_path)
 

@@ -12,6 +12,7 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 import jobs  # noqa: E402
 from db import init_db, log_prediction, get_unsynced_predictions  # noqa: E402
+from model import FEATURE_NAMES  # noqa: E402
 
 
 @contextmanager
@@ -62,11 +63,14 @@ def test_daily_predict_marks_only_current_batch_synced():
                 patched(jobs, "_post_json", fake_post_json), \
                 patched(jobs, "get_latest_model", lambda: {"blob_path": "unused", "version": "v.test"}), \
                 patched(jobs, "load_model", lambda _p: object()), \
-                patched(jobs, "engineer_features", lambda *_a, **_k: np.zeros(12)), \
+                patched(jobs, "engineer_features", lambda *_a, **_k: np.zeros(len(FEATURE_NAMES))), \
                 patched(jobs, "feature_hash", lambda _x: "hash123"), \
                 patched(jobs, "predict", lambda _pipe, _x: (0.6, 0.4)):
-            jobs.daily_predict()
+            result = jobs.daily_predict()
 
+        assert result["status"] == "ok"
+        assert result["predicted"] == 1
+        assert result["synced"] == 1
         assert sent_payloads, "Expected a sync payload to be sent"
         unsynced = get_unsynced_predictions()
         assert len(unsynced) == 1, f"Expected only backlog row unsynced, got {len(unsynced)}"
@@ -98,11 +102,27 @@ def test_weekly_retrain_uses_point_in_time_as_of():
             return None
 
         with patched(jobs, "_get_json", fake_get_json):
-            jobs.weekly_retrain()
+            result = jobs.weekly_retrain()
 
         assert any("/api/fighters/101/career-stats?as_of=2024-08-10" in p for p in requested_paths)
         assert any("/api/fighters/202/career-stats?as_of=2024-08-10" in p for p in requested_paths)
+        assert result["status"] == "skipped"
+        assert result["reason"] == "insufficient_labeled_fights"
         print("  PASS: weekly_retrain requests as_of point-in-time stats")
+
+
+def test_daily_predict_reports_no_model():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.environ["PREDICTIONS_DB_PATH"] = os.path.join(tmpdir, "predictions.db")
+        init_db()
+
+        with patched(jobs, "get_latest_model", lambda: None):
+            result = jobs.daily_predict()
+
+        assert result["status"] == "skipped"
+        assert result["reason"] == "no_model"
+        assert result["predicted"] == 0
+        print("  PASS: daily_predict reports no model")
 
 
 def test_sync_unsynced_marks_posted_rows_only():
@@ -140,5 +160,6 @@ if __name__ == "__main__":
     print("\n=== UFC Predictions Job Tests ===\n")
     test_daily_predict_marks_only_current_batch_synced()
     test_weekly_retrain_uses_point_in_time_as_of()
+    test_daily_predict_reports_no_model()
     test_sync_unsynced_marks_posted_rows_only()
-    print("\n=== All 3 job tests passed ===\n")
+    print("\n=== All 4 job tests passed ===\n")

@@ -5,7 +5,8 @@ Fight outcome prediction microservice for the UFC Tactical Dashboard.
 ## Architecture
 
 - **Single process** (`app.py`): FastAPI server with health/status, manual trigger endpoints, and in-process APScheduler cron jobs
-- **Model** (`model/`): Logistic regression with 12 engineered features
+- **Model** (`model/`): Regularized logistic regression with matchup deltas,
+  career aggregates, profile metrics, recent form, and experience features
 - **Local DB** (`db/`): SQLite for model blobs and prediction log
 
 ## Setup
@@ -74,17 +75,12 @@ curl -X POST http://localhost:8000/trigger/sync \
 - `nixpacks.web.toml` — split web service mode
 - `nixpacks.worker.toml` — split worker service mode
 
-## Features (12)
+## Feature Groups
 
-1. Red avg sig strikes per fight
-2. Blue avg sig strikes per fight
-3. Red sig strike accuracy
-4. Blue sig strike accuracy
-5. Red takedowns per fight
-6. Blue takedowns per fight
-7. Red control time per fight
-8. Blue control time per fight
-9. Reach delta (cm)
-10. Height delta (cm)
-11. Red win % last 3
-12. Blue win % last 3
+- Significant strike pace and accuracy, including red-blue deltas
+- Takedown pace and accuracy, including red-blue deltas
+- Control time, knockdowns, and submission attempts per fight
+- Reach and height deltas
+- Fighter profile metrics: SLpM, striking defense, and takedown defense
+- Recent form: win percentage over the last three fights
+- Experience: historical fight counts and matchup delta

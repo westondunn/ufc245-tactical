@@ -62,13 +62,111 @@ def _career_stats_path(fighter_id: int, as_of: str | None = None) -> str:
     return f"/api/fighters/{fighter_id}/career-stats"
 
 
-def _sync_predictions(predictions: list[dict], local_ids: list[int], label: str):
+def _sync_predictions(predictions: list[dict], local_ids: list[int], label: str) -> int:
     if not predictions:
-        return
+        return 0
     result = _post_json("/api/predictions/ingest", {"predictions": predictions})
     if result:
         mark_synced(local_ids)
         logger.info(f"Synced {len(predictions)} predictions ({label})")
+        return len(predictions)
+    return 0
+
+
+def _predict_window(days: int, label: str) -> dict:
+    """Predict and sync fights from today through the requested day window."""
+    logger.info(f"=== {label} start ===")
+    init_db()
+
+    model_rec = get_latest_model()
+    if not model_rec:
+        logger.warning("No trained model found. Run weekly_retrain first.")
+        return {
+            "status": "skipped",
+            "job": label,
+            "reason": "no_model",
+            "predicted": 0,
+            "synced": 0,
+        }
+
+    pipe = load_model(model_rec["blob_path"])
+    version = model_rec["version"]
+
+    today = datetime.utcnow().date()
+    cutoff = today + timedelta(days=days)
+
+    events = _get_json("/api/events") or []
+    predictions = []
+    local_prediction_ids = []
+    events_checked = 0
+    fights_seen = 0
+
+    for ev in events:
+        if not ev.get("date"):
+            continue
+        try:
+            ev_date = datetime.strptime(ev["date"], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if ev_date < today or ev_date > cutoff:
+            continue
+
+        events_checked += 1
+        card = _get_json(f"/api/events/{ev['id']}/card")
+        if not card or "card" not in card:
+            continue
+
+        for bout in card["card"]:
+            fights_seen += 1
+            red_stats = _get_json(_career_stats_path(bout["red_id"]))
+            blue_stats = _get_json(_career_stats_path(bout["blue_id"]))
+            red_fighter = red_stats.get("fighter", {}) if red_stats else {}
+            blue_fighter = blue_stats.get("fighter", {}) if blue_stats else {}
+            r_career = red_stats.get("stats") if red_stats else {}
+            b_career = blue_stats.get("stats") if blue_stats else {}
+
+            X = engineer_features(r_career, b_career, red_fighter, blue_fighter)
+            fhash = feature_hash(X)
+            red_prob, blue_prob = predict(pipe, X)
+
+            local_id = log_prediction(
+                fight_id=bout["id"],
+                red_id=bout["red_id"],
+                blue_id=bout["blue_id"],
+                red_prob=red_prob,
+                blue_prob=blue_prob,
+                model_version=version,
+                feature_hash=fhash,
+                event_date=ev["date"]
+            )
+            local_prediction_ids.append(local_id)
+            predictions.append({
+                "fight_id": bout["id"],
+                "red_fighter_id": bout["red_id"],
+                "blue_fighter_id": bout["blue_id"],
+                "red_win_prob": red_prob,
+                "blue_win_prob": blue_prob,
+                "model_version": version,
+                "feature_hash": fhash,
+                "predicted_at": datetime.utcnow().isoformat(),
+                "event_date": ev["date"]
+            })
+
+    synced = _sync_predictions(predictions, local_prediction_ids, label)
+    status = "ok" if synced == len(predictions) else "partial"
+    if not predictions:
+        status = "ok"
+
+    logger.info(f"=== {label} done ({len(predictions)} predictions, {synced} synced) ===")
+    return {
+        "status": status,
+        "job": label,
+        "model_version": version,
+        "events_checked": events_checked,
+        "fights_seen": fights_seen,
+        "predicted": len(predictions),
+        "synced": synced,
+    }
 
 
 def sync_unsynced(limit: int = 500) -> int:
@@ -103,149 +201,12 @@ def sync_unsynced(limit: int = 500) -> int:
 
 def daily_predict():
     """Predict outcomes for fights in the next 14 days."""
-    logger.info("=== daily_predict start ===")
-    init_db()
-
-    model_rec = get_latest_model()
-    if not model_rec:
-        logger.warning("No trained model found. Run weekly_retrain first.")
-        return
-
-    pipe = load_model(model_rec["blob_path"])
-    version = model_rec["version"]
-
-    today = datetime.utcnow().date()
-    cutoff = today + timedelta(days=14)
-
-    events = _get_json("/api/events") or []
-    predictions = []
-    local_prediction_ids = []
-
-    for ev in events:
-        if not ev.get("date"):
-            continue
-        try:
-            ev_date = datetime.strptime(ev["date"], "%Y-%m-%d").date()
-        except ValueError:
-            continue
-        if ev_date < today or ev_date > cutoff:
-            continue
-
-        card = _get_json(f"/api/events/{ev['id']}/card")
-        if not card or "card" not in card:
-            continue
-
-        for bout in card["card"]:
-            red_stats = _get_json(_career_stats_path(bout["red_id"]))
-            blue_stats = _get_json(_career_stats_path(bout["blue_id"]))
-            red_fighter = red_stats.get("fighter", {}) if red_stats else {}
-            blue_fighter = blue_stats.get("fighter", {}) if blue_stats else {}
-            r_career = red_stats.get("stats") if red_stats else {}
-            b_career = blue_stats.get("stats") if blue_stats else {}
-
-            X = engineer_features(r_career, b_career, red_fighter, blue_fighter)
-            fhash = feature_hash(X)
-            red_prob, blue_prob = predict(pipe, X)
-
-            local_id = log_prediction(
-                fight_id=bout["id"],
-                red_id=bout["red_id"],
-                blue_id=bout["blue_id"],
-                red_prob=red_prob,
-                blue_prob=blue_prob,
-                model_version=version,
-                feature_hash=fhash,
-                event_date=ev["date"]
-            )
-            local_prediction_ids.append(local_id)
-            predictions.append({
-                "fight_id": bout["id"],
-                "red_fighter_id": bout["red_id"],
-                "blue_fighter_id": bout["blue_id"],
-                "red_win_prob": red_prob,
-                "blue_win_prob": blue_prob,
-                "model_version": version,
-                "feature_hash": fhash,
-                "predicted_at": datetime.utcnow().isoformat(),
-                "event_date": ev["date"]
-            })
-
-    _sync_predictions(predictions, local_prediction_ids, "daily_predict")
-
-    logger.info(f"=== daily_predict done ({len(predictions)} predictions) ===")
+    return _predict_window(days=14, label="daily_predict")
 
 
 def refresh_near():
     """Re-predict fights in the next 48 hours (stats may have updated)."""
-    logger.info("=== refresh_near start ===")
-    # Same logic as daily_predict but with 2-day window
-    init_db()
-    model_rec = get_latest_model()
-    if not model_rec:
-        return
-
-    pipe = load_model(model_rec["blob_path"])
-    version = model_rec["version"]
-
-    today = datetime.utcnow().date()
-    cutoff = today + timedelta(days=2)
-
-    events = _get_json("/api/events") or []
-    predictions = []
-    local_prediction_ids = []
-
-    for ev in events:
-        if not ev.get("date"):
-            continue
-        try:
-            ev_date = datetime.strptime(ev["date"], "%Y-%m-%d").date()
-        except ValueError:
-            continue
-        if ev_date < today or ev_date > cutoff:
-            continue
-
-        card = _get_json(f"/api/events/{ev['id']}/card")
-        if not card or "card" not in card:
-            continue
-
-        for bout in card["card"]:
-            red_stats = _get_json(_career_stats_path(bout["red_id"]))
-            blue_stats = _get_json(_career_stats_path(bout["blue_id"]))
-            r_career = red_stats.get("stats") if red_stats else {}
-            b_career = blue_stats.get("stats") if blue_stats else {}
-            red_fighter = red_stats.get("fighter", {}) if red_stats else {}
-            blue_fighter = blue_stats.get("fighter", {}) if blue_stats else {}
-
-            X = engineer_features(r_career, b_career, red_fighter, blue_fighter)
-            fhash = feature_hash(X)
-            red_prob, blue_prob = predict(pipe, X)
-            local_id = log_prediction(
-                fight_id=bout["id"],
-                red_id=bout["red_id"],
-                blue_id=bout["blue_id"],
-                red_prob=red_prob,
-                blue_prob=blue_prob,
-                model_version=version,
-                feature_hash=fhash,
-                event_date=ev["date"]
-            )
-            local_prediction_ids.append(local_id)
-
-            predictions.append({
-                "fight_id": bout["id"],
-                "red_fighter_id": bout["red_id"],
-                "blue_fighter_id": bout["blue_id"],
-                "red_win_prob": red_prob,
-                "blue_win_prob": blue_prob,
-                "model_version": version,
-                "feature_hash": fhash,
-                "predicted_at": datetime.utcnow().isoformat(),
-                "event_date": ev["date"]
-            })
-
-    _sync_predictions(predictions, local_prediction_ids, "refresh_near")
-
-    logger.info("=== refresh_near done ===")
+    return _predict_window(days=2, label="refresh_near")
 
 
 def daily_reconcile():
@@ -279,12 +240,20 @@ def daily_reconcile():
                     "actual_winner_id": bout["winner_id"]
                 })
 
+    reconciled = 0
     if results:
         resp = _post_json("/api/predictions/reconcile", {"results": results})
         if resp:
-            logger.info(f"Reconciled {resp.get('reconciled', 0)} predictions")
+            reconciled = int(resp.get("reconciled", 0))
+            logger.info(f"Reconciled {reconciled} predictions")
 
     logger.info(f"=== daily_reconcile done ({len(results)} results checked) ===")
+    return {
+        "status": "ok",
+        "job": "daily_reconcile",
+        "results_checked": len(results),
+        "reconciled": reconciled,
+    }
 
 
 def weekly_retrain():
@@ -324,13 +293,35 @@ def weekly_retrain():
 
     if len(X_all) < 20:
         logger.warning(f"Only {len(X_all)} labeled fights -- need at least 20 to train")
-        return
+        return {
+            "status": "skipped",
+            "job": "weekly_retrain",
+            "reason": "insufficient_labeled_fights",
+            "n_train": len(X_all),
+            "min_required": 20,
+        }
 
     X_mat = np.array(X_all)
     y_vec = np.array(y_all)
+    if len(np.unique(y_vec)) < 2:
+        logger.warning("Training skipped: labels only contain one winner side")
+        return {
+            "status": "skipped",
+            "job": "weekly_retrain",
+            "reason": "single_class_labels",
+            "n_train": len(y_vec),
+        }
 
     pipe, cv_acc, version, blob_path = train(X_mat, y_vec)
     save_model_record(version, blob_path, FEATURE_NAMES, cv_acc, len(y_vec))
 
     logger.info(f"=== weekly_retrain done: {version}, "
                 f"accuracy={cv_acc:.3f}, n={len(y_vec)} ===")
+    return {
+        "status": "ok",
+        "job": "weekly_retrain",
+        "model_version": version,
+        "accuracy": cv_acc,
+        "n_train": len(y_vec),
+        "feature_count": len(FEATURE_NAMES),
+    }

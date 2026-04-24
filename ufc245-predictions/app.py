@@ -4,7 +4,6 @@ import logging
 
 from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException, Header
-from pydantic import BaseModel
 
 from db import init_db, get_latest_model, get_unsynced_predictions
 from jobs import daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced
@@ -96,37 +95,28 @@ def shutdown():
         logger.info("In-process scheduler stopped")
 
 
-class TriggerResponse(BaseModel):
-    status: str
-    job: str
-
-
 @app.post("/trigger/predict")
 def trigger_predict(x_prediction_key: str = Header(default="")):
     _require_key(x_prediction_key)
-    daily_predict()
-    return TriggerResponse(status="ok", job="daily_predict")
+    return daily_predict()
 
 
 @app.post("/trigger/refresh")
 def trigger_refresh(x_prediction_key: str = Header(default="")):
     _require_key(x_prediction_key)
-    refresh_near()
-    return TriggerResponse(status="ok", job="refresh_near")
+    return refresh_near()
 
 
 @app.post("/trigger/reconcile")
 def trigger_reconcile(x_prediction_key: str = Header(default="")):
     _require_key(x_prediction_key)
-    daily_reconcile()
-    return TriggerResponse(status="ok", job="daily_reconcile")
+    return daily_reconcile()
 
 
 @app.post("/trigger/retrain")
 def trigger_retrain(x_prediction_key: str = Header(default="")):
     _require_key(x_prediction_key)
-    weekly_retrain()
-    return TriggerResponse(status="ok", job="weekly_retrain")
+    return weekly_retrain()
 
 
 @app.post("/trigger/sync")

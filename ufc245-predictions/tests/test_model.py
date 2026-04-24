@@ -10,24 +10,29 @@ sys.path.insert(0, os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 
 
 def test_engineer_features():
-    from model import engineer_features
+    from model import FEATURE_NAMES, engineer_features
     red_stats = {
         "avg_sig_per_fight": 45.0, "sig_accuracy_pct": 48.0,
         "total_td_landed": 10, "total_fights": 5,
-        "total_control_sec": 300, "win_pct_last3": 0.67
+        "total_control_sec": 300, "total_knockdowns": 2,
+        "total_sub_attempts": 3, "win_pct_last3": 0.67,
     }
     blue_stats = {
         "avg_sig_per_fight": 38.0, "sig_accuracy_pct": 42.0,
         "total_td_landed": 6, "total_fights": 4,
-        "total_control_sec": 120, "win_pct_last3": 0.33
+        "total_control_sec": 120, "total_knockdowns": 1,
+        "total_sub_attempts": 0, "win_pct_last3": 0.33,
     }
-    red_fighter = {"reach_cm": 193, "height_cm": 183}
-    blue_fighter = {"reach_cm": 183, "height_cm": 180}
+    red_fighter = {"reach_cm": 193, "height_cm": 183, "slpm": 4.1, "str_def": 61, "td_def": 72}
+    blue_fighter = {"reach_cm": 183, "height_cm": 180, "slpm": 3.4, "str_def": 55, "td_def": 66}
 
     X = engineer_features(red_stats, blue_stats, red_fighter, blue_fighter)
-    assert X.shape == (12,), f"Expected 12 features, got {X.shape}"
-    assert X[0] == 45.0  # red sig per fight
-    assert X[8] == 10.0  # reach delta
+    assert X.shape == (len(FEATURE_NAMES),), f"Expected {len(FEATURE_NAMES)} features, got {X.shape}"
+    values = dict(zip(FEATURE_NAMES, X))
+    assert values["red_sig_str_landed_avg"] == 45.0
+    assert values["sig_str_landed_avg_delta"] == 7.0
+    assert values["reach_delta_cm"] == 10.0
+    assert abs(values["profile_str_def_delta"] - 0.06) < 1e-9
     print("  PASS: engineer_features")
 
 
@@ -44,19 +49,19 @@ def test_feature_hash():
 
 
 def test_train_and_predict():
-    from model import train, predict
+    from model import FEATURE_NAMES, train, predict
     # Use temp dir for model storage
     with tempfile.TemporaryDirectory() as tmpdir:
         os.environ["MODEL_DIR"] = tmpdir
         # Synthetic data: 50 fights
         rng = np.random.RandomState(42)
-        X = rng.randn(50, 12)
+        X = rng.randn(50, len(FEATURE_NAMES))
         y = (X[:, 0] + X[:, 1] > 0).astype(int)  # simple linear boundary
 
         pipe, cv_acc, version, blob_path = train(X, y)
         assert pipe is not None
         assert 0.0 <= cv_acc <= 1.0
-        assert version.startswith("v0.1.")
+        assert version.startswith("v0.2.")
         assert os.path.exists(blob_path)
         assert blob_path.startswith(tmpdir)
         print(f"  PASS: train (cv_acc={cv_acc:.3f}, version={version})")
@@ -97,11 +102,25 @@ def test_db_operations():
 
 
 def test_empty_inputs():
-    from model import engineer_features
+    from model import FEATURE_NAMES, engineer_features
     X = engineer_features({}, {}, {}, {})
-    assert X.shape == (12,)
+    assert X.shape == (len(FEATURE_NAMES),)
     assert not np.any(np.isnan(X))
     print("  PASS: empty inputs produce valid features")
+
+
+def test_single_class_training_rejected():
+    from model import FEATURE_NAMES, train
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.environ["MODEL_DIR"] = tmpdir
+        X = np.zeros((20, len(FEATURE_NAMES)))
+        y = np.ones(20)
+        try:
+            train(X, y)
+            raise AssertionError("Expected single-class labels to be rejected")
+        except ValueError as exc:
+            assert "both red and blue wins" in str(exc)
+    print("  PASS: single-class training rejected")
 
 
 if __name__ == "__main__":
@@ -111,4 +130,5 @@ if __name__ == "__main__":
     test_train_and_predict()
     test_db_operations()
     test_empty_inputs()
+    test_single_class_training_rejected()
     print("\n=== All 6 tests passed ===\n")
