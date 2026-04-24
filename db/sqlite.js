@@ -655,7 +655,10 @@ function upsertPick(input) {
   const { user_id, event_id, fight_id, picked_fighter_id, confidence, method_pick, round_pick, notes } = input;
   const lock = getPickLockState(user_id, fight_id);
   if (lock.locked) {
-    const err = new Error('pick_locked'); err.code = 'pick_locked'; err.reason = lock.reason;
+    const err = new Error('pick_locked');
+    err.code = 'pick_locked';
+    err.reason = lock.reason;
+    err.status = 409;
     throw err;
   }
   const now = new Date().toISOString();
@@ -866,6 +869,56 @@ function getUserStats(userId) {
   };
 }
 
+function getEventPickComparison(eventId) {
+  const fights = allRows(
+    `SELECT id, red_fighter_id, blue_fighter_id, red_name, blue_name, is_main, card_position
+     FROM fights WHERE event_id = ?
+     ORDER BY is_main DESC, card_position ASC, id ASC`,
+    [eventId]
+  );
+  const result = [];
+  for (const fight of fights) {
+    const pred = oneRow(
+      `SELECT * FROM predictions WHERE fight_id = ?
+       ORDER BY is_stale ASC, predicted_at DESC, id DESC LIMIT 1`,
+      [fight.id]
+    );
+    const agg = oneRow(
+      `SELECT
+         COUNT(*) AS total,
+         SUM(CASE WHEN picked_fighter_id = ? THEN 1 ELSE 0 END) AS picked_red,
+         SUM(CASE WHEN picked_fighter_id = ? THEN 1 ELSE 0 END) AS picked_blue,
+         ROUND(AVG(CASE WHEN picked_fighter_id = ? THEN confidence END)) AS avg_conf_red,
+         ROUND(AVG(CASE WHEN picked_fighter_id = ? THEN confidence END)) AS avg_conf_blue
+       FROM user_picks WHERE fight_id = ?`,
+      [fight.red_fighter_id, fight.blue_fighter_id, fight.red_fighter_id, fight.blue_fighter_id, fight.id]
+    );
+    result.push({
+      fight_id: fight.id,
+      red_fighter_id: fight.red_fighter_id,
+      blue_fighter_id: fight.blue_fighter_id,
+      red_name: fight.red_name,
+      blue_name: fight.blue_name,
+      is_main: fight.is_main,
+      model: pred ? {
+        version: pred.model_version,
+        red_win_prob: pred.red_win_prob,
+        blue_win_prob: pred.blue_win_prob,
+        picked_fighter_id: pred.red_win_prob >= pred.blue_win_prob ? fight.red_fighter_id : fight.blue_fighter_id,
+        confidence: Math.max(pred.red_win_prob, pred.blue_win_prob)
+      } : null,
+      users: {
+        total: agg ? (agg.total || 0) : 0,
+        picked_red: agg ? (agg.picked_red || 0) : 0,
+        picked_blue: agg ? (agg.picked_blue || 0) : 0,
+        avg_confidence_red: agg ? agg.avg_conf_red : null,
+        avg_confidence_blue: agg ? agg.avg_conf_blue : null
+      }
+    });
+  }
+  return result;
+}
+
 module.exports = {
   init, save, getDbStats,
   searchFighters, getFighter, getFighterEvents,
@@ -877,6 +930,6 @@ module.exports = {
   createUser, getUser, updateUser, deleteUser,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
   lockPicksForEvent, reconcilePicksForEvent,
-  getLeaderboard, getUserStats,
+  getLeaderboard, getUserStats, getEventPickComparison,
   nextId, run, allRows, oneRow
 };

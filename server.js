@@ -71,11 +71,20 @@ app.use('/api', (req, res, next) => {
 // API ROUTES
 // ============================================================
 
-// Error wrapper for async-safe route handlers
+// Error wrapper for async-safe route handlers.
+// Errors thrown with `err.status` + `err.code` map to that response (used by
+// ValidationError and the pick_locked error from the DB layer).
 function apiHandler(fn) {
   return async (req, res) => {
     try { await fn(req, res); }
     catch (err) {
+      if (err && err.status && err.code) {
+        return res.status(err.status).json({
+          error: err.code,
+          message: err.message,
+          ...(err.reason ? { reason: err.reason } : {})
+        });
+      }
       console.error(`[API ERROR] ${req.method} ${req.path}:`, err.message);
       res.status(500).json({ error: 'internal_error', message: NODE_ENV === 'development' ? err.message : 'An error occurred' });
     }
@@ -394,6 +403,130 @@ app.post('/api/predictions/reconcile', requirePredictionKey, apiHandler(async (r
 }));
 
 // ============================================================
+// USER PICKS API (additive, flag-gated via ENABLE_PICKS)
+// ============================================================
+const validate = require('./lib/validate');
+const rateLimit = require('./lib/rate-limit');
+const ENABLE_PICKS = /^(1|true|yes|on)$/i.test(String(process.env.ENABLE_PICKS || ''));
+const CREATE_USER_PER_HOUR = Math.max(1, parseInt(process.env.PICKS_RATE_LIMIT_CREATE_USER || '5', 10) || 5);
+const PICK_WRITES_PER_MIN = Math.max(1, parseInt(process.env.PICKS_RATE_LIMIT_PER_MIN || '60', 10) || 60);
+
+function requirePicksFlag(_req, res, next) {
+  if (!ENABLE_PICKS) return res.status(503).json({ error: 'picks_disabled', message: 'Set ENABLE_PICKS=true to enable' });
+  next();
+}
+
+async function requireUser(req, res, next) {
+  try {
+    const userId = req.headers['x-user-id'];
+    if (!userId) return res.status(401).json({ error: 'missing_user_id' });
+    const user = await db.getUser(userId);
+    if (!user) return res.status(401).json({ error: 'unknown_user' });
+    req.user = user;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+// Create profile (rate-limited per IP; override via PICKS_RATE_LIMIT_CREATE_USER)
+app.post('/api/users', requirePicksFlag, apiHandler(async (req, res) => {
+  const ip = req.ip || '0.0.0.0';
+  if (!rateLimit.consume('createUser:' + ip, CREATE_USER_PER_HOUR, 60 * 60 * 1000)) {
+    return res.status(429).json({ error: 'rate_limited', message: 'Too many profiles created from this IP' });
+  }
+  const input = validate.validateUserInput(req.body);
+  const user = await db.createUser(input);
+  await db.save();
+  res.json({ user });
+}));
+
+// Fetch profile (public — used to resume sessions)
+app.get('/api/users/:id', requirePicksFlag, apiHandler(async (req, res) => {
+  const user = await db.getUser(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user_not_found' });
+  res.json({ user });
+}));
+
+// Update own profile (self only)
+app.patch('/api/users/:id', requirePicksFlag, requireUser, apiHandler(async (req, res) => {
+  if (req.params.id !== req.user.id) return res.status(403).json({ error: 'forbidden' });
+  const patch = {};
+  if (req.body.display_name !== undefined) patch.display_name = validate.validateDisplayName(req.body.display_name);
+  if (req.body.avatar_key !== undefined)   patch.avatar_key   = validate.validateAvatarKey(req.body.avatar_key);
+  const user = await db.updateUser(req.params.id, patch);
+  await db.save();
+  res.json({ user });
+}));
+
+// Get user's picks (optionally filtered by event or reconciled state)
+app.get('/api/users/:id/picks', requirePicksFlag, apiHandler(async (req, res) => {
+  const user = await db.getUser(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user_not_found' });
+  const opts = {};
+  if (req.query.event_id) opts.event_id = parseInt(req.query.event_id, 10);
+  if (req.query.reconciled === '1') opts.reconciled = true;
+  if (req.query.reconciled === '0') opts.reconciled = false;
+  res.json({ picks: await db.getPicksForUser(req.params.id, opts) });
+}));
+
+// User accuracy + vs-model aggregate stats
+app.get('/api/users/:id/stats', requirePicksFlag, apiHandler(async (req, res) => {
+  const user = await db.getUser(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user_not_found' });
+  res.json({
+    user: { id: user.id, display_name: user.display_name, avatar_key: user.avatar_key },
+    stats: await db.getUserStats(req.params.id)
+  });
+}));
+
+// Submit / update a pick (UPSERT on user+fight; 409 if locked)
+app.post('/api/picks', requirePicksFlag, requireUser, apiHandler(async (req, res) => {
+  if (!rateLimit.consume('picks:' + req.user.id, PICK_WRITES_PER_MIN, 60 * 1000)) {
+    return res.status(429).json({ error: 'rate_limited' });
+  }
+  const input = validate.validatePickInput(req.body);
+  const result = await db.upsertPick({ ...input, user_id: req.user.id });
+  if (!result) return res.status(400).json({ error: 'upsert_failed' });
+  await db.save();
+  res.json(result);
+}));
+
+// Delete own pick (409 if locked)
+app.delete('/api/picks/:pickId', requirePicksFlag, requireUser, apiHandler(async (req, res) => {
+  const pickId = parseInt(req.params.pickId, 10);
+  if (!Number.isFinite(pickId)) return res.status(400).json({ error: 'invalid_pick_id' });
+  const result = await db.deletePick(req.user.id, pickId);
+  if (!result.deleted) {
+    const status = result.reason === 'not_found' ? 404 : 409;
+    return res.status(status).json({ error: result.reason });
+  }
+  await db.save();
+  res.json({ deleted: true });
+}));
+
+// All-time leaderboard
+app.get('/api/leaderboard', requirePicksFlag, apiHandler(async (req, res) => {
+  const limit = req.query.limit ? Math.min(parseInt(req.query.limit, 10) || 50, 500) : 50;
+  res.json({ leaderboard: await db.getLeaderboard({ limit }) });
+}));
+
+// Event-scoped leaderboard
+app.get('/api/events/:id/picks/leaderboard', requirePicksFlag, apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
+  const limit = req.query.limit ? Math.min(parseInt(req.query.limit, 10) || 50, 500) : 50;
+  res.json({ leaderboard: await db.getLeaderboard({ event_id: eventId, limit }) });
+}));
+
+// Per-fight user-pick-distribution vs model
+app.get('/api/events/:id/picks/model-comparison', requirePicksFlag, apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
+  res.json({ event_id: eventId, fights: await db.getEventPickComparison(eventId) });
+}));
+
+// ============================================================
 // STATIC + HEALTH + FALLBACK
 // ============================================================
 
@@ -409,14 +542,18 @@ app.get('/healthz', (_req, res) => {
   res.json({
     status: 'ok', service: 'ufc-tactical',
     version: ver.version, build: ver.full, buildTime: ver.buildTime,
-    uptime_s: Math.round(process.uptime()), node: process.version, env: NODE_ENV
+    uptime_s: Math.round(process.uptime()), node: process.version, env: NODE_ENV,
+    features: { picks: ENABLE_PICKS }
   });
 });
 
 // Version endpoint (consumed by frontend)
 app.get('/api/version', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
-  res.json({ version: ver.version, build: ver.full, sha: ver.buildSha, buildTime: ver.buildTime });
+  res.json({
+    version: ver.version, build: ver.full, sha: ver.buildSha, buildTime: ver.buildTime,
+    features: { picks: ENABLE_PICKS }
+  });
 });
 
 // ── ADMIN ENDPOINTS (protected by ADMIN_KEY) ──
@@ -442,6 +579,27 @@ app.post('/api/admin/save', requireAdmin, apiHandler(async (_req, res) => {
     console.log(`[cache] invalidated and re-warmed (${cache.size()} entries)`);
   }
   res.json({ status: ok ? 'saved' : 'not_persistent', dbPath: process.env.DB_PATH || process.env.DATABASE_URL || null, cacheEntries: cache.size() });
+}));
+
+// Lock all picks for an event (admin). Picks written after lock return 409.
+app.post('/api/admin/events/:id/lock-picks', requireAdmin, apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
+  const result = await db.lockPicksForEvent(eventId);
+  await db.save();
+  console.log(`[admin] lock-picks event=${eventId} locked=${result.locked}`);
+  res.json({ status: 'ok', event_id: eventId, ...result });
+}));
+
+// Reconcile all picks for an event (admin). Idempotent — re-running produces
+// identical point totals. Requires fights.winner_id to be populated.
+app.post('/api/admin/events/:id/reconcile-picks', requireAdmin, apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
+  const result = await db.reconcilePicksForEvent(eventId);
+  await db.save();
+  console.log(`[admin] reconcile-picks event=${eventId} reconciled=${result.reconciled} points=${result.points_awarded}`);
+  res.json({ status: 'ok', event_id: eventId, ...result });
 }));
 
 app.use((req, res) => {
