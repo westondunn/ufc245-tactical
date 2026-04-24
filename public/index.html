@@ -43,7 +43,87 @@
   <button class="primary-tab" data-tab="events">Events & Fights</button>
   <button class="primary-tab" data-tab="fighters">Fighters</button>
   <button class="primary-tab" data-tab="stats">Stat Leaders</button>
+  <button class="primary-tab picks-tab-btn" data-tab="picks" id="picksTabBtn" style="display:none">Picks</button>
 </nav>
+
+<!-- TAB: PICKS -->
+<div class="tab-content" id="tab-picks">
+  <div class="picks-header">
+    <div class="picks-header__title">
+      <div class="section-tag">Fight Picks</div>
+      <h2 class="section-title" style="font-size:28px">Your Picks</h2>
+    </div>
+    <div class="picks-header__chip" id="picksProfileChipSlot"></div>
+  </div>
+  <div class="picks-subnav" id="picksSubnav" style="display:none">
+    <button class="picks-subnav__btn active" data-picks-view="upcoming">Upcoming</button>
+    <button class="picks-subnav__btn" data-picks-view="history">My history</button>
+    <button class="picks-subnav__btn" data-picks-view="leaderboard">Leaderboard</button>
+  </div>
+  <div class="picks-body" id="picksBody">
+    <div class="picks-empty" id="picksEmpty">
+      <div class="picks-empty__title">No profile yet</div>
+      <div class="picks-empty__sub">Create a local profile to start making picks. No email, no password — just a name and an avatar.</div>
+      <button class="rec-btn" id="picksCreateProfileBtn">Create profile</button>
+    </div>
+  </div>
+</div>
+
+<!-- Profile modal (hidden by default) -->
+<div class="profile-modal" id="profileModal" style="display:none" aria-hidden="true">
+  <div class="profile-modal__scrim" data-modal-close="1"></div>
+  <div class="profile-modal__card" role="dialog" aria-modal="true" aria-labelledby="profileModalTitle">
+    <div class="profile-modal__head">
+      <div class="section-tag" style="color:var(--cyan)">Create profile</div>
+      <h3 class="profile-modal__title" id="profileModalTitle">Pick a display name + avatar</h3>
+      <div class="profile-modal__sub">Profiles live on this device. Keep your ID to log in on another browser.</div>
+    </div>
+    <div class="profile-modal__body">
+      <label class="profile-modal__label" for="profileDisplayName">Display name</label>
+      <input class="profile-modal__input" id="profileDisplayName" type="text" maxlength="40" placeholder="Your name or handle" autocomplete="off">
+      <div class="profile-modal__label" style="margin-top:18px">Avatar</div>
+      <div class="profile-avatar-grid" id="profileAvatarGrid"></div>
+      <div class="profile-modal__error" id="profileModalError" style="display:none"></div>
+    </div>
+    <div class="profile-modal__foot">
+      <button class="rec-btn" data-modal-close="1">Cancel</button>
+      <button class="rec-btn rec-btn--primary" id="profileSubmitBtn">Create profile</button>
+    </div>
+  </div>
+</div>
+
+<!-- Profile actions modal (edit / sign out / switch / export) -->
+<div class="profile-modal" id="profileActionsModal" style="display:none" aria-hidden="true">
+  <div class="profile-modal__scrim" data-modal-close="1"></div>
+  <div class="profile-modal__card" role="dialog" aria-modal="true">
+    <div class="profile-modal__head">
+      <div class="section-tag" style="color:var(--cyan)">Profile</div>
+      <h3 class="profile-modal__title" id="profileActionsTitle">Manage profile</h3>
+    </div>
+    <div class="profile-modal__body">
+      <div class="profile-actions-row">
+        <div class="profile-actions-row__key">Display name</div>
+        <div class="profile-actions-row__val" id="profileActionsName"></div>
+      </div>
+      <div class="profile-actions-row">
+        <div class="profile-actions-row__key">Your ID</div>
+        <code class="profile-actions-id" id="profileActionsId"></code>
+      </div>
+      <div class="profile-modal__hint">
+        Save your ID before clearing browser data — it's the only way to sign back in.
+      </div>
+      <div class="profile-actions-buttons">
+        <button class="rec-btn" id="profileActionEdit">Edit name / avatar</button>
+        <button class="rec-btn" id="profileActionCopy">Copy ID</button>
+        <button class="rec-btn" id="profileActionSwitch">Switch profile (paste ID)</button>
+        <button class="rec-btn" id="profileActionSignout" style="color:var(--red)">Sign out</button>
+      </div>
+    </div>
+    <div class="profile-modal__foot">
+      <button class="rec-btn" data-modal-close="1">Close</button>
+    </div>
+  </div>
+</div>
 
 <!-- TAB: EVENTS & FIGHTS -->
 <div class="tab-content" id="tab-events">

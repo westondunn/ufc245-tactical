@@ -749,7 +749,7 @@ function startTicker(){
     setTc._t = setTimeout(() => tc.classList.remove('is-updating'), 520);
   }
 
-  const tabTc = { events:'ALL EVENTS', fighters:'DIRECTORY', stats:'STAT LEADERS' };
+  const tabTc = { events:'ALL EVENTS', fighters:'DIRECTORY', stats:'STAT LEADERS', picks:'YOUR PICKS' };
 
   function resolveActive(){
     // When a non-dashboard tab is active, use its fixed TC value
@@ -3549,6 +3549,278 @@ async function loadStatsTab(){
   } catch(e){ grid.innerHTML = '<div style="color:var(--red)">Error loading stats</div>'; }
 }
 
+/* -----------------------------------------------------------
+   PICKS FEATURE — profile lifecycle + modal + chip
+
+   Identity: a server-issued UUID stored in localStorage.ufc_user.
+   On boot we check /api/version for features.picks; when true we show
+   the Picks tab and try to resume the local profile.
+----------------------------------------------------------- */
+const PICKS_STORAGE_KEY = 'ufc_user';
+const AVATAR_KEYS = Array.from({ length: 12 }, (_, i) => 'a' + (i + 1));
+let _picksFeatureEnabled = false;
+let _currentUser = null;
+let _selectedAvatarKey = 'a1';
+
+function getLocalProfile(){
+  try {
+    const raw = localStorage.getItem(PICKS_STORAGE_KEY);
+    if (!raw) return null;
+    const p = JSON.parse(raw);
+    return p && p.id && p.display_name ? p : null;
+  } catch { return null; }
+}
+
+function setLocalProfile(user){
+  if (!user) { localStorage.removeItem(PICKS_STORAGE_KEY); return; }
+  const compact = { id:user.id, display_name:user.display_name, avatar_key:user.avatar_key || null };
+  localStorage.setItem(PICKS_STORAGE_KEY, JSON.stringify(compact));
+}
+
+async function validateProfileWithServer(id){
+  try {
+    const res = await fetch('/api/users/' + encodeURIComponent(id));
+    if (!res.ok) return null;
+    const data = await res.json();
+    return data.user || null;
+  } catch { return null; }
+}
+
+function avatarInitial(name){
+  const first = String(name || '').trim().charAt(0);
+  return first ? first.toUpperCase() : '·';
+}
+
+function avatarHtml(user, size){
+  const sizeClass = size === 'lg' ? ' avatar--lg' : (size === 'xs' ? ' avatar--xs' : '');
+  const key = (user && user.avatar_key) || 'a1';
+  const initial = avatarInitial(user && user.display_name);
+  return `<span class="avatar${sizeClass}" data-avatar="${escHtml(key)}">${escHtml(initial)}</span>`;
+}
+
+function renderProfileChip(){
+  const slot = document.getElementById('picksProfileChipSlot');
+  const empty = document.getElementById('picksEmpty');
+  const subnav = document.getElementById('picksSubnav');
+  if (!slot) return;
+  if (!_currentUser) {
+    slot.innerHTML = '';
+    if (empty) empty.style.display = '';
+    if (subnav) subnav.style.display = 'none';
+    return;
+  }
+  slot.innerHTML = `
+    <button class="profile-chip" id="profileChipBtn" title="Manage profile">
+      ${avatarHtml(_currentUser)}
+      <span class="profile-chip__name">${escHtml(_currentUser.display_name)}</span>
+      <span class="profile-chip__caret">▾</span>
+    </button>
+  `;
+  document.getElementById('profileChipBtn').addEventListener('click', openProfileActionsModal);
+  if (empty) empty.style.display = 'none';
+  if (subnav) subnav.style.display = '';
+}
+
+function openModal(id){
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.style.display = '';
+  m.setAttribute('aria-hidden','false');
+}
+function closeModal(id){
+  const m = document.getElementById(id);
+  if (!m) return;
+  m.style.display = 'none';
+  m.setAttribute('aria-hidden','true');
+  const err = m.querySelector('.profile-modal__error');
+  if (err) { err.textContent = ''; err.style.display = 'none'; }
+}
+
+function renderAvatarGrid(){
+  const grid = document.getElementById('profileAvatarGrid');
+  if (!grid) return;
+  const nameEl = document.getElementById('profileDisplayName');
+  const initial = avatarInitial(nameEl ? nameEl.value : '');
+  grid.innerHTML = AVATAR_KEYS.map(k => `
+    <button type="button" class="avatar-pick${k === _selectedAvatarKey ? ' selected' : ''}" data-avatar-key="${k}">
+      <span class="avatar" data-avatar="${k}">${escHtml(initial)}</span>
+    </button>
+  `).join('');
+  grid.querySelectorAll('.avatar-pick').forEach(btn => {
+    btn.addEventListener('click', () => {
+      _selectedAvatarKey = btn.dataset.avatarKey;
+      renderAvatarGrid();
+    });
+  });
+}
+
+function openCreateProfileModal(prefill){
+  _selectedAvatarKey = (prefill && prefill.avatar_key) || 'a1';
+  const nameEl = document.getElementById('profileDisplayName');
+  const titleEl = document.getElementById('profileModalTitle');
+  const submitBtn = document.getElementById('profileSubmitBtn');
+  if (prefill) {
+    if (titleEl) titleEl.textContent = 'Update your profile';
+    if (submitBtn) submitBtn.textContent = 'Save changes';
+    if (nameEl) nameEl.value = prefill.display_name || '';
+  } else {
+    if (titleEl) titleEl.textContent = 'Pick a display name + avatar';
+    if (submitBtn) submitBtn.textContent = 'Create profile';
+    if (nameEl) nameEl.value = '';
+  }
+  renderAvatarGrid();
+  openModal('profileModal');
+  setTimeout(() => { if (nameEl) nameEl.focus(); }, 50);
+}
+
+function showProfileError(msg){
+  const err = document.getElementById('profileModalError');
+  if (!err) return;
+  err.textContent = msg;
+  err.style.display = '';
+}
+
+async function submitProfile(){
+  const nameEl = document.getElementById('profileDisplayName');
+  const name = (nameEl && nameEl.value || '').trim();
+  if (!name) { showProfileError('Display name is required.'); return; }
+  if (name.length > 40) { showProfileError('Display name max 40 characters.'); return; }
+
+  const submitBtn = document.getElementById('profileSubmitBtn');
+  if (submitBtn) submitBtn.disabled = true;
+  const body = { display_name: name, avatar_key: _selectedAvatarKey };
+  try {
+    if (_currentUser) {
+      // Update existing
+      const res = await fetch('/api/users/' + encodeURIComponent(_currentUser.id), {
+        method:'PATCH',
+        headers:{ 'Content-Type':'application/json', 'X-User-Id': _currentUser.id },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message || e.error || 'Update failed'); }
+      const data = await res.json();
+      _currentUser = data.user;
+      setLocalProfile(_currentUser);
+    } else {
+      const res = await fetch('/api/users', {
+        method:'POST',
+        headers:{ 'Content-Type':'application/json' },
+        body: JSON.stringify(body)
+      });
+      if (!res.ok) { const e = await res.json().catch(()=>({})); throw new Error(e.message || e.error || 'Create failed'); }
+      const data = await res.json();
+      _currentUser = data.user;
+      setLocalProfile(_currentUser);
+    }
+    renderProfileChip();
+    closeModal('profileModal');
+  } catch (err) {
+    showProfileError(err.message || 'Something went wrong');
+  } finally {
+    if (submitBtn) submitBtn.disabled = false;
+  }
+}
+
+function openProfileActionsModal(){
+  if (!_currentUser) return;
+  const nameEl = document.getElementById('profileActionsName');
+  const idEl = document.getElementById('profileActionsId');
+  if (nameEl) nameEl.textContent = _currentUser.display_name;
+  if (idEl) idEl.textContent = _currentUser.id;
+  openModal('profileActionsModal');
+}
+
+async function switchProfile(){
+  const id = prompt('Paste your user ID:');
+  if (!id) return;
+  const trimmed = id.trim();
+  const user = await validateProfileWithServer(trimmed);
+  if (!user) { alert('No profile found for that ID.'); return; }
+  _currentUser = user;
+  setLocalProfile(user);
+  renderProfileChip();
+  closeModal('profileActionsModal');
+}
+
+function copyProfileId(){
+  if (!_currentUser) return;
+  navigator.clipboard.writeText(_currentUser.id).then(() => {
+    const btn = document.getElementById('profileActionCopy');
+    if (btn) { const orig = btn.textContent; btn.textContent = 'Copied ✓'; setTimeout(() => btn.textContent = orig, 1400); }
+  }).catch(() => { alert('Copy failed — here is your ID:\n\n' + _currentUser.id); });
+}
+
+function signOutProfile(){
+  if (!confirm('Sign out?\n\nYour picks stay on the server. Save your ID first if you want to sign back in later.')) return;
+  _currentUser = null;
+  setLocalProfile(null);
+  renderProfileChip();
+  closeModal('profileActionsModal');
+}
+
+function setupPicksUi(){
+  // Dismiss modals on scrim / close button
+  document.querySelectorAll('[data-modal-close]').forEach(el => {
+    el.addEventListener('click', (e) => {
+      const modal = e.currentTarget.closest('.profile-modal');
+      if (modal) closeModal(modal.id);
+    });
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key !== 'Escape') return;
+    document.querySelectorAll('.profile-modal').forEach(m => {
+      if (m.style.display !== 'none') closeModal(m.id);
+    });
+  });
+
+  // Live-update avatar initial as user types the name
+  const nameEl = document.getElementById('profileDisplayName');
+  if (nameEl) nameEl.addEventListener('input', renderAvatarGrid);
+
+  // Submit handlers
+  const submit = document.getElementById('profileSubmitBtn');
+  if (submit) submit.addEventListener('click', submitProfile);
+  if (nameEl) nameEl.addEventListener('keydown', (e) => {
+    if (e.key === 'Enter') submitProfile();
+  });
+
+  // Empty-state CTA
+  const createBtn = document.getElementById('picksCreateProfileBtn');
+  if (createBtn) createBtn.addEventListener('click', () => openCreateProfileModal(null));
+
+  // Actions modal wiring
+  const edit    = document.getElementById('profileActionEdit');
+  const copy    = document.getElementById('profileActionCopy');
+  const swt     = document.getElementById('profileActionSwitch');
+  const signout = document.getElementById('profileActionSignout');
+  if (edit) edit.addEventListener('click', () => { closeModal('profileActionsModal'); openCreateProfileModal(_currentUser); });
+  if (copy) copy.addEventListener('click', copyProfileId);
+  if (swt) swt.addEventListener('click', switchProfile);
+  if (signout) signout.addEventListener('click', signOutProfile);
+}
+
+async function initPicksFeature(){
+  setupPicksUi();
+  // Check feature flag
+  try {
+    const res = await fetch('/api/version');
+    const data = await res.json();
+    _picksFeatureEnabled = !!(data.features && data.features.picks);
+  } catch { _picksFeatureEnabled = false; }
+  const tabBtn = document.getElementById('picksTabBtn');
+  if (!_picksFeatureEnabled) { if (tabBtn) tabBtn.style.display = 'none'; return; }
+  if (tabBtn) tabBtn.style.display = '';
+
+  // Resume local profile
+  const local = getLocalProfile();
+  if (local) {
+    const server = await validateProfileWithServer(local.id);
+    if (server) { _currentUser = server; setLocalProfile(server); }
+    else setLocalProfile(null);              // stale id — clear it
+  }
+  renderProfileChip();
+}
+
 // Init each module independently — one failure must not cascade
 const _inits = [
   ['renderPaceChart', renderPaceChart],
@@ -3562,7 +3834,8 @@ const _inits = [
   ['setupPrimaryTabs', setupPrimaryTabs],
   ['setupFightSelector', setupFightSelector],
   ['setupComparePanel', setupComparePanel],
-  ['startTicker', startTicker]
+  ['startTicker', startTicker],
+  ['initPicksFeature', initPicksFeature]
 ];
 _inits.forEach(([name, fn]) => {
   try { fn(); }
