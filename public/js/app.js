@@ -3978,13 +3978,21 @@ async function populatePicksEventSelect(){
   try {
     const res = await fetch('/api/events');
     const events = await res.json();
+    // Sort: most recent date first (DESC). Null dates sort last.
+    events.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
     sel.innerHTML = events
-      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
       .map(e => `<option value="${e.id}">UFC ${e.number || '—'} · ${escHtml(e.name)}${e.date ? ' · ' + e.date : ''}</option>`)
       .join('');
-    // Default to UFC 245 (demo event) if present, else the most recent
-    const ufc245 = events.find(e => e.number === 245);
-    sel.value = String(ufc245 ? ufc245.id : events[0].id);
+
+    // Default selection: nearest upcoming event (earliest future date), else
+    // the most recent past event. "Today" uses ISO date string comparison.
+    const today = new Date().toISOString().slice(0, 10);
+    const futureEvents = events.filter(e => (e.date || '') > today);
+    const defaultEvent = futureEvents.length > 0
+      ? futureEvents[futureEvents.length - 1]   // earliest future (events sorted DESC)
+      : events[0];                              // most recent otherwise
+
+    sel.value = String(defaultEvent.id);
     _picksState.eventId = parseInt(sel.value, 10);
     sel.addEventListener('change', () => {
       _picksState.eventId = parseInt(sel.value, 10);
@@ -4025,16 +4033,35 @@ async function loadUpcomingView(){
     _picksState.userPicks = new Map((picks || []).map(p => [p.fight_id, p]));
     _picksState.modelByFightId = new Map((compFights || []).map(c => [c.fight_id, c.model]));
 
+    // Upcoming view shows only fights without a winner. Concluded fights
+    // appear in "My history" with their points + correctness.
+    const openFights = normalized.filter(f => f.winner_id == null);
     const hint = document.getElementById('picksEventHint');
     if (hint) {
-      const total = card.length;
-      const locked = card.filter(f => f.winner_id != null).length;
-      hint.textContent = locked === total
-        ? 'All fights concluded — pick editing is disabled.'
-        : `${total - locked} of ${total} fights open for picks`;
+      const total = normalized.length;
+      const open = openFights.length;
+      if (total === 0) {
+        hint.textContent = 'No fights on this card.';
+      } else if (open === 0) {
+        hint.textContent = `All ${total} fights concluded · see History`;
+      } else if (open === total) {
+        hint.textContent = `${open} upcoming fight${open === 1 ? '' : 's'}`;
+      } else {
+        hint.textContent = `${open} upcoming · ${total - open} concluded (see History)`;
+      }
     }
-    fightsEl.innerHTML = normalized.map(f => renderPickWidget(f)).join('');
-    attachPickHandlers(fightsEl);
+
+    if (openFights.length === 0) {
+      fightsEl.innerHTML = `
+        <div class="picks-placeholder">
+          No open fights on this card — every fight is concluded.<br>
+          Check <strong>My History</strong> for any picks you already made,
+          or pick a different event from the dropdown.
+        </div>`;
+    } else {
+      fightsEl.innerHTML = openFights.map(f => renderPickWidget(f)).join('');
+      attachPickHandlers(fightsEl);
+    }
   } catch (e) {
     fightsEl.innerHTML = '<div class="picks-placeholder">Failed to load this event\'s card.</div>';
   } finally {

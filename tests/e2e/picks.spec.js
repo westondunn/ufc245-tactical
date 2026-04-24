@@ -226,10 +226,9 @@ test.describe('Picks API — admin', () => {
 });
 
 test.describe('Picks UI — widget rendering', () => {
-  test('Picks tab renders the fight card after profile creation', async ({ page }) => {
+  test('Picks tab renders the Upcoming view after profile creation', async ({ page }) => {
     await page.goto('/');
     await page.waitForLoadState('networkidle');
-    // Picks tab button is rendered only after /api/version confirms the flag
     const picksBtn = page.locator('#picksTabBtn');
     await expect(picksBtn).toBeVisible();
     await picksBtn.click();
@@ -240,21 +239,39 @@ test.describe('Picks UI — widget rendering', () => {
     await page.locator('.avatar-pick[data-avatar-key="a4"]').click();
     await page.locator('#profileSubmitBtn').click();
 
-    // Chip appears
+    // Chip appears + upcoming view is active
+    await expect(page.locator('#profileChipBtn')).toBeVisible();
+    await expect(page.locator('#picksViewUpcoming')).toBeVisible();
+
+    // Default event is the nearest upcoming (or most recent if none). Either
+    // a .pick-fight widget or the empty placeholder must render.
+    const widgetOrEmpty = page.locator('.pick-fight, .picks-fights .picks-placeholder').first();
+    await expect(widgetOrEmpty).toBeVisible({ timeout: 8000 });
+
+    // Hint line reflects open vs concluded counts (always populated after load)
+    await expect(page.locator('#picksEventHint')).not.toBeEmpty();
+  });
+
+  test('Upcoming view hides concluded fights (only open fights get widgets)', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await page.locator('#picksTabBtn').click();
+    await expect(page.locator('#profileModal')).toBeVisible();
+    await page.locator('#profileDisplayName').fill('Filter Tester');
+    await page.locator('#profileSubmitBtn').click();
     await expect(page.locator('#profileChipBtn')).toBeVisible();
 
-    // Widget renders — wait for at least one pick-fight card
-    await expect(page.locator('.pick-fight').first()).toBeVisible({ timeout: 8000 });
+    // Switch to UFC 245 via dropdown — all fights concluded in the seed
+    const sel = page.locator('#picksEventSelect');
+    await expect(sel).toBeVisible();
+    const ufc245Option = sel.locator('option', { hasText: 'UFC 245' });
+    const ufc245Value = await ufc245Option.getAttribute('value');
+    await sel.selectOption(ufc245Value);
 
-    // Main event has the cyan left bar
-    await expect(page.locator('.pick-fight.is-main')).toBeVisible();
-
-    // Outcome banner shows WINNER (since UFC 245 fights all have winner_id)
-    await expect(page.locator('.pick-outcome').first()).toBeVisible();
-
-    // Pick buttons are disabled on locked fights
-    const firstFighter = page.locator('.pick-fight.is-main .pick-fighter').first();
-    await expect(firstFighter).toBeDisabled();
+    // Expect the empty-state placeholder, NOT any .pick-fight widgets
+    await expect(page.locator('.picks-fights .picks-placeholder')).toBeVisible({ timeout: 8000 });
+    await expect(page.locator('.pick-fight')).toHaveCount(0);
+    await expect(page.locator('#picksEventHint')).toContainText(/concluded/i);
   });
 
   test('subnav switches between views', async ({ page }) => {
