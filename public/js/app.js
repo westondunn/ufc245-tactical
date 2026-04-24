@@ -4190,29 +4190,182 @@ async function loadHistoryView(){
   if (!body) return;
   body.innerHTML = '<div class="picks-loading">Loading history…</div>';
   try {
-    const res = await fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?reconciled=1`);
-    const { picks } = await res.json();
+    const [picksRes, statsRes] = await Promise.all([
+      fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?reconciled=1`),
+      fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/stats`)
+    ]);
+    const { picks } = await picksRes.json();
+    const { stats } = await statsRes.json();
+
+    const stripHtml = renderPicksStatsStrip(stats);
+
     if (!picks || picks.length === 0) {
-      body.innerHTML = '<div class="picks-placeholder">No reconciled picks yet. Make picks on upcoming events — your history appears here once results are in.</div>';
+      body.innerHTML = stripHtml +
+        '<div class="picks-placeholder">No reconciled picks yet. Make picks on upcoming events — your history appears here once results are in.</div>';
       return;
     }
-    body.innerHTML = picks.map(p => {
-      const correct = p.correct === 1;
-      const wrong = p.correct === 0;
-      const pickedName = p.picked_fighter_name || (p.picked_fighter_id === p.red_fighter_id ? p.red_name : p.blue_name);
-      const winnerName = p.actual_winner_id === p.red_fighter_id ? p.red_name : (p.actual_winner_id === p.blue_fighter_id ? p.blue_name : '—');
-      return `
-        <div class="pick-outcome ${correct ? 'is-correct' : (wrong ? 'is-wrong' : '')}" style="margin-bottom:8px">
-          <div>
-            <div class="pick-outcome__winner">${escHtml(pickedName)} · ${correct ? 'CORRECT' : (wrong ? 'WRONG' : '—')}</div>
-            <div class="pick-outcome__detail">${escHtml(p.red_name)} vs ${escHtml(p.blue_name)} · winner: ${escHtml(winnerName)} · ${escHtml(p.method || '')}${p.fight_round ? ' R' + p.fight_round : ''}</div>
-          </div>
-          <div></div>
-          <div class="pick-outcome__points">${p.points || 0} pts</div>
-        </div>`;
-    }).join('');
+
+    // Group picks by event_id
+    const byEvent = new Map();
+    for (const p of picks) {
+      const key = p.event_id;
+      if (!byEvent.has(key)) byEvent.set(key, { event: p, picks: [] });
+      byEvent.get(key).picks.push(p);
+    }
+
+    const groupsHtml = Array.from(byEvent.values())
+      .sort((a, b) => (b.event.event_date || '').localeCompare(a.event.event_date || ''))
+      .map(g => renderHistoryEventGroup(g)).join('');
+
+    body.innerHTML = stripHtml + groupsHtml;
   } catch (e) {
     body.innerHTML = '<div class="picks-placeholder">Failed to load history.</div>';
+  }
+}
+
+function renderPicksStatsStrip(stats){
+  if (!stats) return '';
+  const total = stats.total_picks || 0;
+  const correct = stats.correct_count || 0;
+  const acc = stats.accuracy_pct;
+  const points = stats.points || 0;
+  const beatModel = (stats.vs_model && stats.vs_model.beat_model_count) || 0;
+  return `
+    <div class="picks-stats-strip">
+      <div class="picks-stat">
+        <div class="picks-stat__label">Points</div>
+        <div class="picks-stat__value picks-stat__value--cyan">${points}</div>
+        <div class="picks-stat__sub">across ${total} reconciled pick${total === 1 ? '' : 's'}</div>
+      </div>
+      <div class="picks-stat">
+        <div class="picks-stat__label">Accuracy</div>
+        <div class="picks-stat__value">${acc != null ? acc + '%' : '—'}</div>
+        <div class="picks-stat__sub">${correct} correct / ${total}</div>
+      </div>
+      <div class="picks-stat">
+        <div class="picks-stat__label">Beat the model</div>
+        <div class="picks-stat__value picks-stat__value--green">${beatModel}</div>
+        <div class="picks-stat__sub">picks right where model was wrong</div>
+      </div>
+      <div class="picks-stat">
+        <div class="picks-stat__label">Best call</div>
+        <div class="picks-stat__value">${total > 0 ? Math.round((points / total) * 10) / 10 : '—'}</div>
+        <div class="picks-stat__sub">points per pick (avg)</div>
+      </div>
+    </div>
+  `;
+}
+
+function renderHistoryEventGroup(g){
+  const e = g.event;
+  const picks = g.picks;
+  const totalPts = picks.reduce((s, p) => s + (p.points || 0), 0);
+  const correctN = picks.filter(p => p.correct === 1).length;
+  const title = `UFC ${e.event_number || '—'} · ${escHtml(e.event_name || '')}`;
+  const sub = e.event_date ? escHtml(e.event_date) : '';
+  return `
+    <div class="picks-history-event">
+      <div class="picks-history-event__head">
+        <div class="picks-history-event__title">${title}</div>
+        <div class="picks-history-event__sub">${sub}</div>
+        <div class="picks-history-event__score"><strong>${totalPts} pts</strong> · ${correctN}/${picks.length}</div>
+      </div>
+      ${picks.map(p => renderHistoryPickRow(p)).join('')}
+    </div>
+  `;
+}
+
+function renderHistoryPickRow(p){
+  const correct = p.correct === 1;
+  const wrong = p.correct === 0;
+  const voided = p.correct === 0 && p.actual_winner_id == null;
+  const statusIcon = voided ? '·' : (correct ? '✓' : '✗');
+  const statusCls = voided ? 'is-void' : (correct ? 'is-correct' : 'is-wrong');
+  const rowCls = correct ? 'is-correct' : (wrong ? 'is-wrong' : '');
+
+  const pickedName = p.picked_fighter_name
+    || (p.picked_fighter_id === p.red_fighter_id ? p.red_name : p.blue_name);
+  const winnerName = p.actual_winner_id === p.red_fighter_id ? p.red_name
+    : (p.actual_winner_id === p.blue_fighter_id ? p.blue_name : null);
+
+  const badges = [];
+  if (p.method_correct === 1) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--method">+ method</span>');
+  if (p.round_correct === 1)  badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--round">+ round</span>');
+  if (correct && p.user_agreed_with_model === 0) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--upset">beat model</span>');
+  if (p.user_agreed_with_model === 1) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--agreed">w/ model</span>');
+
+  const matchup = `<strong>${escHtml(pickedName)}</strong> · ${escHtml(p.red_name)} vs ${escHtml(p.blue_name)}`;
+  const meta = voided
+    ? `Draw / NC · no points awarded`
+    : `${winnerName ? 'Winner: ' + escHtml(winnerName) : 'No winner'}${p.method ? ' · ' + escHtml(p.method) : ''}${p.fight_round ? ' · R' + p.fight_round : ''} · Your conf ${p.confidence || 0}%`;
+
+  const points = p.points || 0;
+  const pointsCls = points === 0 ? ' picks-history-pick__points--zero' : '';
+
+  return `
+    <div class="picks-history-pick ${rowCls}">
+      <div class="picks-history-pick__status ${statusCls}">${statusIcon}</div>
+      <div class="picks-history-pick__body">
+        <div class="picks-history-pick__matchup">${matchup}</div>
+        <div class="picks-history-pick__meta">${meta}${badges.length ? ' · ' + badges.join(' ') : ''}</div>
+      </div>
+      <div class="picks-history-pick__points${pointsCls}">${points} pts</div>
+    </div>
+  `;
+}
+
+async function loadLeaderboardView(){
+  const body = document.getElementById('picksLeaderboardBody');
+  if (!body) return;
+  body.innerHTML = '<div class="picks-loading">Loading leaderboard…</div>';
+  try {
+    const url = _picksState.lbScope === 'event' && _picksState.eventId
+      ? `/api/events/${_picksState.eventId}/picks/leaderboard?limit=500`
+      : '/api/leaderboard?limit=500';
+    const res = await fetch(url);
+    const { leaderboard } = await res.json();
+    if (!leaderboard || leaderboard.length === 0) {
+      body.innerHTML = '<div class="picks-placeholder">Leaderboard is empty. Once users\' picks are reconciled, rankings show here.</div>';
+      return;
+    }
+
+    const TOP_N = 50;
+    const top = leaderboard.slice(0, TOP_N);
+    const userRankIdx = _currentUser ? leaderboard.findIndex(r => r.user_id === _currentUser.id) : -1;
+    const meInTop = userRankIdx >= 0 && userRankIdx < TOP_N;
+    const meRow = userRankIdx >= 0 ? leaderboard[userRankIdx] : null;
+
+    const tableHtml = `
+      <table class="picks-leaderboard">
+        <thead>
+          <tr><th>#</th><th>User</th><th>Picks</th><th>Correct</th><th>Accuracy</th><th>Points</th></tr>
+        </thead>
+        <tbody>
+          ${top.map((row, i) => {
+            const isMe = _currentUser && row.user_id === _currentUser.id;
+            return `
+              <tr class="${isMe ? 'me' : ''}">
+                <td class="num">${i + 1}</td>
+                <td>${avatarHtml({ avatar_key: row.avatar_key, display_name: row.display_name }, 'xs')} ${escHtml(row.display_name)}${isMe ? ' <span style="color:var(--cyan)">(you)</span>' : ''}</td>
+                <td>${row.picks}</td>
+                <td>${row.correct_count}</td>
+                <td>${row.accuracy_pct != null ? row.accuracy_pct + '%' : '—'}</td>
+                <td class="num">${row.points}</td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+
+    const youRowHtml = (meRow && !meInTop)
+      ? `<div class="picks-leaderboard-you-row">
+           ${avatarHtml({ avatar_key: meRow.avatar_key, display_name: meRow.display_name })}
+           <div>You are ranked <strong>#${userRankIdx + 1}</strong> of ${leaderboard.length} — ${meRow.points} pts · ${meRow.correct_count}/${meRow.picks} correct${meRow.accuracy_pct != null ? ' (' + meRow.accuracy_pct + '%)' : ''}</div>
+         </div>`
+      : '';
+
+    body.innerHTML = tableHtml + youRowHtml;
+  } catch (e) {
+    body.innerHTML = '<div class="picks-placeholder">Failed to load leaderboard.</div>';
   }
 }
 

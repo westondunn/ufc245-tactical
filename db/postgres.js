@@ -930,6 +930,7 @@ async function getPicksForUser(userId, opts = {}) {
       p.*,
       f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name, f.winner_id, f.method, f.round AS fight_round,
       f.is_main, f.weight_class,
+      ev.number AS event_number, ev.name AS event_name, ev.date AS event_date,
       fp.name AS picked_fighter_name,
       s.model_version AS model_version,
       s.model_picked_fighter_id AS model_picked_fighter_id,
@@ -937,13 +938,14 @@ async function getPicksForUser(userId, opts = {}) {
       s.user_agreed_with_model AS user_agreed_with_model
     FROM user_picks p
     JOIN fights f ON f.id = p.fight_id
+    LEFT JOIN events ev ON ev.id = p.event_id
     LEFT JOIN fighters fp ON fp.id = p.picked_fighter_id
     LEFT JOIN pick_model_snapshots s ON s.user_pick_id = p.id
     WHERE p.user_id = ?`;
   if (opts.event_id) { sql += ' AND p.event_id = ?'; params.push(opts.event_id); }
   if (opts.reconciled === true)  sql += ' AND p.correct IS NOT NULL';
   if (opts.reconciled === false) sql += ' AND p.correct IS NULL';
-  sql += ' ORDER BY p.event_id DESC, p.fight_id ASC';
+  sql += ' ORDER BY ev.date DESC, p.event_id DESC, p.fight_id ASC';
   return allRows(sql, params);
 }
 

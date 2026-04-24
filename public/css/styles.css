@@ -2277,6 +2277,95 @@ footer{
 .pick-outcome.is-wrong{border-color:var(--red)}
 .pick-outcome.is-wrong .pick-outcome__winner{color:var(--red)}
 
+/* Stats strip — shown atop history view */
+.picks-stats-strip{
+  display:grid;
+  grid-template-columns:repeat(4,1fr);
+  gap:1px;background:var(--border);
+  border:1px solid var(--border);margin-bottom:22px;
+}
+.picks-stat{
+  background:var(--bg-card);padding:14px 16px;
+  display:flex;flex-direction:column;gap:4px;
+}
+.picks-stat__label{
+  font-family:var(--f-mono);font-size:9px;letter-spacing:.16em;
+  color:var(--muted);text-transform:uppercase;
+}
+.picks-stat__value{
+  font-family:var(--f-disp);font-size:24px;font-weight:700;
+  color:var(--fg);line-height:1.1;letter-spacing:.02em;
+}
+.picks-stat__value--cyan{color:var(--cyan)}
+.picks-stat__value--green{color:var(--green)}
+.picks-stat__sub{
+  font-family:var(--f-mono);font-size:10px;color:var(--muted);
+  letter-spacing:.04em;
+}
+
+/* History grouped by event */
+.picks-history-event{margin-bottom:22px}
+.picks-history-event__head{
+  display:flex;align-items:baseline;gap:12px;
+  padding:8px 0;margin-bottom:8px;
+  border-bottom:1px solid var(--border);
+}
+.picks-history-event__title{
+  font-family:var(--f-disp);font-size:16px;font-weight:600;
+  letter-spacing:.04em;color:var(--fg);
+}
+.picks-history-event__sub{
+  font-family:var(--f-mono);font-size:10px;color:var(--muted);
+  letter-spacing:.08em;text-transform:uppercase;
+}
+.picks-history-event__score{
+  margin-left:auto;
+  font-family:var(--f-mono);font-size:11px;color:var(--fg);
+  letter-spacing:.04em;
+}
+.picks-history-event__score strong{color:var(--cyan)}
+
+.picks-history-pick{
+  display:grid;
+  grid-template-columns:32px 1fr auto;
+  gap:14px;align-items:center;
+  padding:10px 14px;
+  background:var(--bg-card);
+  border:1px solid var(--border);
+  border-left:3px solid var(--muted-dim);
+  margin-bottom:6px;
+  font-family:var(--f-mono);font-size:11px;
+}
+.picks-history-pick.is-correct{border-left-color:var(--green)}
+.picks-history-pick.is-wrong{border-left-color:var(--red)}
+.picks-history-pick__status{
+  font-size:14px;text-align:center;
+}
+.picks-history-pick__status.is-correct{color:var(--green)}
+.picks-history-pick__status.is-wrong{color:var(--red)}
+.picks-history-pick__status.is-void{color:var(--muted-dim)}
+.picks-history-pick__body{min-width:0}
+.picks-history-pick__matchup{color:var(--fg-dim);line-height:1.5}
+.picks-history-pick__matchup strong{color:var(--fg)}
+.picks-history-pick__meta{
+  color:var(--muted);font-size:10px;letter-spacing:.04em;margin-top:2px;
+  display:flex;gap:8px;flex-wrap:wrap;
+}
+.picks-history-pick__badge{
+  display:inline-block;padding:1px 6px;
+  border:1px solid currentColor;font-size:9px;letter-spacing:.1em;
+  text-transform:uppercase;
+}
+.picks-history-pick__badge--method{color:var(--amber)}
+.picks-history-pick__badge--round{color:var(--amber)}
+.picks-history-pick__badge--upset{color:var(--green)}
+.picks-history-pick__badge--agreed{color:var(--cyan)}
+.picks-history-pick__points{
+  font-family:var(--f-disp);font-weight:700;font-size:18px;
+  color:var(--cyan);text-align:right;min-width:56px;
+}
+.picks-history-pick__points--zero{color:var(--muted-dim)}
+
 /* Leaderboard list */
 .picks-leaderboard-tabs{display:flex;gap:2px;margin-bottom:14px}
 .picks-lb-tab{
@@ -2301,6 +2390,13 @@ footer{
 .picks-leaderboard td.num{font-family:var(--f-disp);font-weight:700;font-size:14px;color:var(--cyan)}
 .picks-leaderboard tr.me{background:rgba(45,220,255,.05)}
 .picks-leaderboard tr.me td{color:var(--fg)}
+.picks-leaderboard-you-row{
+  margin-top:12px;padding:12px 14px;
+  background:var(--bg-card-soft);border-left:2px solid var(--cyan);
+  font-family:var(--f-mono);font-size:11px;color:var(--fg-dim);
+  display:flex;align-items:center;gap:10px;
+}
+.picks-leaderboard-you-row strong{color:var(--cyan);font-weight:600}
 
 @media (max-width:720px){
   .picks-header{flex-direction:column;align-items:stretch}
@@ -2310,6 +2406,8 @@ footer{
   .pick-fight__corner--red{text-align:center}
   .pick-fight__vs{order:-1;padding:4px 0;font-size:16px}
   .pick-method{grid-template-columns:1fr}
+  .picks-stats-strip{grid-template-columns:repeat(2,1fr)}
+  .picks-history-pick{grid-template-columns:28px 1fr auto}
 }
 
 /* =============================================================
