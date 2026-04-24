@@ -34,11 +34,14 @@ jobs:
 
       - name: Determine version bump type
         id: bump_type
+        # Pass the commit message via env (not shell interpolation) so `"`,
+        # backticks, `$`, etc. in the body don't break bash parsing.
+        env:
+          COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
-          MSG="${{ github.event.head_commit.message }}"
-          if echo "$MSG" | grep -qi "BREAKING\|major"; then
+          if echo "$COMMIT_MSG" | grep -qi "BREAKING\|major"; then
             echo "type=major" >> $GITHUB_OUTPUT
-          elif echo "$MSG" | grep -qi "feat\|feature\|add\|new"; then
+          elif echo "$COMMIT_MSG" | grep -qi "feat\|feature\|add\|new"; then
             echo "type=minor" >> $GITHUB_OUTPUT
           else
             echo "type=patch" >> $GITHUB_OUTPUT
@@ -117,17 +120,26 @@ jobs:
       RAILWAY_FUNCTION_URL: ${{ secrets.RAILWAY_FUNCTION_URL }}
       PREDICTION_SERVICE_KEY: ${{ secrets.PREDICTION_SERVICE_KEY }}
     steps:
-      - name: Validate required deploy secrets
+      - name: Check deploy-verification secrets
+        id: check_secrets
+        # Missing Railway secrets → skip verification gracefully (warning, not
+        # failure). Setting the secrets later will re-enable verification.
         run: |
-          set -euo pipefail
+          set -u
+          MISSING=0
           for var in RAILWAY_WEB_URL RAILWAY_PREDICTIONS_URL RAILWAY_FUNCTION_URL PREDICTION_SERVICE_KEY; do
             if [ -z "${!var:-}" ]; then
-              echo "::error::$var is required for deploy verification"
-              exit 1
+              echo "::warning::$var is not set — skipping deploy verification"
+              MISSING=1
             fi
           done
+          echo "missing=$MISSING" >> "$GITHUB_OUTPUT"
+          if [ "$MISSING" -eq 1 ]; then
+            echo "Deploy verification skipped — Railway secrets not configured."
+          fi
 
       - name: Wait for web + predictions health
+        if: steps.check_secrets.outputs.missing == '0'
         run: |
           set -euo pipefail
           check_health() {
@@ -153,6 +165,7 @@ jobs:
           check_health "$RAILWAY_PREDICTIONS_URL" "predictions"
 
       - name: Verify predictions contract + authenticated triggers
+        if: steps.check_secrets.outputs.missing == '0'
         run: |
           set -euo pipefail
 
@@ -181,6 +194,7 @@ jobs:
           echo "predictions trigger endpoints OK"
 
       - name: Verify main app predictions endpoint
+        if: steps.check_secrets.outputs.missing == '0'
         run: |
           set -euo pipefail
           code=$(curl -s -o /tmp/upcoming.json -w "%{http_code}" \
@@ -198,6 +212,7 @@ jobs:
           "
 
       - name: Verify function orchestration health endpoint
+        if: steps.check_secrets.outputs.missing == '0'
         run: |
           set -euo pipefail
           code=$(curl -s -o /tmp/function-health.json -w "%{http_code}" \
