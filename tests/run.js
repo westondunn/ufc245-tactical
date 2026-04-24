@@ -503,7 +503,109 @@ async function run() {
   assertEq(statsB.points, 28, 'stats points');
   assertEq(statsB.accuracy_pct, 100, 'stats accuracy_pct = 100');
 
+  // ── Edge cases: draws, no method/round, no snapshot, multi-event backfill ──
+  // Set up a second event + fight for isolation.
+  const drawUser = await db.createUser({ display_name: 'DrawUser' });
+  const noMethodUser = await db.createUser({ display_name: 'NoMethod' });
+
+  // Pick a different fight (not main event) so we can control its resolution.
+  // Find a fight with no winner_id yet would be cleanest, but seed sets them all.
+  // Strategy: pick the second fight on UFC 245's card, stage a "draw" outcome.
+  const secondFight = card.find(f => !f.is_main);
+  assertTruthy(secondFight, 'UFC 245 has a second fight');
+
+  // Temporarily null out winner to allow pick writes, then stage a draw
+  const origSecondWinner = db.oneRow('SELECT winner_id, method FROM fights WHERE id = ?', [secondFight.id]);
+  db.run('UPDATE fights SET winner_id = NULL WHERE id = ?', [secondFight.id]);
+
+  await db.upsertPick({
+    user_id: drawUser.id,
+    event_id: ufc245.id,
+    fight_id: secondFight.id,
+    picked_fighter_id: secondFight.red_id,
+    confidence: 80
+  });
+  await db.upsertPick({
+    user_id: noMethodUser.id,
+    event_id: ufc245.id,
+    fight_id: secondFight.id,
+    picked_fighter_id: secondFight.red_id,
+    confidence: 60
+    // no method_pick, no round_pick
+  });
+
+  // Stage a draw on the fight
+  db.run("UPDATE fights SET winner_id = NULL, method = 'Draw' WHERE id = ?", [secondFight.id]);
+  const drawReconcile = await db.reconcilePicksForEvent(ufc245.id);
+  assertGt(drawReconcile.voided, 0, 'draw reconcile counts voided picks');
+
+  const drawPick = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [drawUser.id, secondFight.id]);
+  assertEq(drawPick.correct, 0, 'draw pick: correct=0');
+  assertEq(drawPick.points, 0, 'draw pick: points=0');
+  assertEq(drawPick.actual_winner_id, null, 'draw pick: actual_winner_id remains NULL');
+
+  // Restore original winner + method so other tests can proceed cleanly.
+  db.run('UPDATE fights SET winner_id = ?, method = ? WHERE id = ?',
+    [origSecondWinner.winner_id, origSecondWinner.method, secondFight.id]);
+
+  // Re-reconcile now that winner is back → draw pick should flip to real correctness.
+  await db.reconcilePicksForEvent(ufc245.id);
+  const noMethodPickAfter = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [noMethodUser.id, secondFight.id]);
+  assertTruthy(noMethodPickAfter.actual_winner_id, 'no-method pick: winner set after re-reconcile');
+  assertEq(noMethodPickAfter.method_correct, null, 'no-method pick: method_correct stays NULL when user did not pick a method');
+  assertEq(noMethodPickAfter.round_correct, null, 'no-method pick: round_correct stays NULL when user did not pick a round');
+
+  // Scoring sanity: if user picked red and red won with conf 60, points = round(10*60/50)=12
+  if (noMethodPickAfter.correct === 1) {
+    assertEq(noMethodPickAfter.points, 12, 'no-method correct pick scores 12 (conf 60, no bonuses)');
+  }
+
+  // ── No model snapshot path ──
+  // Create a fight-with-no-prediction scenario by picking on a fight whose
+  // predictions were never ingested. Find a fight with no prediction rows.
+  const freshFight = db.oneRow(
+    `SELECT f.* FROM fights f
+     LEFT JOIN predictions p ON p.fight_id = f.id
+     WHERE p.id IS NULL AND f.event_id = ?
+     LIMIT 1`, [ufc245.id]
+  );
+  if (freshFight) {
+    const origWinner = freshFight.winner_id;
+    db.run('UPDATE fights SET winner_id = NULL WHERE id = ?', [freshFight.id]);
+    const noSnapUser = await db.createUser({ display_name: 'NoSnap' });
+    const noSnapRes = await db.upsertPick({
+      user_id: noSnapUser.id,
+      event_id: ufc245.id,
+      fight_id: freshFight.id,
+      picked_fighter_id: freshFight.red_fighter_id,
+      confidence: 55
+    });
+    assertEq(noSnapRes.snapshot.model_version, 'none', 'no-prediction snapshot uses model_version=none');
+    assertEq(noSnapRes.snapshot.user_agreed_with_model, null, 'no-prediction snapshot has user_agreed_with_model=null');
+
+    // Restore winner and reconcile
+    db.run('UPDATE fights SET winner_id = ? WHERE id = ?', [origWinner, freshFight.id]);
+    await db.reconcilePicksForEvent(ufc245.id);
+    const nsPick = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [noSnapUser.id, freshFight.id]);
+    // upset_bonus requires userAgreedWithModel === 0; NULL means no bonus applied.
+    if (nsPick.correct === 1) {
+      assertEq(nsPick.points, 11, 'no-snapshot correct pick scores conf-only (round(10*55/50)=11), no upset bonus');
+    }
+    await db.deleteUser(noSnapUser.id);
+  }
+
+  // ── reconcileAllPicks backfill ──
+  const backfill = await db.reconcileAllPicks();
+  assertGt(backfill.reconciled, 0, 'reconcileAllPicks processes existing picks');
+  assertGt(backfill.events_processed, 0, 'reconcileAllPicks touches at least one event');
+
+  // Idempotent under re-run
+  const backfill2 = await db.reconcileAllPicks();
+  assertEq(backfill2.points_awarded, backfill.points_awarded, 'reconcileAllPicks is idempotent');
+
   // ── Cleanup ──
+  await db.deleteUser(drawUser.id);
+  await db.deleteUser(noMethodUser.id);
   await db.deleteUser(userA.id);
   await db.deleteUser(userB.id);
   assertEq(await db.getUser(userA.id), null, 'deleteUser cascades');

@@ -204,4 +204,23 @@ test.describe('Picks API — admin', () => {
     expect(a.reconciled).toBe(b.reconciled);
     expect(a.points_awarded).toBe(b.points_awarded);
   });
+
+  test('POST /api/admin/reconcile-all-picks requires key', async ({ request }) => {
+    const res = await request.post('/api/admin/reconcile-all-picks');
+    expect([401, 503]).toContain(res.status());
+  });
+
+  test('POST /api/admin/reconcile-all-picks backfills and is idempotent', async ({ request }) => {
+    const headers = { 'x-admin-key': ADMIN_KEY };
+    const first = await request.post('/api/admin/reconcile-all-picks', { headers });
+    expect(first.status()).toBe(200);
+    const a = await first.json();
+    expect(a.status).toBe('ok');
+    expect(typeof a.events_processed).toBe('number');
+    expect(typeof a.reconciled).toBe('number');
+    const second = await request.post('/api/admin/reconcile-all-picks', { headers });
+    const b = await second.json();
+    expect(b.reconciled).toBe(a.reconciled);
+    expect(b.points_awarded).toBe(a.points_awarded);
+  });
 });

@@ -602,6 +602,15 @@ app.post('/api/admin/events/:id/reconcile-picks', requireAdmin, apiHandler(async
   res.json({ status: 'ok', event_id: eventId, ...result });
 }));
 
+// Backfill: reconcile every event that has picks. Idempotent. Useful after a
+// scoring formula change or late winner_id ingest.
+app.post('/api/admin/reconcile-all-picks', requireAdmin, apiHandler(async (_req, res) => {
+  const result = await db.reconcileAllPicks();
+  await db.save();
+  console.log(`[admin] reconcile-all-picks events=${result.events_processed} reconciled=${result.reconciled} points=${result.points_awarded}`);
+  res.json({ status: 'ok', ...result });
+}));
+
 app.use((req, res) => {
   if (req.accepts('html')) return res.status(200).sendFile(path.join(__dirname, 'public', 'index.html'));
   res.status(404).json({ error: 'not_found', path: req.path });

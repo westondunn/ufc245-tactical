@@ -955,16 +955,35 @@ async function lockPicksForEvent(eventId) {
   return { locked: res || 0 };
 }
 
+/**
+ * Reconcile all picks for an event.
+ * - Fights with winner_id → picks score normally via scorePick.
+ * - Fights with method matching /DRAW|NO CONTEST|NC/ and NO winner_id
+ *   → all picks voided (correct=0, points=0, method/round_correct NULL).
+ * - Fights with neither winner_id nor a terminal method (cancellations /
+ *   not-yet-run) → skipped; picks stay unreconciled.
+ *
+ * Idempotent.
+ */
 async function reconcilePicksForEvent(eventId) {
   const fights = await allRows(
-    'SELECT id, winner_id, method, round FROM fights WHERE event_id = ? AND winner_id IS NOT NULL',
+    'SELECT id, winner_id, method, round FROM fights WHERE event_id = ?',
     [eventId]
   );
   let reconciledCount = 0;
   let pointsAwarded = 0;
+  let voidedCount = 0;
+  let fightsSettled = 0;
+
   for (const fight of fights) {
-    const actualMethod = normalizeMethod(fight.method);
-    const actualRound = fight.round || null;
+    const methodStr = String(fight.method || '').toUpperCase();
+    const hasWinner = !!fight.winner_id;
+    const isVoid = !hasWinner && /DRAW|NO CONTEST|\bNC\b/.test(methodStr);
+    if (!hasWinner && !isVoid) continue;
+    fightsSettled++;
+
+    const actualMethod = hasWinner ? normalizeMethod(fight.method) : null;
+    const actualRound = hasWinner ? (fight.round || null) : null;
     const picks = await allRows(
       `SELECT p.*, s.user_agreed_with_model
        FROM user_picks p
@@ -973,11 +992,11 @@ async function reconcilePicksForEvent(eventId) {
       [fight.id]
     );
     for (const pick of picks) {
-      const correct = pick.picked_fighter_id === fight.winner_id ? 1 : 0;
-      const methodCorrect = pick.method_pick
+      const correct = hasWinner ? (pick.picked_fighter_id === fight.winner_id ? 1 : 0) : 0;
+      const methodCorrect = hasWinner && pick.method_pick
         ? (actualMethod && pick.method_pick === actualMethod ? 1 : 0)
         : null;
-      const roundCorrect = pick.round_pick
+      const roundCorrect = hasWinner && pick.round_pick
         ? (actualRound && pick.round_pick === actualRound ? 1 : 0)
         : null;
       const { points } = scorePick({
@@ -991,13 +1010,40 @@ async function reconcilePicksForEvent(eventId) {
         `UPDATE user_picks
            SET actual_winner_id = ?, correct = ?, method_correct = ?, round_correct = ?, points = ?
          WHERE id = ?`,
-        [fight.winner_id, correct, methodCorrect, roundCorrect, points, pick.id]
+        [fight.winner_id || null, correct, methodCorrect, roundCorrect, points, pick.id]
       );
-      reconciledCount++;
+      if (isVoid) voidedCount++;
+      else reconciledCount++;
       pointsAwarded += points;
     }
   }
-  return { reconciled: reconciledCount, points_awarded: pointsAwarded, fights_with_results: fights.length };
+
+  return {
+    reconciled: reconciledCount + voidedCount,
+    scored: reconciledCount,
+    voided: voidedCount,
+    points_awarded: pointsAwarded,
+    fights_with_results: fightsSettled
+  };
+}
+
+/**
+ * Backfill: reconcile all picks across all events that have any settled fights.
+ * Idempotent — safe to re-run. Useful when the predictions microservice
+ * belatedly ingests winner_ids, or after a scoring formula change.
+ */
+async function reconcileAllPicks() {
+  const events = await allRows('SELECT DISTINCT event_id FROM user_picks');
+  let totalReconciled = 0;
+  let totalPoints = 0;
+  let eventsProcessed = 0;
+  for (const row of events) {
+    const r = await reconcilePicksForEvent(row.event_id);
+    if (r.reconciled > 0) eventsProcessed++;
+    totalReconciled += r.reconciled;
+    totalPoints += r.points_awarded;
+  }
+  return { events_processed: eventsProcessed, reconciled: totalReconciled, points_awarded: totalPoints };
 }
 
 /* ── LEADERBOARDS + STATS ── */
@@ -1129,7 +1175,7 @@ module.exports = {
   upsertPrediction, getPredictions, reconcilePrediction, getPredictionAccuracy,
   createUser, getUser, updateUser, deleteUser,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
-  lockPicksForEvent, reconcilePicksForEvent,
+  lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,
   getLeaderboard, getUserStats, getEventPickComparison,
   nextId, run, allRows, oneRow
 };

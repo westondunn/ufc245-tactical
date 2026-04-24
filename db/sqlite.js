@@ -761,14 +761,23 @@ function lockPicksForEvent(eventId) {
 
 function reconcilePicksForEvent(eventId) {
   const fights = allRows(
-    'SELECT id, winner_id, method, round FROM fights WHERE event_id = ? AND winner_id IS NOT NULL',
+    'SELECT id, winner_id, method, round FROM fights WHERE event_id = ?',
     [eventId]
   );
   let reconciledCount = 0;
   let pointsAwarded = 0;
+  let voidedCount = 0;
+  let fightsSettled = 0;
+
   for (const fight of fights) {
-    const actualMethod = normalizeMethod(fight.method);
-    const actualRound = fight.round || null;
+    const methodStr = String(fight.method || '').toUpperCase();
+    const hasWinner = !!fight.winner_id;
+    const isVoid = !hasWinner && /DRAW|NO CONTEST|\bNC\b/.test(methodStr);
+    if (!hasWinner && !isVoid) continue;
+    fightsSettled++;
+
+    const actualMethod = hasWinner ? normalizeMethod(fight.method) : null;
+    const actualRound = hasWinner ? (fight.round || null) : null;
     const picks = allRows(
       `SELECT p.*, s.user_agreed_with_model
        FROM user_picks p
@@ -777,11 +786,11 @@ function reconcilePicksForEvent(eventId) {
       [fight.id]
     );
     for (const pick of picks) {
-      const correct = pick.picked_fighter_id === fight.winner_id ? 1 : 0;
-      const methodCorrect = pick.method_pick
+      const correct = hasWinner ? (pick.picked_fighter_id === fight.winner_id ? 1 : 0) : 0;
+      const methodCorrect = hasWinner && pick.method_pick
         ? (actualMethod && pick.method_pick === actualMethod ? 1 : 0)
         : null;
-      const roundCorrect = pick.round_pick
+      const roundCorrect = hasWinner && pick.round_pick
         ? (actualRound && pick.round_pick === actualRound ? 1 : 0)
         : null;
       const { points } = scorePick({
@@ -795,13 +804,35 @@ function reconcilePicksForEvent(eventId) {
         `UPDATE user_picks
            SET actual_winner_id = ?, correct = ?, method_correct = ?, round_correct = ?, points = ?
          WHERE id = ?`,
-        [fight.winner_id, correct, methodCorrect, roundCorrect, points, pick.id]
+        [fight.winner_id || null, correct, methodCorrect, roundCorrect, points, pick.id]
       );
-      reconciledCount++;
+      if (isVoid) voidedCount++;
+      else reconciledCount++;
       pointsAwarded += points;
     }
   }
-  return { reconciled: reconciledCount, points_awarded: pointsAwarded, fights_with_results: fights.length };
+
+  return {
+    reconciled: reconciledCount + voidedCount,
+    scored: reconciledCount,
+    voided: voidedCount,
+    points_awarded: pointsAwarded,
+    fights_with_results: fightsSettled
+  };
+}
+
+function reconcileAllPicks() {
+  const events = allRows('SELECT DISTINCT event_id FROM user_picks');
+  let totalReconciled = 0;
+  let totalPoints = 0;
+  let eventsProcessed = 0;
+  for (const row of events) {
+    const r = reconcilePicksForEvent(row.event_id);
+    if (r.reconciled > 0) eventsProcessed++;
+    totalReconciled += r.reconciled;
+    totalPoints += r.points_awarded;
+  }
+  return { events_processed: eventsProcessed, reconciled: totalReconciled, points_awarded: totalPoints };
 }
 
 /* ── LEADERBOARDS + STATS ── */
@@ -929,7 +960,7 @@ module.exports = {
   upsertPrediction, getPredictions, reconcilePrediction, getPredictionAccuracy,
   createUser, getUser, updateUser, deleteUser,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
-  lockPicksForEvent, reconcilePicksForEvent,
+  lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,
   getLeaderboard, getUserStats, getEventPickComparison,
   nextId, run, allRows, oneRow
 };
