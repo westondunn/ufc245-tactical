@@ -20,6 +20,7 @@ module.exports = defineConfig({
       PORT: '3737',
       ENABLE_PICKS: 'true',
       ADMIN_KEY: 'test-admin-key',
+      PREDICTION_SERVICE_KEY: 'test-prediction-key',
       // Relax rate limits for test traffic (many profiles created in quick succession)
       PICKS_RATE_LIMIT_CREATE_USER: '200',
       PICKS_RATE_LIMIT_PER_MIN: '600'

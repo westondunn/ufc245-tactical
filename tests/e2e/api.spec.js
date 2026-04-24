@@ -346,3 +346,135 @@ test.describe('API Endpoints', () => {
     expect(res.headers()['cache-control']).toContain('max-age=86400');
   });
 });
+
+// ===========================================================================
+// Predictions API — public reads + protected ingest/reconcile
+// ===========================================================================
+test.describe('Predictions API', () => {
+  const PREDICTION_KEY = 'test-prediction-key';
+
+  test('GET /api/predictions returns an array', async ({ request }) => {
+    const res = await request.get('/api/predictions?limit=10');
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+  });
+
+  test('GET /api/predictions?fight_id filters by fight', async ({ request }) => {
+    const res = await request.get('/api/predictions?fight_id=186');
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(Array.isArray(body)).toBe(true);
+    for (const p of body) expect(p.fight_id).toBe(186);
+  });
+
+  test('GET /api/predictions?limit clamps to 200', async ({ request }) => {
+    const res = await request.get('/api/predictions?limit=9999');
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body.length).toBeLessThanOrEqual(200);
+  });
+
+  test('GET /api/predictions/accuracy returns stats shape', async ({ request }) => {
+    const res = await request.get('/api/predictions/accuracy');
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    // Keys present even when no predictions reconciled yet
+    expect(body).toHaveProperty('total');
+    expect(body).toHaveProperty('correct_count');
+    expect(body).toHaveProperty('accuracy_pct');
+  });
+
+  test('POST /api/predictions/ingest without key returns 401', async ({ request }) => {
+    const res = await request.post('/api/predictions/ingest', {
+      data: { predictions: [] }
+    });
+    expect(res.status()).toBe(401);
+    const body = await res.json();
+    expect(body.error).toBe('unauthorized');
+  });
+
+  test('POST /api/predictions/ingest with wrong key returns 401', async ({ request }) => {
+    const res = await request.post('/api/predictions/ingest', {
+      headers: { 'x-prediction-key': 'not-the-right-key' },
+      data: { predictions: [] }
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('POST /api/predictions/ingest rejects non-array body', async ({ request }) => {
+    const res = await request.post('/api/predictions/ingest', {
+      headers: { 'x-prediction-key': PREDICTION_KEY },
+      data: {}
+    });
+    expect(res.status()).toBe(400);
+  });
+
+  test('POST /api/predictions/ingest upserts by (fight_id, model_version)', async ({ request }) => {
+    const pred = {
+      fight_id: 186,
+      red_fighter_id: 31,
+      blue_fighter_id: 32,
+      red_win_prob: 0.58,
+      blue_win_prob: 0.42,
+      model_version: 'e2e.test.ingest',
+      feature_hash: 'x',
+      predicted_at: '2026-02-01T00:00:00.000Z',
+      event_date: '2019-12-14'
+    };
+    // First write
+    const r1 = await request.post('/api/predictions/ingest', {
+      headers: { 'x-prediction-key': PREDICTION_KEY },
+      data: { predictions: [pred] }
+    });
+    expect(r1.ok()).toBe(true);
+    expect((await r1.json()).ingested).toBe(1);
+    // Second write with same (fight_id, model_version) should upsert, not dup
+    const r2 = await request.post('/api/predictions/ingest', {
+      headers: { 'x-prediction-key': PREDICTION_KEY },
+      data: { predictions: [{ ...pred, red_win_prob: 0.61, blue_win_prob: 0.39 }] }
+    });
+    expect(r2.ok()).toBe(true);
+    // Verify via GET — should only see one row for this model_version
+    const list = await (await request.get('/api/predictions?fight_id=186')).json();
+    const ours = list.filter(p => p.model_version === 'e2e.test.ingest');
+    expect(ours.length).toBe(1);
+    expect(ours[0].red_win_prob).toBeCloseTo(0.61, 2);
+  });
+
+  test('POST /api/predictions/reconcile without key returns 401', async ({ request }) => {
+    const res = await request.post('/api/predictions/reconcile', {
+      data: { results: [] }
+    });
+    expect(res.status()).toBe(401);
+  });
+
+  test('POST /api/predictions/reconcile with key sets actual_winner_id', async ({ request }) => {
+    // Ingest a prediction for a fight with known winner (UFC 245 main, Usman red=31 won)
+    const pred = {
+      fight_id: 186,
+      red_fighter_id: 31,
+      blue_fighter_id: 32,
+      red_win_prob: 0.9,
+      blue_win_prob: 0.1,
+      model_version: 'e2e.test.reconcile',
+      feature_hash: 'r',
+      predicted_at: '2026-02-01T01:00:00.000Z',
+      event_date: '2019-12-14'
+    };
+    await request.post('/api/predictions/ingest', {
+      headers: { 'x-prediction-key': PREDICTION_KEY },
+      data: { predictions: [pred] }
+    });
+    const res = await request.post('/api/predictions/reconcile', {
+      headers: { 'x-prediction-key': PREDICTION_KEY },
+      data: { results: [{ fight_id: 186, actual_winner_id: 31 }] }
+    });
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body.reconciled).toBeGreaterThanOrEqual(1);
+    // Accuracy endpoint should now have at least 1 reconciled row
+    const acc = await (await request.get('/api/predictions/accuracy')).json();
+    expect(acc.total).toBeGreaterThanOrEqual(1);
+  });
+});
