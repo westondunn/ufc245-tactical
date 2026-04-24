@@ -3619,6 +3619,8 @@ function renderProfileChip(){
   document.getElementById('profileChipBtn').addEventListener('click', openProfileActionsModal);
   if (empty) empty.style.display = 'none';
   if (subnav) subnav.style.display = '';
+  // Load the active subnav view for the current user (fire-and-forget)
+  try { activatePicksView(_picksState.view || 'upcoming'); } catch { /* view fns defined below */ }
 }
 
 function openModal(id){
@@ -3819,6 +3821,438 @@ async function initPicksFeature(){
     else setLocalProfile(null);              // stale id — clear it
   }
   renderProfileChip();
+  setupPicksSubnav();
+}
+
+/* -----------------------------------------------------------
+   PICKS VIEWS — Upcoming (pick widgets), History, Leaderboard
+----------------------------------------------------------- */
+let _picksState = {
+  view: 'upcoming',          // 'upcoming' | 'history' | 'leaderboard'
+  eventId: null,
+  eventCard: [],
+  userPicks: new Map(),      // fight_id → pick row
+  modelByFightId: new Map(), // fight_id → { picked_fighter_id, confidence, version }
+  lbScope: 'event'
+};
+
+function setupPicksSubnav(){
+  document.querySelectorAll('.picks-subnav__btn').forEach(btn => {
+    btn.addEventListener('click', () => activatePicksView(btn.dataset.picksView));
+  });
+  document.querySelectorAll('.picks-lb-tab').forEach(btn => {
+    btn.addEventListener('click', () => {
+      document.querySelectorAll('.picks-lb-tab').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      _picksState.lbScope = btn.dataset.lbScope;
+      loadLeaderboardView();
+    });
+  });
+}
+
+function activatePicksView(view){
+  _picksState.view = view;
+  document.querySelectorAll('.picks-subnav__btn').forEach(b => {
+    b.classList.toggle('active', b.dataset.picksView === view);
+  });
+  document.getElementById('picksViewUpcoming').style.display    = view === 'upcoming'    ? '' : 'none';
+  document.getElementById('picksViewHistory').style.display     = view === 'history'     ? '' : 'none';
+  document.getElementById('picksViewLeaderboard').style.display = view === 'leaderboard' ? '' : 'none';
+  if (!_currentUser) return;
+  if (view === 'upcoming')    loadUpcomingView();
+  if (view === 'history')     loadHistoryView();
+  if (view === 'leaderboard') loadLeaderboardView();
+}
+
+function renderProfileChipAndViews(){
+  renderProfileChip();
+  if (_currentUser) {
+    // Hide empty, reveal active view
+    activatePicksView(_picksState.view || 'upcoming');
+  }
+}
+
+async function populatePicksEventSelect(){
+  const sel = document.getElementById('picksEventSelect');
+  if (!sel || sel.options.length > 1) return;
+  try {
+    const res = await fetch('/api/events');
+    const events = await res.json();
+    sel.innerHTML = events
+      .sort((a, b) => (b.date || '').localeCompare(a.date || ''))
+      .map(e => `<option value="${e.id}">UFC ${e.number || '—'} · ${escHtml(e.name)}${e.date ? ' · ' + e.date : ''}</option>`)
+      .join('');
+    // Default to UFC 245 (demo event) if present, else the most recent
+    const ufc245 = events.find(e => e.number === 245);
+    sel.value = String(ufc245 ? ufc245.id : events[0].id);
+    _picksState.eventId = parseInt(sel.value, 10);
+    sel.addEventListener('change', () => {
+      _picksState.eventId = parseInt(sel.value, 10);
+      loadUpcomingView();
+    });
+  } catch (e) {
+    sel.innerHTML = '<option>Failed to load events</option>';
+  }
+}
+
+async function loadUpcomingView(){
+  if (!_currentUser) return;
+  await populatePicksEventSelect();
+  const eventId = _picksState.eventId;
+  const fightsEl = document.getElementById('picksFights');
+  const loadingEl = document.getElementById('picksFightsLoading');
+  if (loadingEl) loadingEl.style.display = '';
+  if (fightsEl) fightsEl.innerHTML = '<div class="picks-loading">Loading card…</div>';
+
+  try {
+    const [cardRes, picksRes, compRes] = await Promise.all([
+      fetch(`/api/events/${eventId}/card`),
+      fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?event_id=${eventId}`),
+      fetch(`/api/events/${eventId}/picks/model-comparison`)
+    ]);
+    const { card } = await cardRes.json();
+    const { picks } = await picksRes.json();
+    const { fights: compFights } = await compRes.json();
+
+    // Normalize fighter-id field names — /api/events/:id/card uses red_id/blue_id,
+    // other endpoints use red_fighter_id/blue_fighter_id. Widget reads *_fighter_id.
+    const normalized = (card || []).map(f => ({
+      ...f,
+      red_fighter_id:  f.red_fighter_id  != null ? f.red_fighter_id  : f.red_id,
+      blue_fighter_id: f.blue_fighter_id != null ? f.blue_fighter_id : f.blue_id
+    }));
+    _picksState.eventCard = normalized;
+    _picksState.userPicks = new Map((picks || []).map(p => [p.fight_id, p]));
+    _picksState.modelByFightId = new Map((compFights || []).map(c => [c.fight_id, c.model]));
+
+    const hint = document.getElementById('picksEventHint');
+    if (hint) {
+      const total = card.length;
+      const locked = card.filter(f => f.winner_id != null).length;
+      hint.textContent = locked === total
+        ? 'All fights concluded — pick editing is disabled.'
+        : `${total - locked} of ${total} fights open for picks`;
+    }
+    fightsEl.innerHTML = normalized.map(f => renderPickWidget(f)).join('');
+    attachPickHandlers(fightsEl);
+  } catch (e) {
+    fightsEl.innerHTML = '<div class="picks-placeholder">Failed to load this event\'s card.</div>';
+  } finally {
+    if (loadingEl) loadingEl.style.display = 'none';
+  }
+}
+
+function renderPickWidget(fight){
+  const pick = _picksState.userPicks.get(fight.id);
+  const model = _picksState.modelByFightId.get(fight.id);
+  const locked = fight.winner_id != null || (pick && pick.locked_at);
+  const lockedReason = fight.winner_id != null ? 'fight_over' : (pick && pick.locked_at ? 'event_locked' : null);
+
+  const pickedRed  = pick && pick.picked_fighter_id === fight.red_fighter_id;
+  const pickedBlue = pick && pick.picked_fighter_id === fight.blue_fighter_id;
+  const conf = pick ? pick.confidence : 50;
+  const methodVal = pick && pick.method_pick || '';
+  const roundVal = pick && pick.round_pick || '';
+  const notesVal = pick && pick.notes || '';
+
+  // Model comparison
+  let modelHtml;
+  if (model && model.picked_fighter_id) {
+    const modelWinnerName = model.picked_fighter_id === fight.red_fighter_id ? fight.red_name : fight.blue_name;
+    const pct = Math.round((model.confidence || 0) * 100);
+    let badge = '';
+    if (pick) {
+      const agrees = pick.picked_fighter_id === model.picked_fighter_id;
+      badge = `<span class="pick-model__agreement ${agrees ? 'agrees' : 'disagrees'}">${agrees ? 'agrees with you' : 'disagrees'}</span>`;
+    }
+    modelHtml = `
+      <div class="pick-model">
+        <span class="pick-model__icon">⚡</span>
+        <span class="pick-model__label">Model · ${escHtml(model.version)}</span>
+        <span class="pick-model__pred">${escHtml(modelWinnerName)} · ${pct}%</span>
+        ${badge}
+      </div>`;
+  } else {
+    modelHtml = `<div class="pick-model"><span class="pick-model__empty">No model prediction available for this fight yet.</span></div>`;
+  }
+
+  // Outcome banner (if fight has a winner)
+  let outcomeHtml = '';
+  if (fight.winner_id != null) {
+    const winnerName = fight.winner_id === fight.red_fighter_id ? fight.red_name : fight.blue_name;
+    const meta = `${escHtml(fight.method || '—')}${fight.round ? ' · R' + fight.round : ''}${fight.time ? ' · ' + escHtml(fight.time) : ''}`;
+    const correct = pick && pick.correct === 1;
+    const wrong = pick && pick.correct === 0;
+    const pointsText = pick && pick.correct != null ? (pick.points || 0) + ' pts' : '';
+    outcomeHtml = `
+      <div class="pick-outcome ${correct ? 'is-correct' : (wrong ? 'is-wrong' : '')}">
+        <div>
+          <div class="pick-outcome__winner">WINNER · ${escHtml(winnerName.toUpperCase())}</div>
+          <div class="pick-outcome__detail">${meta}</div>
+        </div>
+        <div></div>
+        <div class="pick-outcome__points">${escHtml(pointsText)}</div>
+      </div>`;
+  }
+
+  // Status row
+  let statusHtml = '';
+  if (locked && !outcomeHtml) {
+    statusHtml = `<div class="pick-status is-locked"><span class="pick-status__label">Locked</span><span class="pick-status__detail">${lockedReason === 'fight_over' ? 'Fight already concluded' : 'Event locked by admin'}</span></div>`;
+  } else if (pick && !locked) {
+    statusHtml = `<div class="pick-status is-saved"><span class="pick-status__label">Saved</span><span class="pick-status__detail">You can edit until the event locks.</span></div>`;
+  } else if (!locked) {
+    statusHtml = `<div class="pick-status is-hint"><span class="pick-status__label">Hint</span><span class="pick-status__detail">Pick a winner, tune confidence, optionally add method / round / notes.</span></div>`;
+  }
+
+  const disabled = locked ? 'disabled' : '';
+  const mainClass = fight.is_main ? ' is-main' : '';
+  const lockedClass = locked ? ' is-locked' : '';
+
+  return `
+    <div class="pick-fight${mainClass}${lockedClass}" data-fight-id="${fight.id}">
+      <div class="pick-fight__head">
+        <div class="pick-fight__corner pick-fight__corner--red">
+          <div class="pick-fight__tag">Red corner</div>
+          <div class="pick-fight__name">${escHtml(fight.red_name || '—')}</div>
+          <div class="pick-fight__meta">${escHtml(fight.weight_class || '')}</div>
+        </div>
+        <div class="pick-fight__vs">VS</div>
+        <div class="pick-fight__corner pick-fight__corner--blue">
+          <div class="pick-fight__tag">Blue corner</div>
+          <div class="pick-fight__name">${escHtml(fight.blue_name || '—')}</div>
+          <div class="pick-fight__meta">${fight.is_main ? 'MAIN EVENT' : (fight.is_title ? 'TITLE FIGHT' : '')}</div>
+        </div>
+      </div>
+
+      <div class="pick-fighters">
+        <button class="pick-fighter${pickedRed ? ' selected' : ''}" data-corner="red" data-fighter-id="${fight.red_fighter_id}" ${disabled}>
+          ${pickedRed ? '✓ ' : ''}Pick ${escHtml((fight.red_name || '').split(' ').pop() || 'Red')}
+        </button>
+        <button class="pick-fighter${pickedBlue ? ' selected' : ''}" data-corner="blue" data-fighter-id="${fight.blue_fighter_id}" ${disabled}>
+          ${pickedBlue ? '✓ ' : ''}Pick ${escHtml((fight.blue_name || '').split(' ').pop() || 'Blue')}
+        </button>
+      </div>
+
+      <div class="pick-conf">
+        <span class="pick-conf__label">Confidence</span>
+        <input type="range" class="pick-conf__slider" min="0" max="100" step="5" value="${conf}" data-pick-field="confidence" ${disabled}>
+        <span class="pick-conf__value" data-conf-display>${conf}%</span>
+      </div>
+
+      <div class="pick-method">
+        <label class="pick-method__field">
+          <span class="pick-method__label">Method (optional)</span>
+          <select class="pick-method__select" data-pick-field="method_pick" ${disabled}>
+            <option value="">—</option>
+            <option value="KO/TKO"${methodVal === 'KO/TKO' ? ' selected' : ''}>KO / TKO</option>
+            <option value="SUB"${methodVal === 'SUB' ? ' selected' : ''}>Submission</option>
+            <option value="DEC"${methodVal === 'DEC' ? ' selected' : ''}>Decision</option>
+          </select>
+        </label>
+        <label class="pick-method__field">
+          <span class="pick-method__label">Round (optional)</span>
+          <select class="pick-method__select" data-pick-field="round_pick" ${disabled}>
+            <option value="">—</option>
+            ${[1,2,3,4,5].map(r => `<option value="${r}"${String(roundVal) === String(r) ? ' selected' : ''}>Round ${r}</option>`).join('')}
+          </select>
+        </label>
+      </div>
+
+      <div class="pick-notes">
+        <textarea class="pick-notes__input" maxlength="280" placeholder="Notes (optional) — max 280 chars" data-pick-field="notes" ${disabled}>${escHtml(notesVal)}</textarea>
+      </div>
+
+      ${modelHtml}
+      ${outcomeHtml}
+      ${statusHtml}
+
+      ${locked ? '' : `
+        <div class="pick-actions">
+          ${pick ? `<button class="rec-btn" data-pick-action="delete">Remove pick</button>` : ''}
+          <button class="rec-btn rec-btn--primary" data-pick-action="save">${pick ? 'Update pick' : 'Save pick'}</button>
+        </div>
+      `}
+    </div>
+  `;
+}
+
+function attachPickHandlers(container){
+  container.querySelectorAll('.pick-fight').forEach(card => {
+    const fightId = parseInt(card.dataset.fightId, 10);
+
+    // Fighter pick toggles
+    card.querySelectorAll('.pick-fighter').forEach(btn => {
+      btn.addEventListener('click', () => {
+        card.querySelectorAll('.pick-fighter').forEach(b => b.classList.remove('selected'));
+        btn.classList.add('selected');
+      });
+    });
+
+    // Confidence slider live value
+    const slider = card.querySelector('[data-pick-field="confidence"]');
+    const display = card.querySelector('[data-conf-display]');
+    if (slider && display) {
+      slider.addEventListener('input', () => { display.textContent = slider.value + '%'; });
+    }
+
+    // Save
+    const saveBtn = card.querySelector('[data-pick-action="save"]');
+    if (saveBtn) saveBtn.addEventListener('click', () => submitPickFromCard(card, fightId));
+
+    // Delete
+    const delBtn = card.querySelector('[data-pick-action="delete"]');
+    if (delBtn) delBtn.addEventListener('click', () => deletePickFromCard(card, fightId));
+  });
+}
+
+function getPickInputs(card){
+  const selected = card.querySelector('.pick-fighter.selected');
+  const picked_fighter_id = selected ? parseInt(selected.dataset.fighterId, 10) : null;
+  const confidence = parseInt(card.querySelector('[data-pick-field="confidence"]').value, 10);
+  const method_pick = card.querySelector('[data-pick-field="method_pick"]').value || null;
+  const roundRaw = card.querySelector('[data-pick-field="round_pick"]').value;
+  const round_pick = roundRaw ? parseInt(roundRaw, 10) : null;
+  const notes = (card.querySelector('[data-pick-field="notes"]').value || '').trim() || null;
+  return { picked_fighter_id, confidence, method_pick, round_pick, notes };
+}
+
+function setPickStatus(card, variant, label, detail){
+  const existing = card.querySelector('.pick-status');
+  const html = `<div class="pick-status is-${variant}"><span class="pick-status__label">${escHtml(label)}</span><span class="pick-status__detail">${escHtml(detail)}</span></div>`;
+  if (existing) existing.outerHTML = html;
+  else {
+    const actions = card.querySelector('.pick-actions');
+    if (actions) actions.insertAdjacentHTML('beforebegin', html);
+    else card.insertAdjacentHTML('beforeend', html);
+  }
+}
+
+async function submitPickFromCard(card, fightId){
+  if (!_currentUser) return;
+  const input = getPickInputs(card);
+  if (!input.picked_fighter_id) {
+    setPickStatus(card, 'error', 'Missing', 'Pick a winner first.');
+    return;
+  }
+  const body = { event_id: _picksState.eventId, fight_id: fightId, ...input };
+  const saveBtn = card.querySelector('[data-pick-action="save"]');
+  if (saveBtn) saveBtn.disabled = true;
+  try {
+    const res = await fetch('/api/picks', {
+      method: 'POST',
+      headers: { 'Content-Type':'application/json', 'X-User-Id': _currentUser.id },
+      body: JSON.stringify(body)
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      const label = res.status === 409 ? 'Locked' : 'Error';
+      setPickStatus(card, 'error', label, err.message || err.error || 'Save failed');
+      return;
+    }
+    const data = await res.json();
+    _picksState.userPicks.set(fightId, data.pick);
+    setPickStatus(card, 'saved', 'Saved', 'Pick recorded. Edit anytime until lock.');
+    if (saveBtn) saveBtn.textContent = 'Update pick';
+  } catch (e) {
+    setPickStatus(card, 'error', 'Error', e.message || 'Network error');
+  } finally {
+    if (saveBtn) saveBtn.disabled = false;
+  }
+}
+
+async function deletePickFromCard(card, fightId){
+  if (!_currentUser) return;
+  const pick = _picksState.userPicks.get(fightId);
+  if (!pick) return;
+  if (!confirm('Remove your pick on this fight?')) return;
+  try {
+    const res = await fetch('/api/picks/' + pick.id, {
+      method: 'DELETE',
+      headers: { 'X-User-Id': _currentUser.id }
+    });
+    if (!res.ok) {
+      const err = await res.json().catch(() => ({}));
+      setPickStatus(card, 'error', 'Error', err.message || err.error || 'Delete failed');
+      return;
+    }
+    _picksState.userPicks.delete(fightId);
+    // Re-render the whole upcoming view so the card reflects no-pick state
+    loadUpcomingView();
+  } catch (e) {
+    setPickStatus(card, 'error', 'Error', e.message || 'Network error');
+  }
+}
+
+async function loadHistoryView(){
+  if (!_currentUser) return;
+  const body = document.getElementById('picksHistoryBody');
+  if (!body) return;
+  body.innerHTML = '<div class="picks-loading">Loading history…</div>';
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?reconciled=1`);
+    const { picks } = await res.json();
+    if (!picks || picks.length === 0) {
+      body.innerHTML = '<div class="picks-placeholder">No reconciled picks yet. Make picks on upcoming events — your history appears here once results are in.</div>';
+      return;
+    }
+    body.innerHTML = picks.map(p => {
+      const correct = p.correct === 1;
+      const wrong = p.correct === 0;
+      const pickedName = p.picked_fighter_name || (p.picked_fighter_id === p.red_fighter_id ? p.red_name : p.blue_name);
+      const winnerName = p.actual_winner_id === p.red_fighter_id ? p.red_name : (p.actual_winner_id === p.blue_fighter_id ? p.blue_name : '—');
+      return `
+        <div class="pick-outcome ${correct ? 'is-correct' : (wrong ? 'is-wrong' : '')}" style="margin-bottom:8px">
+          <div>
+            <div class="pick-outcome__winner">${escHtml(pickedName)} · ${correct ? 'CORRECT' : (wrong ? 'WRONG' : '—')}</div>
+            <div class="pick-outcome__detail">${escHtml(p.red_name)} vs ${escHtml(p.blue_name)} · winner: ${escHtml(winnerName)} · ${escHtml(p.method || '')}${p.fight_round ? ' R' + p.fight_round : ''}</div>
+          </div>
+          <div></div>
+          <div class="pick-outcome__points">${p.points || 0} pts</div>
+        </div>`;
+    }).join('');
+  } catch (e) {
+    body.innerHTML = '<div class="picks-placeholder">Failed to load history.</div>';
+  }
+}
+
+async function loadLeaderboardView(){
+  const body = document.getElementById('picksLeaderboardBody');
+  if (!body) return;
+  body.innerHTML = '<div class="picks-loading">Loading leaderboard…</div>';
+  try {
+    const url = _picksState.lbScope === 'event' && _picksState.eventId
+      ? `/api/events/${_picksState.eventId}/picks/leaderboard`
+      : '/api/leaderboard';
+    const res = await fetch(url);
+    const { leaderboard } = await res.json();
+    if (!leaderboard || leaderboard.length === 0) {
+      body.innerHTML = '<div class="picks-placeholder">Leaderboard is empty. Once users\' picks are reconciled, rankings show here.</div>';
+      return;
+    }
+    body.innerHTML = `
+      <table class="picks-leaderboard">
+        <thead>
+          <tr><th>#</th><th>User</th><th>Picks</th><th>Correct</th><th>Accuracy</th><th>Points</th></tr>
+        </thead>
+        <tbody>
+          ${leaderboard.map((row, i) => {
+            const isMe = _currentUser && row.user_id === _currentUser.id;
+            return `
+              <tr class="${isMe ? 'me' : ''}">
+                <td class="num">${i + 1}</td>
+                <td>${avatarHtml({ avatar_key: row.avatar_key, display_name: row.display_name }, 'xs')} ${escHtml(row.display_name)}${isMe ? ' <span style="color:var(--cyan)">(you)</span>' : ''}</td>
+                <td>${row.picks}</td>
+                <td>${row.correct_count}</td>
+                <td>${row.accuracy_pct != null ? row.accuracy_pct + '%' : '—'}</td>
+                <td class="num">${row.points}</td>
+              </tr>`;
+          }).join('')}
+        </tbody>
+      </table>`;
+  } catch (e) {
+    body.innerHTML = '<div class="picks-placeholder">Failed to load leaderboard.</div>';
+  }
 }
 
 // Init each module independently — one failure must not cascade

@@ -66,6 +66,30 @@
       <div class="picks-empty__sub">Create a local profile to start making picks. No email, no password — just a name and an avatar.</div>
       <button class="rec-btn" id="picksCreateProfileBtn">Create profile</button>
     </div>
+    <div class="picks-view" id="picksViewUpcoming" style="display:none">
+      <div class="picks-event-picker">
+        <span class="picks-event-picker__label">Event ▸</span>
+        <select class="event-dropdown" id="picksEventSelect"></select>
+        <span class="picks-event-picker__hint" id="picksEventHint"></span>
+      </div>
+      <div class="picks-fights" id="picksFights">
+        <div class="picks-loading" id="picksFightsLoading" style="display:none">Loading card…</div>
+      </div>
+    </div>
+    <div class="picks-view" id="picksViewHistory" style="display:none">
+      <div class="picks-history" id="picksHistoryBody"><div class="picks-placeholder">Your reconciled picks will appear here after an event concludes.</div></div>
+    </div>
+    <div class="picks-view" id="picksViewLeaderboard" style="display:none">
+      <div class="picks-leaderboard-wrap">
+        <div class="picks-leaderboard-tabs">
+          <button class="picks-lb-tab active" data-lb-scope="event">This event</button>
+          <button class="picks-lb-tab" data-lb-scope="all">All-time</button>
+        </div>
+        <div class="picks-leaderboard-body" id="picksLeaderboardBody">
+          <div class="picks-placeholder">Leaderboard populates after picks are reconciled.</div>
+        </div>
+      </div>
+    </div>
   </div>
 </div>
 

@@ -25,14 +25,15 @@ test.describe('Page Load', () => {
     await expect(page.locator('.top-bar__name')).toContainText(/v\d+\.\d+\.\d+/, { timeout: 5000 });
   });
 
-  test('renders all 4 tab buttons', async ({ page }) => {
+  test('renders all primary tab buttons', async ({ page }) => {
     await page.goto('/');
     const tabs = page.locator('.primary-tab');
-    await expect(tabs).toHaveCount(4);
+    await expect(tabs).toHaveCount(5);
     await expect(tabs.nth(0)).toContainText('Dashboard');
     await expect(tabs.nth(1)).toContainText('Events');
     await expect(tabs.nth(2)).toContainText('Fighters');
     await expect(tabs.nth(3)).toContainText('Stat Leaders');
+    await expect(tabs.nth(4)).toContainText('Picks');
   });
 
   test('Dashboard tab is active by default', async ({ page }) => {

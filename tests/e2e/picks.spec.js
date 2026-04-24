@@ -224,3 +224,58 @@ test.describe('Picks API — admin', () => {
     expect(b.points_awarded).toBe(a.points_awarded);
   });
 });
+
+test.describe('Picks UI — widget rendering', () => {
+  test('Picks tab renders the fight card after profile creation', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    // Picks tab button is rendered only after /api/version confirms the flag
+    const picksBtn = page.locator('#picksTabBtn');
+    await expect(picksBtn).toBeVisible();
+    await picksBtn.click();
+
+    // Create profile
+    await page.locator('#picksCreateProfileBtn').click();
+    await page.locator('#profileDisplayName').fill('UI Tester');
+    await page.locator('.avatar-pick[data-avatar-key="a4"]').click();
+    await page.locator('#profileSubmitBtn').click();
+
+    // Chip appears
+    await expect(page.locator('#profileChipBtn')).toBeVisible();
+
+    // Widget renders — wait for at least one pick-fight card
+    await expect(page.locator('.pick-fight').first()).toBeVisible({ timeout: 8000 });
+
+    // Main event has the cyan left bar
+    await expect(page.locator('.pick-fight.is-main')).toBeVisible();
+
+    // Outcome banner shows WINNER (since UFC 245 fights all have winner_id)
+    await expect(page.locator('.pick-outcome').first()).toBeVisible();
+
+    // Pick buttons are disabled on locked fights
+    const firstFighter = page.locator('.pick-fight.is-main .pick-fighter').first();
+    await expect(firstFighter).toBeDisabled();
+  });
+
+  test('subnav switches between views', async ({ page }) => {
+    await page.goto('/');
+    await page.waitForLoadState('networkidle');
+    await page.locator('#picksTabBtn').click();
+    await page.locator('#picksCreateProfileBtn').click();
+    await page.locator('#profileDisplayName').fill('Subnav Tester');
+    await page.locator('#profileSubmitBtn').click();
+
+    // Leaderboard
+    await page.locator('.picks-subnav__btn[data-picks-view="leaderboard"]').click();
+    await expect(page.locator('#picksViewLeaderboard')).toBeVisible();
+    await expect(page.locator('.picks-lb-tab.active')).toHaveText(/THIS EVENT/i);
+
+    // History
+    await page.locator('.picks-subnav__btn[data-picks-view="history"]').click();
+    await expect(page.locator('#picksViewHistory')).toBeVisible();
+
+    // Back to Upcoming
+    await page.locator('.picks-subnav__btn[data-picks-view="upcoming"]').click();
+    await expect(page.locator('#picksViewUpcoming')).toBeVisible();
+  });
+});
