@@ -729,20 +729,71 @@ function setupNav(){
 }
 
 /* -----------------------------------------------------------
-   TC TICKER
+   TC TIMECODE — syncs top-bar TC to the fight-time of whatever
+   section the reader is currently looking at.  Each <section>
+   declares data-tc="..."; the scroll handler picks the section
+   whose top has just crossed the sticky-header horizon and
+   swaps the value with a brief cyan flash.
 ----------------------------------------------------------- */
 function startTicker(){
   const tc = document.getElementById('tc');
-  const t0 = performance.now();
-  function tick(){
-    const s = (performance.now() - t0) / 1000;
-    const m = Math.floor(s / 60);
-    const ss = Math.floor(s % 60);
-    const cs = Math.floor((s * 100) % 100);
-    tc.textContent = `${String(m).padStart(2,'0')}:${String(ss).padStart(2,'0')}.${String(cs).padStart(2,'0')}`;
-    requestAnimationFrame(tick);
+  if (!tc) return;
+  const sections = Array.from(document.querySelectorAll('section[data-tc]'));
+  if (!sections.length) return;
+
+  function setTc(value){
+    if (!value || tc.textContent === value) return;
+    tc.textContent = value;
+    tc.classList.add('is-updating');
+    clearTimeout(setTc._t);
+    setTc._t = setTimeout(() => tc.classList.remove('is-updating'), 520);
   }
-  tick();
+
+  const tabTc = { events:'ALL EVENTS', fighters:'DIRECTORY', stats:'STAT LEADERS' };
+
+  function resolveActive(){
+    // When a non-dashboard tab is active, use its fixed TC value
+    const activeTab = document.querySelector('.primary-tab.active');
+    if (activeTab && tabTc[activeTab.dataset.tab]){
+      setTc(tabTc[activeTab.dataset.tab]);
+      return;
+    }
+    // Dashboard: section whose top third of viewport owns the read-horizon wins
+    const visible = sections.filter(s => s.offsetHeight > 0);
+    if (!visible.length) return;
+    const viewportH = window.innerHeight;
+    const horizon = Math.max(180, viewportH * 0.33);
+    let best = null;
+    for (const section of visible){
+      const rect = section.getBoundingClientRect();
+      if (rect.top <= horizon && rect.bottom > horizon){ best = section; break; }
+    }
+    if (!best){
+      let bestArea = 0;
+      for (const section of visible){
+        const rect = section.getBoundingClientRect();
+        const top = Math.max(0, rect.top);
+        const bottom = Math.min(viewportH, rect.bottom);
+        const area = bottom - top;
+        if (area > bestArea){ best = section; bestArea = area; }
+      }
+    }
+    if (!best) best = visible[0];
+    setTc(best.dataset.tc);
+  }
+
+  resolveActive();
+
+  let pending = false;
+  window.addEventListener('scroll', () => {
+    if (pending) return;
+    pending = true;
+    requestAnimationFrame(() => { pending = false; resolveActive(); });
+  }, { passive:true });
+  window.addEventListener('resize', resolveActive);
+  document.querySelectorAll('.primary-tab').forEach(t => {
+    t.addEventListener('click', () => setTimeout(resolveActive, 30));
+  });
 }
 
 /* -----------------------------------------------------------

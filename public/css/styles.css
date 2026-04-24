@@ -132,6 +132,14 @@ body::after{
 }
 .top-bar__tc{
   color:var(--fg);
+  cursor:help;
+}
+.top-bar__tc #tc{
+  display:inline-block;
+  transition:color .35s ease;
+}
+.top-bar__tc #tc.is-updating{
+  color:var(--cyan);
 }
 .top-bar__live{
   color:var(--cyan);
