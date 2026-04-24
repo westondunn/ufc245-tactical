@@ -3159,10 +3159,8 @@ function setupPrimaryTabs(){
       if (el) el.scrollIntoView({ behavior:'smooth', block:'start' });
     });
   });
-  const initial = { ...getStoredViewState(), ...parseViewHash() };
-  if (initial.tab && initial.tab !== 'dashboard') {
-    activatePrimaryTab(initial.tab, { persist:false });
-  }
+  restoreStoredView();
+  window.addEventListener('beforeunload', () => setStoredViewState(getCurrentViewState()));
 }
 
 function activatePrimaryTab(target, opts = {}){
@@ -3628,6 +3626,28 @@ function updateViewHash(tab, picksView){
   if (window.location.hash !== next) history.replaceState(null, '', next);
 }
 
+function getCurrentViewState(){
+  const activeTab = document.querySelector('.primary-tab.active');
+  const tab = activeTab && activeTab.dataset.tab || 'dashboard';
+  const state = { tab };
+  if (tab === 'picks') {
+    state.picksView = _picksState ? _picksState.view : 'upcoming';
+    if (_picksState && _picksState.eventId) state.picksEventId = _picksState.eventId;
+  }
+  return state;
+}
+
+function restoreStoredView(){
+  const target = { ...getStoredViewState(), ...parseViewHash() };
+  if (target.picksView && _picksState) _picksState.view = target.picksView;
+  if (Number.isFinite(parseInt(target.picksEventId, 10)) && _picksState) {
+    _picksState.eventId = parseInt(target.picksEventId, 10);
+  }
+  if (target.tab && ['dashboard','events','fighters','stats','picks'].includes(target.tab)) {
+    activatePrimaryTab(target.tab, { persist:false });
+  }
+}
+
 function getLocalProfile(){
   try {
     const raw = localStorage.getItem(PICKS_STORAGE_KEY);
@@ -3957,6 +3977,7 @@ async function initPicksFeature(){
   }
   renderProfileChip();
   setupPicksSubnav();
+  restoreStoredView();
 }
 
 /* -----------------------------------------------------------
