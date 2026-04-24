@@ -50,8 +50,10 @@ async function main(){
     process.exit(1);
   }
 
+  const MODEL_VERSION = 'demo-v0.3';
+
   // Strategy: temporarily null each fight's winner so upsertPick accepts it,
-  // write the pick, restore the winner, then reconcile the event once.
+  // write a model prediction + user picks, restore the winner, reconcile.
   for (const ev of events) {
     const fights = await db.allRows(
       'SELECT id, red_fighter_id, blue_fighter_id, winner_id, method, round FROM fights WHERE event_id = ? AND winner_id IS NOT NULL',
@@ -61,6 +63,30 @@ async function main(){
 
     for (const f of fights) {
       const origWinner = f.winner_id;
+
+      // Seed a model prediction — correct ~65% of the time with conf 55–80%,
+      // wrong ~35% of the time with conf 52–68% (enough to create "beat the model" moments)
+      const modelFavorsWinner = chance(0.65);
+      const modelFavoredId = modelFavorsWinner
+        ? origWinner
+        : (origWinner === f.red_fighter_id ? f.blue_fighter_id : f.red_fighter_id);
+      const modelConf = modelFavorsWinner
+        ? 0.55 + Math.random() * 0.25
+        : 0.52 + Math.random() * 0.16;
+      const redProb = modelFavoredId === f.red_fighter_id ? modelConf : (1 - modelConf);
+      await db.upsertPrediction({
+        fight_id: f.id,
+        red_fighter_id: f.red_fighter_id,
+        blue_fighter_id: f.blue_fighter_id,
+        red_win_prob: Math.round(redProb * 100) / 100,
+        blue_win_prob: Math.round((1 - redProb) * 100) / 100,
+        model_version: MODEL_VERSION,
+        feature_hash: null,
+        predicted_at: new Date().toISOString(),
+        event_date: ev.date,
+        is_stale: 0
+      });
+
       await db.run('UPDATE fights SET winner_id = NULL WHERE id = ?', [f.id]);
 
       for (const u of users) {

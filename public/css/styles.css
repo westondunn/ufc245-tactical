@@ -2224,11 +2224,11 @@ footer{
 
 /* Model comparison row */
 .pick-model{
-  margin-top:12px;padding:10px 14px;
+  margin-top:12px;padding:12px 14px;
   background:var(--bg-card-soft);border-left:2px solid var(--cyan);
-  display:flex;align-items:center;gap:10px;flex-wrap:wrap;
   font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;
 }
+.pick-model__top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
 .pick-model__icon{color:var(--cyan);font-size:11px}
 .pick-model__label{color:var(--muted);text-transform:uppercase;letter-spacing:.16em}
 .pick-model__pred{color:var(--fg);font-weight:600}
@@ -2239,6 +2239,43 @@ footer{
 .pick-model__agreement.agrees{color:var(--green)}
 .pick-model__agreement.disagrees{color:var(--amber)}
 .pick-model__empty{color:var(--muted-dim);font-style:italic}
+
+/* Horizontal probability bar */
+.pick-model__bar{
+  display:flex;height:18px;background:var(--bg);
+  position:relative;overflow:hidden;
+}
+.pick-model__bar-red{
+  background:linear-gradient(90deg,var(--red-deep) 0%,var(--red) 100%);
+  display:flex;align-items:center;justify-content:flex-start;
+  padding:0 8px;
+  color:#fff;font-size:10px;font-weight:700;letter-spacing:.06em;
+  transition:width .3s ease;
+}
+.pick-model__bar-blue{
+  background:linear-gradient(270deg,var(--blue-deep) 0%,var(--blue) 100%);
+  display:flex;align-items:center;justify-content:flex-end;
+  padding:0 8px;
+  color:#fff;font-size:10px;font-weight:700;letter-spacing:.06em;
+  transition:width .3s ease;
+}
+.pick-model__bar-tick{
+  position:absolute;top:-3px;bottom:-3px;width:2px;
+  background:var(--cyan);box-shadow:0 0 6px var(--cyan);
+  z-index:2;pointer-events:none;
+}
+.pick-model__bar-tick::before{
+  content:'YOU';position:absolute;top:-14px;left:50%;transform:translateX(-50%);
+  font-family:var(--f-mono);font-size:8px;letter-spacing:.18em;color:var(--cyan);
+  white-space:nowrap;
+}
+.pick-model__legend{
+  display:flex;justify-content:space-between;margin-top:4px;
+  font-family:var(--f-mono);font-size:9px;color:var(--muted-dim);
+  letter-spacing:.04em;
+}
+.pick-model__legend-red{color:var(--red-soft)}
+.pick-model__legend-blue{color:var(--blue-soft)}
 
 /* Lock / status row */
 .pick-status{

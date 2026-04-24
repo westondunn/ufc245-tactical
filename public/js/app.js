@@ -735,6 +735,9 @@ function setupNav(){
    whose top has just crossed the sticky-header horizon and
    swaps the value with a brief cyan flash.
 ----------------------------------------------------------- */
+// Exposed so non-section views (Picks subnav) can force a TC value
+let _tcForceValue = null;     // when set, resolveActive uses this verbatim
+let _tcForceSet = null;       // function(value) — null until startTicker runs
 function startTicker(){
   const tc = document.getElementById('tc');
   if (!tc) return;
@@ -751,7 +754,18 @@ function startTicker(){
 
   const tabTc = { events:'ALL EVENTS', fighters:'DIRECTORY', stats:'STAT LEADERS', picks:'YOUR PICKS' };
 
+  // Picks subnav can force an overriding label (see activatePicksView)
+  _tcForceSet = (value) => {
+    _tcForceValue = value;
+    resolveActive();
+  };
+
   function resolveActive(){
+    // Force override takes precedence (Picks subnav labels)
+    if (_tcForceValue) {
+      setTc(_tcForceValue);
+      return;
+    }
     // When a non-dashboard tab is active, use its fixed TC value
     const activeTab = document.querySelector('.primary-tab.active');
     if (activeTab && tabTc[activeTab.dataset.tab]){
@@ -3158,6 +3172,12 @@ function activatePrimaryTab(target){
   if (target === 'events' && !_tabsLoaded.events) { loadEventsTab(); _tabsLoaded.events = true; }
   if (target === 'fighters' && !_tabsLoaded.fighters) { loadFightersTab(); _tabsLoaded.fighters = true; }
   if (target === 'stats' && !_tabsLoaded.stats) { loadStatsTab(); _tabsLoaded.stats = true; }
+  // Leaving Picks → clear subview TC override so other tabs use their own labels
+  if (target !== 'picks' && _tcForceSet) _tcForceSet(null);
+  // Entering Picks → re-apply the current subview TC
+  if (target === 'picks' && _tcForceSet && typeof PICKS_TC_LABEL !== 'undefined') {
+    _tcForceSet(PICKS_TC_LABEL[_picksState ? _picksState.view : 'upcoming'] || 'YOUR PICKS');
+  }
 }
 
 // ── Events Tab — Inline Accordion ──
@@ -3850,6 +3870,8 @@ function setupPicksSubnav(){
   });
 }
 
+const PICKS_TC_LABEL = { upcoming:'PICKS · UPCOMING', history:'PICKS · HISTORY', leaderboard:'PICKS · LEADERBOARD' };
+
 function activatePicksView(view){
   _picksState.view = view;
   document.querySelectorAll('.picks-subnav__btn').forEach(b => {
@@ -3858,6 +3880,8 @@ function activatePicksView(view){
   document.getElementById('picksViewUpcoming').style.display    = view === 'upcoming'    ? '' : 'none';
   document.getElementById('picksViewHistory').style.display     = view === 'history'     ? '' : 'none';
   document.getElementById('picksViewLeaderboard').style.display = view === 'leaderboard' ? '' : 'none';
+  // Update TC to reflect the subview
+  if (_tcForceSet) _tcForceSet(PICKS_TC_LABEL[view] || 'YOUR PICKS');
   if (!_currentUser) return;
   if (view === 'upcoming')    loadUpcomingView();
   if (view === 'history')     loadHistoryView();
@@ -3955,22 +3979,47 @@ function renderPickWidget(fight){
   const roundVal = pick && pick.round_pick || '';
   const notesVal = pick && pick.notes || '';
 
-  // Model comparison
+  // Model comparison with horizontal probability bar
   let modelHtml;
   if (model && model.picked_fighter_id) {
     const modelWinnerName = model.picked_fighter_id === fight.red_fighter_id ? fight.red_name : fight.blue_name;
     const pct = Math.round((model.confidence || 0) * 100);
+    // red_win_prob + blue_win_prob in the model object (server sends both)
+    const redPct = Math.round((model.red_win_prob || 0) * 100);
+    const bluePct = 100 - redPct;
     let badge = '';
     if (pick) {
       const agrees = pick.picked_fighter_id === model.picked_fighter_id;
       badge = `<span class="pick-model__agreement ${agrees ? 'agrees' : 'disagrees'}">${agrees ? 'agrees with you' : 'disagrees'}</span>`;
     }
+    // "YOU" tick — position by the user's own confidence, projected onto the bar.
+    // A pick on red with conf X positions the tick at X% of the red half (from left).
+    // A pick on blue with conf X positions the tick at 100 - (X% of blue half from right).
+    let youTick = '';
+    if (pick) {
+      const conf = pick.confidence || 50;
+      const tickPct = pick.picked_fighter_id === fight.red_fighter_id
+        ? (redPct * (conf / 100))
+        : (redPct + bluePct * (1 - conf / 100));
+      youTick = `<div class="pick-model__bar-tick" style="left:${Math.max(0, Math.min(100, tickPct))}%"></div>`;
+    }
     modelHtml = `
       <div class="pick-model">
-        <span class="pick-model__icon">⚡</span>
-        <span class="pick-model__label">Model · ${escHtml(model.version)}</span>
-        <span class="pick-model__pred">${escHtml(modelWinnerName)} · ${pct}%</span>
-        ${badge}
+        <div class="pick-model__top">
+          <span class="pick-model__icon">⚡</span>
+          <span class="pick-model__label">Model · ${escHtml(model.version)}</span>
+          <span class="pick-model__pred">${escHtml(modelWinnerName)} favored · ${pct}%</span>
+          ${badge}
+        </div>
+        <div class="pick-model__bar">
+          <div class="pick-model__bar-red" style="width:${redPct}%">${redPct > 15 ? redPct + '%' : ''}</div>
+          <div class="pick-model__bar-blue" style="width:${bluePct}%">${bluePct > 15 ? bluePct + '%' : ''}</div>
+          ${youTick}
+        </div>
+        <div class="pick-model__legend">
+          <span class="pick-model__legend-red">${escHtml(fight.red_name || '')}</span>
+          <span class="pick-model__legend-blue">${escHtml(fight.blue_name || '')}</span>
+        </div>
       </div>`;
   } else {
     modelHtml = `<div class="pick-model"><span class="pick-model__empty">No model prediction available for this fight yet.</span></div>`;
