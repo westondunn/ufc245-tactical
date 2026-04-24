@@ -220,6 +220,60 @@ async function ensureSchema() {
   await run('CREATE INDEX IF NOT EXISTS idx_round_stats_fight ON round_stats(fight_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_fights_winner ON fights(winner_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_fight_stats_fighter ON fight_stats(fighter_id)');
+
+  // ── User picks feature (additive) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      display_name TEXT NOT NULL,
+      avatar_key TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      is_guest INTEGER DEFAULT 1
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS user_picks (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      event_id INTEGER NOT NULL REFERENCES events(id),
+      fight_id INTEGER NOT NULL REFERENCES fights(id),
+      picked_fighter_id INTEGER NOT NULL REFERENCES fighters(id),
+      confidence INTEGER DEFAULT 50,
+      method_pick TEXT,
+      round_pick INTEGER,
+      notes TEXT,
+      submitted_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL,
+      locked_at TEXT,
+      actual_winner_id INTEGER,
+      correct INTEGER,
+      method_correct INTEGER,
+      round_correct INTEGER,
+      points INTEGER DEFAULT 0,
+      UNIQUE(user_id, fight_id)
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS pick_model_snapshots (
+      id BIGSERIAL PRIMARY KEY,
+      user_pick_id BIGINT NOT NULL REFERENCES user_picks(id) ON DELETE CASCADE,
+      prediction_id BIGINT REFERENCES predictions(id),
+      model_version TEXT NOT NULL,
+      model_picked_fighter_id INTEGER,
+      model_confidence DOUBLE PRECISION,
+      user_agreed_with_model INTEGER,
+      created_at TEXT NOT NULL
+    )
+  `);
+
+  await run('CREATE INDEX IF NOT EXISTS idx_user_picks_user ON user_picks(user_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_user_picks_event ON user_picks(event_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_user_picks_fight ON user_picks(fight_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_user_picks_user_event ON user_picks(user_id, event_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_pick_snapshots_pick ON pick_model_snapshots(user_pick_id)');
 }
 
 async function migratePredictionsUniqueness() {
@@ -726,6 +780,288 @@ async function getPredictionAccuracy() {
   );
 }
 
+/* ── USERS ── */
+
+const crypto = require('crypto');
+const { scorePick, normalizeMethod } = require('../lib/scoring');
+
+async function createUser({ display_name, avatar_key }) {
+  const id = crypto.randomUUID();
+  const now = new Date().toISOString();
+  await run(
+    'INSERT INTO users (id, display_name, avatar_key, created_at, updated_at, is_guest) VALUES (?,?,?,?,?,1)',
+    [id, display_name, avatar_key || null, now, now]
+  );
+  return { id, display_name, avatar_key: avatar_key || null, created_at: now, updated_at: now, is_guest: 1 };
+}
+
+async function getUser(id) {
+  if (!id) return null;
+  return oneRow('SELECT * FROM users WHERE id = ?', [id]);
+}
+
+async function updateUser(id, { display_name, avatar_key }) {
+  const user = await getUser(id);
+  if (!user) return null;
+  const fields = [];
+  const params = [];
+  if (display_name !== undefined) { fields.push('display_name = ?'); params.push(display_name); }
+  if (avatar_key !== undefined)   { fields.push('avatar_key = ?');   params.push(avatar_key); }
+  if (!fields.length) return user;
+  fields.push('updated_at = ?');
+  params.push(new Date().toISOString());
+  params.push(id);
+  await run(`UPDATE users SET ${fields.join(', ')} WHERE id = ?`, params);
+  return getUser(id);
+}
+
+async function deleteUser(id) {
+  // Explicit cascade for parity with sqlite path (postgres FKs also handle it via ON DELETE CASCADE).
+  await run(`DELETE FROM pick_model_snapshots
+             WHERE user_pick_id IN (SELECT id FROM user_picks WHERE user_id = ?)`, [id]);
+  await run('DELETE FROM user_picks WHERE user_id = ?', [id]);
+  const res = await run('DELETE FROM users WHERE id = ?', [id]);
+  return res > 0;
+}
+
+/* ── PICK LOCK STATE ──
+   A pick is locked if: user_picks.locked_at is set, OR fights.winner_id is set. */
+
+async function getPickLockState(userId, fightId) {
+  const row = await oneRow(
+    `SELECT p.id AS pick_id, p.locked_at, f.winner_id
+     FROM fights f
+     LEFT JOIN user_picks p ON p.fight_id = f.id AND p.user_id = ?
+     WHERE f.id = ?`,
+    [userId, fightId]
+  );
+  if (!row) return { exists: false, locked: false, reason: null };
+  const locked = !!row.locked_at || row.winner_id != null;
+  const reason = row.locked_at ? 'event_locked' : (row.winner_id != null ? 'fight_over' : null);
+  return { exists: !!row.pick_id, locked, reason, existing_pick_id: row.pick_id || null };
+}
+
+/* ── USER PICKS ── */
+
+async function upsertPick(input) {
+  const { user_id, event_id, fight_id, picked_fighter_id, confidence, method_pick, round_pick, notes } = input;
+  const lock = await getPickLockState(user_id, fight_id);
+  if (lock.locked) {
+    const err = new Error('pick_locked'); err.code = 'pick_locked'; err.reason = lock.reason;
+    throw err;
+  }
+  const now = new Date().toISOString();
+  await run(
+    `INSERT INTO user_picks
+       (user_id, event_id, fight_id, picked_fighter_id, confidence, method_pick, round_pick, notes, submitted_at, updated_at)
+     VALUES (?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(user_id, fight_id) DO UPDATE SET
+       picked_fighter_id = EXCLUDED.picked_fighter_id,
+       confidence = EXCLUDED.confidence,
+       method_pick = EXCLUDED.method_pick,
+       round_pick = EXCLUDED.round_pick,
+       notes = EXCLUDED.notes,
+       updated_at = EXCLUDED.updated_at`,
+    [user_id, event_id, fight_id, picked_fighter_id, confidence ?? 50, method_pick || null, round_pick || null, notes || null, now, now]
+  );
+  const pick = await oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [user_id, fight_id]);
+  if (!pick) return null;
+  await refreshPickModelSnapshot(pick);
+  const snapshot = await oneRow(
+    'SELECT * FROM pick_model_snapshots WHERE user_pick_id = ? ORDER BY id DESC LIMIT 1',
+    [pick.id]
+  );
+  return { pick, snapshot };
+}
+
+async function refreshPickModelSnapshot(pick) {
+  // Find current prediction for the fight (latest non-stale unreconciled, else latest).
+  let pred = await oneRow(
+    `SELECT * FROM predictions
+     WHERE fight_id = ? AND is_stale = 0
+     ORDER BY predicted_at DESC, id DESC LIMIT 1`,
+    [pick.fight_id]
+  );
+  if (!pred) {
+    pred = await oneRow(
+      'SELECT * FROM predictions WHERE fight_id = ? ORDER BY predicted_at DESC, id DESC LIMIT 1',
+      [pick.fight_id]
+    );
+  }
+  const now = new Date().toISOString();
+  // Remove old snapshot (one-to-one semantics; history can be layered later)
+  await run('DELETE FROM pick_model_snapshots WHERE user_pick_id = ?', [pick.id]);
+  if (!pred) {
+    await run(
+      `INSERT INTO pick_model_snapshots
+         (user_pick_id, prediction_id, model_version, model_picked_fighter_id, model_confidence, user_agreed_with_model, created_at)
+       VALUES (?,?,?,?,?,?,?)`,
+      [pick.id, null, 'none', null, null, null, now]
+    );
+    return;
+  }
+  const modelPicked = pred.red_win_prob >= pred.blue_win_prob ? pred.red_fighter_id : pred.blue_fighter_id;
+  const modelConf = Math.max(pred.red_win_prob, pred.blue_win_prob);
+  const agreed = modelPicked === pick.picked_fighter_id ? 1 : 0;
+  await run(
+    `INSERT INTO pick_model_snapshots
+       (user_pick_id, prediction_id, model_version, model_picked_fighter_id, model_confidence, user_agreed_with_model, created_at)
+     VALUES (?,?,?,?,?,?,?)`,
+    [pick.id, pred.id, pred.model_version, modelPicked, modelConf, agreed, now]
+  );
+}
+
+async function deletePick(userId, pickId) {
+  const pick = await oneRow('SELECT * FROM user_picks WHERE id = ? AND user_id = ?', [pickId, userId]);
+  if (!pick) return { deleted: false, reason: 'not_found' };
+  const lock = await getPickLockState(userId, pick.fight_id);
+  if (lock.locked) return { deleted: false, reason: lock.reason || 'locked' };
+  await run('DELETE FROM user_picks WHERE id = ?', [pickId]);
+  return { deleted: true };
+}
+
+async function getPicksForUser(userId, opts = {}) {
+  const params = [userId];
+  let sql = `
+    SELECT
+      p.*,
+      f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name, f.winner_id, f.method, f.round AS fight_round,
+      f.is_main, f.weight_class,
+      fp.name AS picked_fighter_name,
+      s.model_version AS model_version,
+      s.model_picked_fighter_id AS model_picked_fighter_id,
+      s.model_confidence AS model_confidence,
+      s.user_agreed_with_model AS user_agreed_with_model
+    FROM user_picks p
+    JOIN fights f ON f.id = p.fight_id
+    LEFT JOIN fighters fp ON fp.id = p.picked_fighter_id
+    LEFT JOIN pick_model_snapshots s ON s.user_pick_id = p.id
+    WHERE p.user_id = ?`;
+  if (opts.event_id) { sql += ' AND p.event_id = ?'; params.push(opts.event_id); }
+  if (opts.reconciled === true)  sql += ' AND p.correct IS NOT NULL';
+  if (opts.reconciled === false) sql += ' AND p.correct IS NULL';
+  sql += ' ORDER BY p.event_id DESC, p.fight_id ASC';
+  return allRows(sql, params);
+}
+
+async function lockPicksForEvent(eventId) {
+  const res = await run(
+    'UPDATE user_picks SET locked_at = ? WHERE event_id = ? AND locked_at IS NULL',
+    [new Date().toISOString(), eventId]
+  );
+  return { locked: res || 0 };
+}
+
+async function reconcilePicksForEvent(eventId) {
+  const fights = await allRows(
+    'SELECT id, winner_id, method, round FROM fights WHERE event_id = ? AND winner_id IS NOT NULL',
+    [eventId]
+  );
+  let reconciledCount = 0;
+  let pointsAwarded = 0;
+  for (const fight of fights) {
+    const actualMethod = normalizeMethod(fight.method);
+    const actualRound = fight.round || null;
+    const picks = await allRows(
+      `SELECT p.*, s.user_agreed_with_model
+       FROM user_picks p
+       LEFT JOIN pick_model_snapshots s ON s.user_pick_id = p.id
+       WHERE p.fight_id = ?`,
+      [fight.id]
+    );
+    for (const pick of picks) {
+      const correct = pick.picked_fighter_id === fight.winner_id ? 1 : 0;
+      const methodCorrect = pick.method_pick
+        ? (actualMethod && pick.method_pick === actualMethod ? 1 : 0)
+        : null;
+      const roundCorrect = pick.round_pick
+        ? (actualRound && pick.round_pick === actualRound ? 1 : 0)
+        : null;
+      const { points } = scorePick({
+        correct,
+        confidence: pick.confidence,
+        methodCorrect,
+        roundCorrect,
+        userAgreedWithModel: pick.user_agreed_with_model == null ? null : pick.user_agreed_with_model
+      });
+      await run(
+        `UPDATE user_picks
+           SET actual_winner_id = ?, correct = ?, method_correct = ?, round_correct = ?, points = ?
+         WHERE id = ?`,
+        [fight.winner_id, correct, methodCorrect, roundCorrect, points, pick.id]
+      );
+      reconciledCount++;
+      pointsAwarded += points;
+    }
+  }
+  return { reconciled: reconciledCount, points_awarded: pointsAwarded, fights_with_results: fights.length };
+}
+
+/* ── LEADERBOARDS + STATS ── */
+
+async function getLeaderboard(opts = {}) {
+  const params = [];
+  let sql = `
+    SELECT
+      u.id AS user_id,
+      u.display_name,
+      u.avatar_key,
+      COUNT(p.id)::int AS picks,
+      COALESCE(SUM(CASE WHEN p.correct = 1 THEN 1 ELSE 0 END),0)::int AS correct_count,
+      COALESCE(SUM(p.points),0)::int AS points,
+      ROUND(
+        (COALESCE(SUM(CASE WHEN p.correct = 1 THEN 1 ELSE 0 END),0)::numeric
+         / NULLIF(COUNT(p.id), 0)) * 100, 1
+      )::double precision AS accuracy_pct
+    FROM users u
+    JOIN user_picks p ON p.user_id = u.id
+    WHERE p.correct IS NOT NULL`;
+  if (opts.event_id) { sql += ' AND p.event_id = ?'; params.push(opts.event_id); }
+  sql += ` GROUP BY u.id, u.display_name, u.avatar_key
+           ORDER BY points DESC, correct_count DESC, u.display_name ASC`;
+  const limit = Number.isFinite(opts.limit) && opts.limit > 0 ? Math.min(opts.limit, 500) : 50;
+  sql += ' LIMIT ?';
+  params.push(limit);
+  return allRows(sql, params);
+}
+
+async function getUserStats(userId) {
+  if (!userId) return null;
+  const base = await oneRow(
+    `SELECT
+        COUNT(*)::int AS total_picks,
+        COALESCE(SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END),0)::int AS correct_count,
+        COALESCE(SUM(points),0)::int AS points
+     FROM user_picks WHERE user_id = ? AND correct IS NOT NULL`,
+    [userId]
+  );
+  const vsModel = await oneRow(
+    `SELECT
+        COUNT(*)::int AS snapshots,
+        COALESCE(SUM(CASE WHEN s.user_agreed_with_model = 1 THEN 1 ELSE 0 END),0)::int AS agreements,
+        COALESCE(SUM(CASE WHEN p.correct = 1 AND s.user_agreed_with_model = 0 THEN 1 ELSE 0 END),0)::int AS beat_model_count,
+        COALESCE(SUM(CASE WHEN p.correct IS NOT NULL AND s.user_agreed_with_model IS NOT NULL THEN 1 ELSE 0 END),0)::int AS compared_reconciled
+     FROM user_picks p
+     LEFT JOIN pick_model_snapshots s ON s.user_pick_id = p.id
+     WHERE p.user_id = ?`,
+    [userId]
+  );
+  const total = base ? base.total_picks : 0;
+  const correct = base ? base.correct_count : 0;
+  return {
+    total_picks: total,
+    correct_count: correct,
+    accuracy_pct: total ? Math.round((correct / total) * 1000) / 10 : null,
+    points: base ? base.points : 0,
+    vs_model: {
+      snapshots: vsModel ? vsModel.snapshots : 0,
+      agreements: vsModel ? vsModel.agreements : 0,
+      beat_model_count: vsModel ? vsModel.beat_model_count : 0,
+      compared_reconciled: vsModel ? vsModel.compared_reconciled : 0
+    }
+  };
+}
+
 module.exports = {
   init, save, getDbStats,
   searchFighters, getFighter, getFighterEvents,
@@ -734,5 +1070,9 @@ module.exports = {
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats,
   upsertPrediction, getPredictions, reconcilePrediction, getPredictionAccuracy,
+  createUser, getUser, updateUser, deleteUser,
+  getPickLockState, upsertPick, deletePick, getPicksForUser,
+  lockPicksForEvent, reconcilePicksForEvent,
+  getLeaderboard, getUserStats,
   nextId, run, allRows, oneRow
 };

@@ -278,6 +278,238 @@ async function run() {
   const lowerSearch = db.searchFighters('mcgregor');
   assertGt(lowerSearch.length, 0, 'searchFighters is case-insensitive');
 
+  // ── Scoring (pure) ──
+  console.log('\nScoring:');
+  const { scorePick, normalizeMethod } = require('../lib/scoring');
+
+  assertEq(scorePick({ correct: null, confidence: 80 }).points, 0, 'unreconciled pick → 0 points');
+  assertEq(scorePick({ correct: 0, confidence: 100 }).points, 0, 'incorrect pick → 0 points regardless of confidence');
+  assertEq(scorePick({ correct: 1, confidence: 0 }).points, 0, 'correct + 0 confidence → 0 points');
+  assertEq(scorePick({ correct: 1, confidence: 50 }).points, 10, 'correct + 50 confidence → 10 base points');
+  assertEq(scorePick({ correct: 1, confidence: 100 }).points, 20, 'correct + 100 confidence → 20 base points');
+  assertEq(scorePick({ correct: 1, confidence: 75 }).points, 15, 'correct + 75 confidence → 15 points');
+  assertEq(scorePick({ correct: 1, confidence: 50, methodCorrect: 1 }).points, 15, 'correct + method → +5 bonus');
+  assertEq(scorePick({ correct: 1, confidence: 50, methodCorrect: 1, roundCorrect: 1 }).points, 20, 'correct + method + round → +10');
+  assertEq(scorePick({ correct: 1, confidence: 100, methodCorrect: 1, roundCorrect: 1, userAgreedWithModel: 0 }).points, 35, 'max: correct + all bonuses + disagreed with model');
+  assertEq(scorePick({ correct: 1, confidence: 100, methodCorrect: 1, roundCorrect: 1, userAgreedWithModel: 1 }).points, 30, 'agreement with model → no upset bonus');
+  assertEq(scorePick({ correct: 0, confidence: 100, userAgreedWithModel: 0 }).points, 0, 'upset bonus requires correct pick');
+
+  assertEq(normalizeMethod('KO/TKO'), 'KO/TKO', 'normalizeMethod KO/TKO');
+  assertEq(normalizeMethod('Submission'), 'SUB', 'normalizeMethod Submission → SUB');
+  assertEq(normalizeMethod('Decision - Unanimous'), 'DEC', 'normalizeMethod Decision → DEC');
+  assertEq(normalizeMethod('Decision - Split'), 'DEC', 'normalizeMethod Split Decision → DEC');
+  assertEq(normalizeMethod('No Contest'), null, 'normalizeMethod No Contest → null');
+  assertEq(normalizeMethod(null), null, 'normalizeMethod null → null');
+
+  // ── Validation (pure) ──
+  console.log('\nValidation:');
+  const validate = require('../lib/validate');
+
+  assertEq(validate.validateDisplayName('  Weston  '), 'Weston', 'display_name trimmed');
+  try { validate.validateDisplayName(''); assert(false, 'empty display_name throws'); }
+  catch (e) { assertEq(e.code, 'display_name_empty', 'empty display_name error code'); }
+  try { validate.validateDisplayName('x'.repeat(41)); assert(false, '41-char display_name throws'); }
+  catch (e) { assertEq(e.code, 'display_name_too_long', 'long display_name error code'); }
+  try { validate.validateDisplayName('bad\x00chars'); assert(false, 'control chars throw'); }
+  catch (e) { assertEq(e.code, 'display_name_invalid_chars', 'control-char error code'); }
+
+  assertEq(validate.validateAvatarKey(null), null, 'null avatar_key returns null');
+  assertEq(validate.validateAvatarKey('a3'), 'a3', 'valid avatar_key passes');
+  try { validate.validateAvatarKey('zz'); assert(false, 'bad avatar_key throws'); }
+  catch (e) { assertEq(e.code, 'avatar_key_invalid', 'bad avatar_key error code'); }
+
+  assertEq(validate.validateConfidence(0), 0, 'confidence 0 valid');
+  assertEq(validate.validateConfidence(100), 100, 'confidence 100 valid');
+  assertEq(validate.validateConfidence('75'), 75, 'confidence as string coerced');
+  assertEq(validate.validateConfidence(null), 50, 'confidence null → default 50');
+  try { validate.validateConfidence(101); assert(false, 'confidence 101 throws'); }
+  catch (e) { assertEq(e.code, 'confidence_range', 'confidence > 100 error'); }
+  try { validate.validateConfidence(-1); assert(false, 'confidence -1 throws'); }
+  catch (e) { assertEq(e.code, 'confidence_range', 'confidence < 0 error'); }
+
+  assertEq(validate.validateMethodPick('ko'), 'KO/TKO', 'ko → KO/TKO');
+  assertEq(validate.validateMethodPick('TKO'), 'KO/TKO', 'TKO → KO/TKO');
+  assertEq(validate.validateMethodPick('SUB'), 'SUB', 'SUB valid');
+  assertEq(validate.validateMethodPick('DEC'), 'DEC', 'DEC valid');
+  assertEq(validate.validateMethodPick(null), null, 'null method_pick → null');
+  try { validate.validateMethodPick('punch'); assert(false, 'bad method_pick throws'); }
+  catch (e) { assertEq(e.code, 'method_pick_invalid', 'bad method_pick error code'); }
+
+  assertEq(validate.validateRoundPick(3), 3, 'round 3 valid');
+  assertEq(validate.validateRoundPick(null), null, 'null round_pick → null');
+  try { validate.validateRoundPick(6); assert(false, 'round 6 throws'); }
+  catch (e) { assertEq(e.code, 'round_pick_range', 'round 6 error code'); }
+
+  assertEq(validate.validateNotes('hello world'), 'hello world', 'short notes pass');
+  try { validate.validateNotes('x'.repeat(281)); assert(false, 'long notes throw'); }
+  catch (e) { assertEq(e.code, 'notes_too_long', 'long notes error code'); }
+
+  // ── User CRUD ──
+  console.log('\nUsers + Picks:');
+  const userA = await db.createUser({ display_name: 'Weston', avatar_key: 'a1' });
+  assertTruthy(userA.id, 'createUser returns id');
+  assertEq(userA.display_name, 'Weston', 'createUser display_name round-trip');
+  assertEq(userA.is_guest, 1, 'createUser defaults is_guest=1');
+
+  const userB = await db.createUser({ display_name: 'Friend' });
+  assertTruthy(userB.id, 'second createUser works');
+  assert(userA.id !== userB.id, 'different users get different ids');
+
+  const fetched = await db.getUser(userA.id);
+  assertEq(fetched.display_name, 'Weston', 'getUser round-trip');
+  assertEq(await db.getUser('nonexistent-id'), null, 'getUser nonexistent returns null');
+
+  const updated = await db.updateUser(userA.id, { display_name: 'WestonD' });
+  assertEq(updated.display_name, 'WestonD', 'updateUser applies change');
+
+  // ── Pick upsert + snapshot ──
+  // Ensure we have a prediction for the fight so snapshot captures it
+  db.run('DELETE FROM predictions WHERE fight_id = ? AND model_version = ?', [mainEvent.id, 'v.test.pick']);
+  db.upsertPrediction({
+    fight_id: mainEvent.id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.72,
+    blue_win_prob: 0.28,
+    model_version: 'v.test.pick',
+    feature_hash: 'pk1',
+    predicted_at: '2026-04-01T00:00:00.000Z',
+    event_date: ufc245.date
+  });
+
+  // Temporarily null out winner_id so we can upsert picks without 'pick_locked'
+  const originalWinner = db.oneRow('SELECT winner_id FROM fights WHERE id = ?', [mainEvent.id]).winner_id;
+  db.run('UPDATE fights SET winner_id = NULL WHERE id = ?', [mainEvent.id]);
+
+  const pickResult = await db.upsertPick({
+    user_id: userA.id,
+    event_id: ufc245.id,
+    fight_id: mainEvent.id,
+    picked_fighter_id: mainEvent.red_id,
+    confidence: 75,
+    method_pick: 'KO/TKO',
+    round_pick: 5,
+    notes: 'Usman TKO R5'
+  });
+  assertTruthy(pickResult.pick, 'upsertPick returns pick');
+  assertEq(pickResult.pick.confidence, 75, 'pick confidence persisted');
+  assertEq(pickResult.pick.method_pick, 'KO/TKO', 'pick method_pick persisted');
+  assertEq(pickResult.pick.round_pick, 5, 'pick round_pick persisted');
+  assertTruthy(pickResult.snapshot, 'snapshot auto-created');
+  assertEq(pickResult.snapshot.model_version, 'v.test.pick', 'snapshot captures model_version');
+  assertEq(pickResult.snapshot.user_agreed_with_model, 1, 'snapshot agreement (user picked same as model favorite)');
+
+  // Upsert same user+fight with different fighter → agreement flips
+  const pickResult2 = await db.upsertPick({
+    user_id: userA.id,
+    event_id: ufc245.id,
+    fight_id: mainEvent.id,
+    picked_fighter_id: mainEvent.blue_id,
+    confidence: 55
+  });
+  assertEq(pickResult2.pick.id, pickResult.pick.id, 'upsert keeps same pick id (UNIQUE user+fight)');
+  assertEq(pickResult2.pick.picked_fighter_id, mainEvent.blue_id, 'upsert updates picked fighter');
+  assertEq(pickResult2.snapshot.user_agreed_with_model, 0, 'snapshot flips to disagreement');
+  const snapshotCount = db.oneRow(
+    'SELECT COUNT(*) AS c FROM pick_model_snapshots WHERE user_pick_id = ?',
+    [pickResult.pick.id]
+  ).c;
+  assertEq(snapshotCount, 1, 'only one snapshot per pick after upsert');
+
+  // getPicksForUser
+  const userAPicks = await db.getPicksForUser(userA.id, { event_id: ufc245.id });
+  assertEq(userAPicks.length, 1, 'getPicksForUser returns one pick');
+  assertTruthy(userAPicks[0].red_name, 'pick row joined with fight fighter names');
+
+  // Second user can pick same fight independently
+  await db.upsertPick({
+    user_id: userB.id,
+    event_id: ufc245.id,
+    fight_id: mainEvent.id,
+    picked_fighter_id: mainEvent.red_id,
+    confidence: 90,
+    method_pick: 'KO/TKO',
+    round_pick: 5
+  });
+  const userBPicks = await db.getPicksForUser(userB.id);
+  assertEq(userBPicks.length, 1, 'second user has independent pick');
+
+  // ── Lock behavior ──
+  const lockBefore = db.getPickLockState(userA.id, mainEvent.id);
+  assertEq(lockBefore.locked, false, 'pick not locked initially');
+  const lockResult = await db.lockPicksForEvent(ufc245.id);
+  assertGt(lockResult.locked, 0, 'lockPicksForEvent locks rows');
+  const lockAfter = db.getPickLockState(userA.id, mainEvent.id);
+  assertEq(lockAfter.locked, true, 'pick locked after lockPicksForEvent');
+  assertEq(lockAfter.reason, 'event_locked', 'lock reason is event_locked');
+
+  // Upsert after lock throws
+  let lockedThrew = false;
+  try {
+    await db.upsertPick({
+      user_id: userA.id,
+      event_id: ufc245.id,
+      fight_id: mainEvent.id,
+      picked_fighter_id: mainEvent.red_id,
+      confidence: 80
+    });
+  } catch (e) {
+    lockedThrew = e.code === 'pick_locked';
+  }
+  assert(lockedThrew, 'upsertPick after lock throws pick_locked');
+
+  // Delete after lock fails
+  const delLocked = await db.deletePick(userA.id, pickResult.pick.id);
+  assertEq(delLocked.deleted, false, 'deletePick after lock returns deleted=false');
+
+  // ── Reconcile + scoring integration ──
+  // Restore winner_id so reconcile finds actual winner (Usman = red)
+  db.run('UPDATE fights SET winner_id = ? WHERE id = ?', [originalWinner || mainEvent.red_id, mainEvent.id]);
+
+  const reconcileRes = await db.reconcilePicksForEvent(ufc245.id);
+  assertGt(reconcileRes.reconciled, 0, 'reconcilePicksForEvent processes picks');
+
+  // userA picked blue (wrong) → 0 points
+  const reconA = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userA.id, mainEvent.id]);
+  assertEq(reconA.correct, 0, 'userA picked wrong → correct=0');
+  assertEq(reconA.points, 0, 'userA points = 0');
+
+  // userB picked red+KO/TKO+R5 correctly, agreed with model (model picked red) → no upset bonus
+  // Expected: winnerPoints(round(10*90/50)=18) + method(5) + round(5) = 28
+  const reconB = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userB.id, mainEvent.id]);
+  assertEq(reconB.correct, 1, 'userB picked correctly');
+  assertEq(reconB.method_correct, 1, 'userB method correct (actual was KO/TKO)');
+  assertEq(reconB.round_correct, 1, 'userB round correct (actual was round 5)');
+  assertEq(reconB.points, 28, 'userB points = 18+5+5 = 28 (no upset bonus: agreed with model)');
+
+  // Idempotency: reconcile again should produce identical values
+  const reconcileAgain = await db.reconcilePicksForEvent(ufc245.id);
+  const reconB2 = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userB.id, mainEvent.id]);
+  assertEq(reconB2.points, 28, 'reconcile is idempotent');
+
+  // ── Leaderboard ──
+  const eventBoard = await db.getLeaderboard({ event_id: ufc245.id });
+  assertGt(eventBoard.length, 1, 'event leaderboard has both users');
+  assertEq(eventBoard[0].user_id, userB.id, 'userB (more points) ranks first');
+  assertEq(eventBoard[0].points, 28, 'leaderboard surfaces points');
+
+  const allBoard = await db.getLeaderboard({ limit: 10 });
+  assertGt(allBoard.length, 0, 'all-time leaderboard returns rows');
+
+  // ── User stats ──
+  const statsB = await db.getUserStats(userB.id);
+  assertEq(statsB.total_picks, 1, 'stats total_picks');
+  assertEq(statsB.correct_count, 1, 'stats correct_count');
+  assertEq(statsB.points, 28, 'stats points');
+  assertEq(statsB.accuracy_pct, 100, 'stats accuracy_pct = 100');
+
+  // ── Cleanup ──
+  await db.deleteUser(userA.id);
+  await db.deleteUser(userB.id);
+  assertEq(await db.getUser(userA.id), null, 'deleteUser cascades');
+  const orphaned = db.oneRow('SELECT COUNT(*) AS c FROM user_picks WHERE user_id = ?', [userA.id]);
+  assertEq(orphaned.c, 0, 'picks cascade-deleted with user');
+
   // ── Tactical Analysis ──
   console.log('\nTactical:');
 
