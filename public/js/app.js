@@ -4058,13 +4058,19 @@ async function populatePicksEventSelect(){
     // Default selection: nearest upcoming event (earliest future date), else
     // the most recent past event. "Today" uses ISO date string comparison.
     const today = new Date().toISOString().slice(0, 10);
-    const futureEvents = events.filter(e => (e.date || '') > today);
+    const futureEvents = events.filter(e => (e.date || '') >= today);
     const defaultEvent = futureEvents.length > 0
       ? futureEvents[futureEvents.length - 1]   // earliest future (events sorted DESC)
       : events[0];                              // most recent otherwise
 
     const storedEvent = events.find(e => e.id === _picksState.eventId);
-    sel.value = String((storedEvent || defaultEvent).id);
+    const storedEventIsUsable = storedEvent && (
+      _picksState.view !== 'upcoming' || !storedEvent.date || storedEvent.date >= today
+    );
+    const selectedEvent = storedEventIsUsable ? storedEvent : defaultEvent;
+    if (!selectedEvent) return;
+
+    sel.value = String(selectedEvent.id);
     _picksState.eventId = parseInt(sel.value, 10);
     setStoredViewState({ picksEventId: _picksState.eventId });
     sel.addEventListener('change', () => {
