@@ -5,6 +5,7 @@
 const express = require('express');
 const compression = require('compression');
 const path = require('path');
+const fs = require('fs');
 const db = require('./db');
 const bio = require('./lib/biomechanics');
 const tactical = require('./lib/tactical');
@@ -609,6 +610,32 @@ app.post('/api/admin/reconcile-all-picks', requireAdmin, apiHandler(async (_req,
   await db.save();
   console.log(`[admin] reconcile-all-picks events=${result.events_processed} reconciled=${result.reconciled} points=${result.points_awarded}`);
   res.json({ status: 'ok', ...result });
+}));
+
+// Import new rows from data/seed.json without clobbering existing data.
+// Idempotent: only rows whose id doesn't already exist are inserted. Used
+// after data/scrape-upcoming.js updates seed.json with new upcoming events —
+// call this endpoint on the live app to sync the additions into the DB.
+app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) => {
+  const seedPath = path.join(__dirname, 'data', 'seed.json');
+  if (!fs.existsSync(seedPath)) return res.status(404).json({ error: 'seed_not_found' });
+  const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
+  const added = { fighters: 0, events: 0, fights: 0 };
+  for (const f of (seed.fighters || [])) {
+    const existing = await db.oneRow('SELECT id FROM fighters WHERE id = ?', [f.id]);
+    if (!existing) { await db.upsertFighter(f); added.fighters++; }
+  }
+  for (const e of (seed.events || [])) {
+    const existing = await db.oneRow('SELECT id FROM events WHERE id = ?', [e.id]);
+    if (!existing) { await db.upsertEvent(e); added.events++; }
+  }
+  for (const f of (seed.fights || [])) {
+    const existing = await db.oneRow('SELECT id FROM fights WHERE id = ?', [f.id]);
+    if (!existing) { await db.upsertFight(f); added.fights++; }
+  }
+  await db.save();
+  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights}`);
+  res.json({ status: 'ok', added });
 }));
 
 app.use((req, res) => {

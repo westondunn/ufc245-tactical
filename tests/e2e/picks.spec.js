@@ -210,6 +210,29 @@ test.describe('Picks API — admin', () => {
     expect([401, 503]).toContain(res.status());
   });
 
+  test('POST /api/admin/import-seed requires key', async ({ request }) => {
+    const res = await request.post('/api/admin/import-seed');
+    expect([401, 503]).toContain(res.status());
+  });
+
+  test('POST /api/admin/import-seed is idempotent (second run adds zero)', async ({ request }) => {
+    const headers = { 'x-admin-key': ADMIN_KEY };
+    // First call may add new rows if seed has entries not in DB. Second call
+    // must add zero of each kind — the endpoint is append-only.
+    const first = await request.post('/api/admin/import-seed', { headers });
+    expect(first.ok()).toBe(true);
+    const a = await first.json();
+    expect(a.status).toBe('ok');
+    expect(a.added).toHaveProperty('fighters');
+    expect(a.added).toHaveProperty('events');
+    expect(a.added).toHaveProperty('fights');
+    const second = await request.post('/api/admin/import-seed', { headers });
+    const b = await second.json();
+    expect(b.added.fighters).toBe(0);
+    expect(b.added.events).toBe(0);
+    expect(b.added.fights).toBe(0);
+  });
+
   test('POST /api/admin/reconcile-all-picks backfills and is idempotent', async ({ request }) => {
     const headers = { 'x-admin-key': ADMIN_KEY };
     const first = await request.post('/api/admin/reconcile-all-picks', { headers });
