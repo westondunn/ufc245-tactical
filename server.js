@@ -2,10 +2,48 @@
  * UFC Tactical Dashboard — Full-stack server
  * Static frontend + SQLite API + biomechanics engine
  */
+
+// ============================================================
+// IMPORTANT: better-auth ESM-only compatibility note
+// ============================================================
+//
+// better-auth v1.6.9+ ships its Node.js adapter (better-auth/node) as an
+// ES Module (.mjs). Node.js v22 enforces strict ESM/CJS boundaries and will
+// throw "ERR_REQUIRE_ESM" if you attempt to load an .mjs file via require().
+//
+// WHY we cannot use require():
+//   require('better-auth/node')  →  ERR_REQUIRE_ESM on Node 22+
+//   This crashes the server at startup and breaks every deployment.
+//
+// WHY we use dynamic import() instead:
+//   import() is the only way to load an ESM module from a CommonJS file at
+//   runtime. It returns a Promise, which is why it must live inside an async
+//   function (the bootstrap IIFE at the bottom of this file).
+//
+// WHY the bootstrap pattern:
+//   Top-level await is not available in CommonJS modules. Wrapping startup in
+//   an async IIFE lets us await the dynamic import before the server begins
+//   accepting connections, so toNodeHandler and fromNodeHeaders are guaranteed
+//   to be resolved before any request hits the auth route.
+//
+// ⚠️  DO NOT convert the dynamic import back to require() — it will break
+//     deployments on Node.js v22+ with a hard ERR_REQUIRE_ESM crash.
+// ⚠️  DO NOT move the import() call outside the async bootstrap function —
+//     top-level await is not supported in CommonJS (.js) modules.
+//
+// If you need to upgrade better-auth, verify whether the package has added a
+// CJS build before switching back to require(). Check the package exports in
+// node_modules/better-auth/package.json under the "node" condition.
+// ============================================================
+
+// These are populated by the async bootstrap below via dynamic import().
+// They are intentionally declared here (module scope) so the route handlers
+// defined further down can close over them once the bootstrap resolves.
+let toNodeHandler, fromNodeHeaders;
+
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { toNodeHandler, fromNodeHeaders } = require('better-auth/node');
 const path = require('path');
 const fs = require('fs');
 const db = require('./db');
@@ -22,9 +60,10 @@ const NODE_ENV = process.env.NODE_ENV || 'production';
 app.set('trust proxy', 1);
 app.use(compression());
 
-// Better-auth must mount BEFORE express.json() — it parses its own bodies.
-// All sign-up / sign-in / verify / reset / sign-out routes live under here.
-app.all('/api/auth/{*any}', toNodeHandler(auth));
+// NOTE: The better-auth route (app.all '/api/auth/{*any}') is registered
+// inside the async bootstrap at the bottom of this file, after the dynamic
+// import of better-auth/node resolves. It is intentionally NOT registered
+// here at module load time. See the comment block at the top for details.
 
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
 app.use(cookieParser());
@@ -775,6 +814,64 @@ async function warmCache() {
 // START (async for db init)
 // ============================================================
 (async () => {
+  // ── Load better-auth/node via dynamic import ──────────────────────────────
+  // See the comment block at the top of this file for the full explanation.
+  // Short version: better-auth/node is ESM-only (.mjs); require() throws
+  // ERR_REQUIRE_ESM on Node 22+. Dynamic import() is the correct solution.
+  //
+  // Runtime safeguard: if the import fails or returns unexpected exports, we
+  // crash immediately with a clear message rather than silently serving broken
+  // auth routes.
+  try {
+    const betterAuthNode = await import('better-auth/node');
+    toNodeHandler = betterAuthNode.toNodeHandler;
+    fromNodeHeaders = betterAuthNode.fromNodeHeaders;
+
+    if (typeof toNodeHandler !== 'function') {
+      throw new TypeError(
+        `better-auth/node did not export 'toNodeHandler' as a function. ` +
+        `Got: ${typeof toNodeHandler}. ` +
+        `Check that better-auth is installed correctly (npm install) and that ` +
+        `the package version (${require('./package.json').dependencies['better-auth']}) ` +
+        `still ships better-auth/node as an ESM module with these exports.`
+      );
+    }
+    if (typeof fromNodeHeaders !== 'function') {
+      throw new TypeError(
+        `better-auth/node did not export 'fromNodeHeaders' as a function. ` +
+        `Got: ${typeof fromNodeHeaders}. ` +
+        `Check that better-auth is installed correctly (npm install) and that ` +
+        `the package version (${require('./package.json').dependencies['better-auth']}) ` +
+        `still ships better-auth/node as an ESM module with these exports.`
+      );
+    }
+
+    console.log('[auth] better-auth/node loaded via dynamic import (ESM-safe)');
+  } catch (err) {
+    // Distinguish between our own validation errors and import failures.
+    const isImportError = err.code === 'ERR_REQUIRE_ESM' || err.code === 'ERR_MODULE_NOT_FOUND';
+    if (isImportError) {
+      console.error(
+        '[auth] FATAL: Failed to load better-auth/node via dynamic import.\n' +
+        '  This usually means the package is not installed or the module path changed.\n' +
+        '  Run: npm install\n' +
+        '  If the error is ERR_REQUIRE_ESM, do NOT switch to require() — see the\n' +
+        '  comment block at the top of server.js for the full explanation.\n',
+        err
+      );
+    } else {
+      console.error('[auth] FATAL: better-auth/node import validation failed.\n', err);
+    }
+    process.exit(1);
+  }
+  // ─────────────────────────────────────────────────────────────────────────
+
+  // Register the better-auth route handler now that toNodeHandler is resolved.
+  // This must happen before the server starts listening so the route is ready
+  // for the first request. It must also be BEFORE express.json() — better-auth
+  // parses its own request bodies.
+  app.all('/api/auth/{*any}', toNodeHandler(auth));
+
   await db.init();
   console.log('[db] initialized');
   await warmCache();
