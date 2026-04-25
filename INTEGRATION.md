@@ -43,7 +43,6 @@ Each Railway service must point at its own service root so Railway reads the rig
 |---------|----------------|-------------|-------|
 | `web` | `/` | `/railway.json` | Node/Express app; starts with `npm start` |
 | `predictions` | `ufc245-predictions` | `/ufc245-predictions/railway.json` | FastAPI service; starts with `uvicorn` |
-| `function-bun` | `railway-function` | `/railway-function/railway.json` | Bun trigger/orchestration endpoint |
 | `Postgres` | managed plugin | Railway managed | Attach to `web` through `DATABASE_URL` |
 
 This matters in a monorepo: if `predictions` is left at root `/`, Railway can inherit the web app start command from the root `railway.json` and run `npm start` instead of Uvicorn.

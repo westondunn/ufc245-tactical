@@ -171,7 +171,6 @@ jobs:
     env:
       RAILWAY_WEB_URL: ${{ secrets.RAILWAY_WEB_URL }}
       RAILWAY_PREDICTIONS_URL: ${{ secrets.RAILWAY_PREDICTIONS_URL }}
-      RAILWAY_FUNCTION_URL: ${{ secrets.RAILWAY_FUNCTION_URL }}
       PREDICTION_SERVICE_KEY: ${{ secrets.PREDICTION_SERVICE_KEY }}
     steps:
       - name: Check deploy-verification secrets
@@ -181,7 +180,7 @@ jobs:
         run: |
           set -u
           MISSING=0
-          for var in RAILWAY_WEB_URL RAILWAY_PREDICTIONS_URL RAILWAY_FUNCTION_URL PREDICTION_SERVICE_KEY; do
+          for var in RAILWAY_WEB_URL RAILWAY_PREDICTIONS_URL PREDICTION_SERVICE_KEY; do
             if [ -z "${!var:-}" ]; then
               echo "::warning::$var is not set — skipping deploy verification"
               MISSING=1
@@ -265,23 +264,3 @@ jobs:
             });
           "
 
-      - name: Verify function orchestration health endpoint
-        if: steps.check_secrets.outputs.missing == '0'
-        run: |
-          set -euo pipefail
-          code=$(curl -s -o /tmp/function-health.json -w "%{http_code}" \
-            "$RAILWAY_FUNCTION_URL/api/health")
-          if [ "$code" != "200" ]; then
-            echo "::error::function health endpoint failed (HTTP $code)"
-            cat /tmp/function-health.json || true
-            exit 1
-          fi
-          cat /tmp/function-health.json | node -e "
-            let d=''; process.stdin.on('data', c => d += c); process.stdin.on('end', () => {
-              const j = JSON.parse(d);
-              if (!Object.prototype.hasOwnProperty.call(j, 'predictions')) process.exit(1);
-              if (!Object.prototype.hasOwnProperty.call(j, 'main')) process.exit(1);
-              if (j.predictions !== 200 || j.main !== 200) process.exit(1);
-              console.log('function health contract OK');
-            });
-          "
