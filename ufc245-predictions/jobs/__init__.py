@@ -26,6 +26,7 @@ logger = logging.getLogger("jobs")
 MAIN_APP_URL = os.getenv("MAIN_APP_URL", "http://localhost:3000")
 PREDICTION_SERVICE_KEY = os.getenv("PREDICTION_SERVICE_KEY", "")
 TIMEOUT = 30.0
+SYNC_BATCH_SIZE = max(int(os.getenv("PREDICTION_SYNC_BATCH_SIZE", "20") or "20"), 1)
 
 
 def _headers():
@@ -66,12 +67,20 @@ def _career_stats_path(fighter_id: int, as_of: str | None = None) -> str:
 def _sync_predictions(predictions: list[dict], local_ids: list[int], label: str) -> int:
     if not predictions:
         return 0
-    result = _post_json("/api/predictions/ingest", {"predictions": predictions})
-    if result:
-        mark_synced(local_ids)
-        logger.info(f"Synced {len(predictions)} predictions ({label})")
-        return len(predictions)
-    return 0
+    synced = 0
+    for start in range(0, len(predictions), SYNC_BATCH_SIZE):
+        batch = predictions[start:start + SYNC_BATCH_SIZE]
+        batch_ids = local_ids[start:start + SYNC_BATCH_SIZE]
+        result = _post_json("/api/predictions/ingest", {"predictions": batch})
+        if not result:
+            logger.warning(f"Prediction sync batch failed ({label}, offset={start})")
+            continue
+        ingested = int(result.get("ingested", len(batch)))
+        if ingested > 0:
+            mark_synced(batch_ids[:ingested])
+            synced += ingested
+            logger.info(f"Synced {ingested} predictions ({label}, offset={start})")
+    return synced
 
 
 def _predict_window(days: int | None, label: str) -> dict:
@@ -190,27 +199,34 @@ def sync_unsynced(limit: int = 500) -> int:
         logger.info("No unsynced prediction backlog")
         return 0
 
-    predictions = [{
-        "fight_id": row["fight_id"],
-        "red_fighter_id": row["red_fighter_id"],
-        "blue_fighter_id": row["blue_fighter_id"],
-        "red_win_prob": row["red_win_prob"],
-        "blue_win_prob": row["blue_win_prob"],
-        "model_version": row["model_version"],
-        "feature_hash": row["feature_hash"],
-        "predicted_at": row["predicted_at"],
-        "event_date": row["event_date"],
-        "explanation_json": row.get("explanation_json"),
-    } for row in queued]
+    synced = 0
+    for start in range(0, len(queued), SYNC_BATCH_SIZE):
+        batch_rows = queued[start:start + SYNC_BATCH_SIZE]
+        predictions = [{
+            "fight_id": row["fight_id"],
+            "red_fighter_id": row["red_fighter_id"],
+            "blue_fighter_id": row["blue_fighter_id"],
+            "red_win_prob": row["red_win_prob"],
+            "blue_win_prob": row["blue_win_prob"],
+            "model_version": row["model_version"],
+            "feature_hash": row["feature_hash"],
+            "predicted_at": row["predicted_at"],
+            "event_date": row["event_date"],
+            "explanation_json": row.get("explanation_json"),
+        } for row in batch_rows]
 
-    result = _post_json("/api/predictions/ingest", {"predictions": predictions})
-    if not result:
-        logger.warning("Backlog sync failed")
-        return 0
+        result = _post_json("/api/predictions/ingest", {"predictions": predictions})
+        if not result:
+            logger.warning(f"Backlog sync batch failed (offset={start})")
+            continue
 
-    mark_synced([row["id"] for row in queued])
-    logger.info(f"Synced {len(queued)} queued predictions")
-    return len(queued)
+        ingested = int(result.get("ingested", len(batch_rows)))
+        if ingested > 0:
+            mark_synced([row["id"] for row in batch_rows[:ingested]])
+            synced += ingested
+
+    logger.info(f"Synced {synced} queued predictions")
+    return synced
 
 
 def daily_predict():

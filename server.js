@@ -18,7 +18,7 @@ const NODE_ENV = process.env.NODE_ENV || 'production';
 
 app.set('trust proxy', 1);
 app.use(compression());
-app.use(express.json());
+app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
 
 // Version header on all responses
 app.use((req, res, next) => {
