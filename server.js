@@ -813,7 +813,7 @@ async function warmCache() {
 // ============================================================
 // START (async for db init)
 // ============================================================
-(async () => {
+async function bootstrap() {
   // ── Load better-auth/node via dynamic import ──────────────────────────────
   // See the comment block at the top of this file for the full explanation.
   // Short version: better-auth/node is ESM-only (.mjs); require() throws
