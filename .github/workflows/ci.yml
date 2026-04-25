@@ -141,16 +141,24 @@ jobs:
           NODE_ENV: development
           BETTER_AUTH_SECRET: ci-smoke-not-a-real-secret
         run: |
-          PORT=4999 timeout 8 node server.js &
-          sleep 4
-          STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4999/healthz)
+          PORT=4999 timeout 30 node server.js &
+          SRV=$!
+          # Cache warming + better-auth dynamic import takes ~4-5s on CI;
+          # poll instead of sleep so we don't race the boot.
+          STATUS=000
+          for i in $(seq 1 25); do
+            STATUS=$(curl -s -o /dev/null -w "%{http_code}" http://localhost:4999/healthz || echo 000)
+            [ "$STATUS" = "200" ] && break
+            sleep 1
+          done
           if [ "$STATUS" != "200" ]; then
-            echo "::error::Healthcheck failed (status $STATUS)"
+            echo "::error::Healthcheck failed (status $STATUS after 25s)"
+            kill $SRV 2>/dev/null || true
             exit 1
           fi
           VERSION=$(curl -s http://localhost:4999/api/version | node -e "process.stdin.on('data',d=>{const v=JSON.parse(d);console.log(v.version)})")
           echo "Server boots OK · version $VERSION"
-          kill %1 2>/dev/null || true
+          kill $SRV 2>/dev/null || true
 
   e2e:
     name: Playwright E2E
