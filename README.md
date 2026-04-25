@@ -135,6 +135,41 @@ Dashboard changes = just edit `public/index.html` and refresh. It's a single sel
 
 ---
 
+## CommonJS / ESM compatibility (better-auth)
+
+**TL;DR:** `better-auth/node` is ESM-only from v1.6.9+. Do not use `require()` to load it — it will crash on Node.js v22+ with `ERR_REQUIRE_ESM`.
+
+### The problem
+
+`better-auth` v1.6.9 changed its Node.js adapter (`better-auth/node`) to ship exclusively as an ES Module (`.mjs`). Node.js v22 enforces strict ESM/CJS boundaries: calling `require()` on an `.mjs` file throws `ERR_REQUIRE_ESM` and crashes the process at startup.
+
+```
+Error [ERR_REQUIRE_ESM]: require() of ES Module .../better-auth/node.mjs not supported.
+```
+
+### The solution
+
+`server.js` loads `better-auth/node` via a **dynamic `import()`** inside the async bootstrap IIFE at the bottom of the file. This is the only way to consume an ESM module from a CommonJS (`.js`) file at runtime.
+
+```js
+// ✅ Correct — dynamic import inside async function
+const { toNodeHandler, fromNodeHeaders } = await import('better-auth/node');
+
+// ❌ Wrong — throws ERR_REQUIRE_ESM on Node 22+
+const { toNodeHandler, fromNodeHeaders } = require('better-auth/node');
+```
+
+The bootstrap pattern (async IIFE) is necessary because top-level `await` is not available in CommonJS modules. The auth route is registered inside the bootstrap after the import resolves, so it is always ready before the server begins accepting connections.
+
+### Rules for future maintainers
+
+- **Do not** convert the dynamic `import()` back to `require()`.
+- **Do not** move the `import()` call outside the async bootstrap function.
+- If you upgrade `better-auth`, check `node_modules/better-auth/package.json` under the `"exports"` → `"node"` condition to verify whether a CJS build has been added before changing the import strategy.
+- A runtime safeguard in the bootstrap validates that `toNodeHandler` and `fromNodeHeaders` are functions after import. If they are not, the server exits immediately with a descriptive error rather than silently serving broken auth routes.
+
+---
+
 ## Fight Picks
 
 An additive, feature-flagged pick-em layer: users create a local profile

@@ -12,6 +12,9 @@
     "test:e2e:ui": "npx playwright test --ui",
     "test:all": "npm test && npx playwright test"
   },
+  "_comments": {
+    "better-auth": "ESM-only from v1.6.9+. The better-auth/node adapter ships as .mjs and cannot be loaded via require() on Node.js v22+ (ERR_REQUIRE_ESM). server.js loads it via dynamic import() inside the async bootstrap. DO NOT downgrade below 1.6.9 or switch to require() without verifying a CJS build exists."
+  },
   "dependencies": {
     "better-auth": "^1.6.9",
     "cheerio": "^1.2.0",
