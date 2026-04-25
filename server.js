@@ -64,12 +64,32 @@ const NODE_ENV = process.env.NODE_ENV || 'production';
 app.set('trust proxy', 1);
 app.use(compression());
 
-// NOTE: The better-auth route (app.all '/api/auth/{*any}') is registered
-// inside the async bootstrap at the bottom of this file, after the dynamic
-// import of better-auth/node resolves. It is intentionally NOT registered
-// here at module load time. See the comment block at the top for details.
+// The better-auth handler isn't available until the async bootstrap
+// completes its dynamic import — but the route MUST be registered here
+// at module-load time, BEFORE the SPA static fallback below. Otherwise
+// the fallback wins (it's earlier in the middleware chain) and every
+// /api/auth/* request returns index.html. We register a placeholder
+// that defers to `_authNodeHandler`, which the bootstrap populates.
+let _authNodeHandler = null;
+app.all('/api/auth/{*any}', (req, res, next) => {
+  if (!_authNodeHandler) {
+    return res.status(503).json({ error: 'auth_not_ready', message: 'Server is still booting; retry shortly.' });
+  }
+  return _authNodeHandler(req, res, next);
+});
 
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
+// IMPORTANT: skip JSON body parsing for /api/auth/* — better-auth's
+// toNodeHandler consumes the raw request stream itself. If express.json
+// runs first, the body is exhausted before better-auth sees it, the
+// auth handler returns nothing, and Express falls through to the SPA
+// static fallback (every /api/auth/* request returns index.html).
+// This is order-sensitive: the auth route is registered later, inside
+// the async bootstrap, after toNodeHandler resolves via dynamic import.
+const _jsonParser = express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' });
+app.use((req, res, next) => {
+  if (req.path.startsWith('/api/auth/')) return next();
+  return _jsonParser(req, res, next);
+});
 app.use(cookieParser());
 
 // Version header on all responses
@@ -876,11 +896,11 @@ async function bootstrap() {
   ({ auth } = await buildAuth());
   console.log('[auth] better-auth instance built');
 
-  // Register the better-auth route handler now that toNodeHandler is resolved.
-  // This must happen before the server starts listening so the route is ready
-  // for the first request. It must also be BEFORE express.json() — better-auth
-  // parses its own request bodies.
-  app.all('/api/auth/{*any}', toNodeHandler(auth));
+  // Wire up the placeholder route registered at module-load time. The
+  // route itself is already in the middleware chain (in front of the SPA
+  // fallback); we just point `_authNodeHandler` at the real handler.
+  _authNodeHandler = toNodeHandler(auth);
+  console.log('[auth] route handler wired');
 
   await db.init();
   console.log('[db] initialized');
