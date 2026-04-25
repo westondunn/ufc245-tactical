@@ -1,0 +1,13 @@
+# Nixpacks config for the Railway Bun trigger service.
+
+[phases.setup]
+nixPkgs = ["bun"]
+
+[phases.install]
+cmds = ["bun --version"]
+
+[phases.build]
+cmds = ["bun build index.tsx --target=bun --outfile=/tmp/function-bun-check.js"]
+
+[start]
+cmd = "bun index.tsx"

@@ -80,6 +80,172 @@ FEATURE_LABELS = {
     "experience_delta": "UFC experience",
 }
 
+FEATURE_EVIDENCE = {
+    "sig_str_landed_avg_delta": {
+        "category": "Striking volume",
+        "red_feature": "red_sig_str_landed_avg",
+        "blue_feature": "blue_sig_str_landed_avg",
+        "unit": "sig. strikes/fight",
+        "source": "career_stats.avg_sig_per_fight",
+    },
+    "sig_accuracy_delta": {
+        "category": "Striking efficiency",
+        "red_feature": "red_sig_accuracy",
+        "blue_feature": "blue_sig_accuracy",
+        "unit": "pct",
+        "source": "career_stats.sig_accuracy_pct",
+    },
+    "td_landed_avg_delta": {
+        "category": "Wrestling volume",
+        "red_feature": "red_td_landed_avg",
+        "blue_feature": "blue_td_landed_avg",
+        "unit": "takedowns/fight",
+        "source": "career_stats.total_td_landed / total_fights",
+    },
+    "td_accuracy_delta": {
+        "category": "Wrestling efficiency",
+        "red_feature": "red_td_accuracy",
+        "blue_feature": "blue_td_accuracy",
+        "unit": "pct",
+        "source": "career_stats.td_accuracy_pct",
+    },
+    "ctrl_sec_avg_delta": {
+        "category": "Control",
+        "red_feature": "red_ctrl_sec_avg",
+        "blue_feature": "blue_ctrl_sec_avg",
+        "unit": "sec/fight",
+        "source": "career_stats.total_control_sec / total_fights",
+    },
+    "knockdowns_avg_delta": {
+        "category": "Power",
+        "red_feature": "red_knockdowns_avg",
+        "blue_feature": "blue_knockdowns_avg",
+        "unit": "knockdowns/fight",
+        "source": "career_stats.total_knockdowns / total_fights",
+    },
+    "sub_attempts_avg_delta": {
+        "category": "Submission threat",
+        "red_feature": "red_sub_attempts_avg",
+        "blue_feature": "blue_sub_attempts_avg",
+        "unit": "sub attempts/fight",
+        "source": "career_stats.total_sub_attempts / total_fights",
+    },
+    "reach_delta_cm": {
+        "category": "Physical tools",
+        "red_feature": None,
+        "blue_feature": None,
+        "unit": "cm reach edge",
+        "source": "fighter_profile.reach_cm",
+    },
+    "height_delta_cm": {
+        "category": "Physical tools",
+        "red_feature": None,
+        "blue_feature": None,
+        "unit": "cm height edge",
+        "source": "fighter_profile.height_cm",
+    },
+    "profile_slpm_delta": {
+        "category": "Profile striking pace",
+        "red_feature": "red_profile_slpm",
+        "blue_feature": "blue_profile_slpm",
+        "unit": "SLpM",
+        "source": "fighter_profile.slpm",
+    },
+    "profile_str_def_delta": {
+        "category": "Striking defense",
+        "red_feature": "red_profile_str_def",
+        "blue_feature": "blue_profile_str_def",
+        "unit": "pct",
+        "source": "fighter_profile.str_def",
+    },
+    "profile_td_def_delta": {
+        "category": "Takedown defense",
+        "red_feature": "red_profile_td_def",
+        "blue_feature": "blue_profile_td_def",
+        "unit": "pct",
+        "source": "fighter_profile.td_def",
+    },
+    "win_pct_last3_delta": {
+        "category": "Recent form",
+        "red_feature": "red_win_pct_last3",
+        "blue_feature": "blue_win_pct_last3",
+        "unit": "pct",
+        "source": "career_stats.win_pct_last3",
+    },
+    "experience_delta": {
+        "category": "Experience",
+        "red_feature": "red_experience",
+        "blue_feature": "blue_experience",
+        "unit": "UFC fights",
+        "source": "career_stats.total_fights",
+    },
+}
+
+
+def _feature_value(values: dict, feature: str | None):
+    if not feature:
+        return None
+    value = values.get(feature)
+    return None if value is None else float(value)
+
+
+def _build_factor_evidence(feature: str, raw_value: float, values: dict,
+                           red_name: str, blue_name: str) -> dict:
+    meta = FEATURE_EVIDENCE.get(feature, {})
+    red_value = _feature_value(values, meta.get("red_feature"))
+    blue_value = _feature_value(values, meta.get("blue_feature"))
+    return {
+        "category": meta.get("category", "Model factor"),
+        "source": meta.get("source", "engineered_features"),
+        "unit": meta.get("unit", "delta"),
+        "red": {"fighter": red_name, "value": red_value},
+        "blue": {"fighter": blue_name, "value": blue_value},
+        "delta": raw_value,
+        "interpretation": (
+            f"{red_name} leads this metric." if raw_value > 0
+            else f"{blue_name} leads this metric." if raw_value < 0
+            else "This metric is even."
+        ),
+    }
+
+
+def _build_categories(factors: list[dict]) -> list[dict]:
+    grouped: dict[str, dict] = {}
+    for factor in factors:
+        evidence = factor.get("evidence") or {}
+        category = evidence.get("category") or "Model factor"
+        bucket = grouped.setdefault(category, {
+            "category": category,
+            "net_impact": 0.0,
+            "favors": None,
+            "evidence": [],
+        })
+        signed = factor["impact"] if factor.get("favors") == "red" else -factor["impact"]
+        bucket["net_impact"] += signed
+        bucket["evidence"].append({
+            "label": factor.get("label"),
+            "favors": factor.get("favors"),
+            "fighter": factor.get("fighter"),
+            "impact": factor.get("impact"),
+            "value": factor.get("value"),
+            "source": evidence.get("source"),
+            "unit": evidence.get("unit"),
+            "red": evidence.get("red"),
+            "blue": evidence.get("blue"),
+            "delta": evidence.get("delta"),
+            "interpretation": evidence.get("interpretation"),
+        })
+
+    categories = []
+    for bucket in grouped.values():
+        net = float(bucket["net_impact"])
+        bucket["net_impact"] = abs(net)
+        bucket["favors"] = "red" if net >= 0 else "blue"
+        bucket["evidence"].sort(key=lambda item: item.get("impact") or 0, reverse=True)
+        categories.append(bucket)
+    categories.sort(key=lambda item: item["net_impact"], reverse=True)
+    return categories
+
 def engineer_features(red_stats: dict, blue_stats: dict,
                       red_fighter: dict, blue_fighter: dict) -> np.ndarray:
     """Build feature vector from fighter stats and profiles.
@@ -224,11 +390,13 @@ def explain_prediction(pipe, X: np.ndarray, red_name: str = "Red",
             "confidence": max(red_prob, blue_prob),
             "summary": f"{favored_name} is favored by the model.",
             "factors": [],
+            "categories": [],
         }
 
     scaled = scaler.transform(X.reshape(1, -1))[0]
     coefs = lr.coef_[0]
     contributions = scaled * coefs
+    values = {name: float(X[idx]) for idx, name in enumerate(FEATURE_NAMES)}
 
     factors = []
     for idx, feature in enumerate(FEATURE_NAMES):
@@ -247,10 +415,12 @@ def explain_prediction(pipe, X: np.ndarray, red_name: str = "Red",
             "value": raw_value,
             "impact": abs(contribution),
             "direction": "positive" if contribution > 0 else "negative",
+            "evidence": _build_factor_evidence(feature, raw_value, values, red_name, blue_name),
         })
 
     factors.sort(key=lambda f: f["impact"], reverse=True)
     top = factors[:limit]
+    categories = _build_categories(factors)
     if top:
         lead = top[0]
         summary = (
@@ -266,4 +436,5 @@ def explain_prediction(pipe, X: np.ndarray, red_name: str = "Red",
         "confidence": max(red_prob, blue_prob),
         "summary": summary,
         "factors": top,
+        "categories": categories,
     }

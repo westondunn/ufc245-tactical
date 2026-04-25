@@ -1,7 +1,8 @@
 """Scheduled jobs for the prediction service.
 
-Four cron jobs:
-  1. daily_predict   — predict next 14 days of fights
+Cron jobs:
+  1. daily_maintenance — prune stale rows, reconcile, predict all future fights, sync
+  2. daily_predict   — predict all future fights
   2. refresh_near    — 3x daily refresh for next 48h
   3. daily_reconcile — reconcile last 7 days of results
   4. weekly_retrain  — retrain model on all labeled data
@@ -73,7 +74,7 @@ def _sync_predictions(predictions: list[dict], local_ids: list[int], label: str)
     return 0
 
 
-def _predict_window(days: int, label: str) -> dict:
+def _predict_window(days: int | None, label: str) -> dict:
     """Predict and sync fights from today through the requested day window."""
     logger.info(f"=== {label} start ===")
     init_db()
@@ -93,7 +94,7 @@ def _predict_window(days: int, label: str) -> dict:
     version = model_rec["version"]
 
     today = datetime.utcnow().date()
-    cutoff = today + timedelta(days=days)
+    cutoff = today + timedelta(days=days) if days is not None else None
 
     events = _get_json("/api/events") or []
     predictions = []
@@ -108,7 +109,9 @@ def _predict_window(days: int, label: str) -> dict:
             ev_date = datetime.strptime(ev["date"], "%Y-%m-%d").date()
         except ValueError:
             continue
-        if ev_date < today or ev_date > cutoff:
+        if ev_date < today:
+            continue
+        if cutoff is not None and ev_date > cutoff:
             continue
 
         events_checked += 1
@@ -117,6 +120,8 @@ def _predict_window(days: int, label: str) -> dict:
             continue
 
         for bout in card["card"]:
+            if bout.get("winner_id"):
+                continue
             fights_seen += 1
             red_stats = _get_json(_career_stats_path(bout["red_id"]))
             blue_stats = _get_json(_career_stats_path(bout["blue_id"]))
@@ -209,13 +214,32 @@ def sync_unsynced(limit: int = 500) -> int:
 
 
 def daily_predict():
-    """Predict outcomes for fights in the next 14 days."""
-    return _predict_window(days=14, label="daily_predict")
+    """Predict outcomes for every known future fight."""
+    return _predict_window(days=None, label="daily_predict")
 
 
 def refresh_near():
     """Re-predict fights in the next 48 hours (stats may have updated)."""
     return _predict_window(days=2, label="refresh_near")
+
+
+def prune_past_predictions():
+    """Mark predictions for past or concluded fights stale in the main app."""
+    today = datetime.utcnow().date().isoformat()
+    resp = _post_json("/api/predictions/prune", {"before": today, "include_concluded": True})
+    if not resp:
+        return {
+            "status": "partial",
+            "job": "prune_past_predictions",
+            "pruned": 0,
+            "reason": "main_app_unavailable",
+        }
+    return {
+        "status": resp.get("status", "ok"),
+        "job": "prune_past_predictions",
+        "pruned": int(resp.get("pruned", 0)),
+        "before": resp.get("before", today),
+    }
 
 
 def daily_reconcile():
@@ -263,6 +287,30 @@ def daily_reconcile():
         "results_checked": len(results),
         "reconciled": reconciled,
     }
+
+
+def daily_maintenance():
+    """Daily prediction upkeep after new scrapes/stat imports land."""
+    logger.info("=== daily_maintenance start ===")
+    prune = prune_past_predictions()
+    reconcile = daily_reconcile()
+    predict_result = daily_predict()
+    synced = sync_unsynced(limit=1000)
+    ok = all(part.get("status") == "ok" for part in [prune, reconcile, predict_result])
+    result = {
+        "status": "ok" if ok else "partial",
+        "job": "daily_maintenance",
+        "prune": prune,
+        "reconcile": reconcile,
+        "predict": predict_result,
+        "sync": {"status": "ok", "job": "sync_unsynced", "synced": synced},
+        "inputs": {
+            "scrapes": "main_app_events_and_stats",
+            "news": "not_configured",
+        },
+    }
+    logger.info(f"=== daily_maintenance done ({result['status']}) ===")
+    return result
 
 
 def weekly_retrain():

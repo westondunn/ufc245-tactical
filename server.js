@@ -403,6 +403,17 @@ app.post('/api/predictions/reconcile', requirePredictionKey, apiHandler(async (r
   res.json({ status: 'ok', reconciled: reconciled.length, results: reconciled });
 }));
 
+// Protected: remove passed/concluded fights from active prediction reads.
+// Rows are marked stale instead of physically deleted so historical pick
+// snapshots and audit trails keep their model reference.
+app.post('/api/predictions/prune', requirePredictionKey, apiHandler(async (req, res) => {
+  const before = typeof req.body.before === 'string' ? req.body.before.slice(0, 10) : undefined;
+  const include_concluded = req.body.include_concluded !== false;
+  const result = await db.prunePastPredictions({ before, include_concluded });
+  if (result.pruned > 0) await db.save();
+  res.json({ status: 'ok', ...result, include_concluded });
+}));
+
 // ============================================================
 // USER PICKS API (additive, flag-gated via ENABLE_PICKS)
 // ============================================================
@@ -720,4 +731,3 @@ async function warmCache() {
     });
   });
 })();
-

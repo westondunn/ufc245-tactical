@@ -80,6 +80,47 @@ def test_daily_predict_marks_only_current_batch_synced():
         print("  PASS: daily_predict marks only current batch rows synced")
 
 
+def test_daily_predict_covers_all_future_cards_and_prunes():
+    with tempfile.TemporaryDirectory() as tmpdir:
+        os.environ["PREDICTIONS_DB_PATH"] = os.path.join(tmpdir, "predictions.db")
+        init_db()
+        far_future = (datetime.now(UTC).date() + timedelta(days=90)).isoformat()
+        past = (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
+
+        def fake_get_json(path):
+            if path == "/api/events":
+                return [{"id": 1, "date": past}, {"id": 2, "date": far_future}]
+            if path == "/api/events/2/card":
+                return {"card": [{"id": 200, "red_id": 11, "blue_id": 22}]}
+            if path.startswith("/api/fighters/"):
+                return {"fighter": {"reach_cm": 180, "height_cm": 175}, "stats": {"total_fights": 4}}
+            return None
+
+        posted = []
+
+        def fake_post_json(path, body):
+            posted.append((path, body))
+            return {"status": "ok", "pruned": 3, "before": datetime.now(UTC).date().isoformat()}
+
+        with patched(jobs, "_get_json", fake_get_json), \
+                patched(jobs, "_post_json", fake_post_json), \
+                patched(jobs, "get_latest_model", lambda: {"blob_path": "unused", "version": "v.future"}), \
+                patched(jobs, "load_model", lambda _p: object()), \
+                patched(jobs, "engineer_features", lambda *_a, **_k: np.zeros(len(FEATURE_NAMES))), \
+                patched(jobs, "feature_hash", lambda _x: "hash-future"), \
+                patched(jobs, "predict", lambda _pipe, _x: (0.57, 0.43)), \
+                patched(jobs, "explain_prediction", lambda *_a, **_k: {"summary": "Future edge", "factors": [], "categories": []}):
+            predict_result = jobs.daily_predict()
+            prune_result = jobs.prune_past_predictions()
+
+        assert predict_result["predicted"] == 1
+        assert predict_result["events_checked"] == 1
+        assert any(path == "/api/predictions/ingest" for path, _ in posted)
+        assert prune_result["pruned"] == 3
+        assert any(path == "/api/predictions/prune" for path, _ in posted)
+        print("  PASS: daily_predict covers all future cards and prune calls main app")
+
+
 def test_weekly_retrain_uses_point_in_time_as_of():
     with tempfile.TemporaryDirectory() as tmpdir:
         os.environ["PREDICTIONS_DB_PATH"] = os.path.join(tmpdir, "predictions.db")
@@ -161,7 +202,8 @@ def test_sync_unsynced_marks_posted_rows_only():
 if __name__ == "__main__":
     print("\n=== UFC Predictions Job Tests ===\n")
     test_daily_predict_marks_only_current_batch_synced()
+    test_daily_predict_covers_all_future_cards_and_prunes()
     test_weekly_retrain_uses_point_in_time_as_of()
     test_daily_predict_reports_no_model()
     test_sync_unsynced_marks_posted_rows_only()
-    print("\n=== All 4 job tests passed ===\n")
+    print("\n=== All 5 job tests passed ===\n")

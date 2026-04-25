@@ -35,6 +35,21 @@ Notes:
 - Keep `DB_PATH` only if you intentionally want SQLite fallback in non-Postgres environments.
 - Existing API contracts are unchanged.
 
+## Railway config-as-code
+
+Each Railway service must point at its own service root so Railway reads the right `railway.json`:
+
+| Service | Root Directory | Config File Path | Notes |
+|---------|----------------|-------------|-------|
+| `web` | `/` | `/railway.json` | Node/Express app; starts with `npm start` |
+| `predictions` | `ufc245-predictions` | `/ufc245-predictions/railway.json` | FastAPI service; starts with `uvicorn` |
+| `function-bun` | `railway-function` | `/railway-function/railway.json` | Bun trigger/orchestration endpoint |
+| `Postgres` | managed plugin | Railway managed | Attach to `web` through `DATABASE_URL` |
+
+This matters in a monorepo: if `predictions` is left at root `/`, Railway can inherit the web app start command from the root `railway.json` and run `npm start` instead of Uvicorn.
+
+For the current single-service prediction topology, remove `NIXPACKS_CONFIG_FILE` from `predictions` once the service root is `ufc245-predictions`; Railway will find `nixpacks.toml` from that root.
+
 ## What setup script does
 
 - Generates shared `PREDICTION_SERVICE_KEY`
@@ -68,7 +83,6 @@ PREDICTIONS_DB_PATH=/data/predictions.db
 MODEL_DIR=/data/model_store
 ENABLE_SCHEDULER=1
 DEPLOYMENT_MODE=single
-NIXPACKS_CONFIG_FILE=ufc245-predictions/nixpacks.toml
 ```
 
 ### Split mode
@@ -87,7 +101,6 @@ PREDICTIONS_DB_PATH=/data/predictions-web.db
 MODEL_DIR=/data/model-web-store
 ENABLE_SCHEDULER=0
 DEPLOYMENT_MODE=split-web
-NIXPACKS_CONFIG_FILE=ufc245-predictions/nixpacks.web.toml
 ```
 
 `predictions-worker` env:
@@ -98,7 +111,6 @@ PREDICTIONS_DB_PATH=/data/predictions-worker.db
 MODEL_DIR=/data/model-worker-store
 ENABLE_SCHEDULER=1
 DEPLOYMENT_MODE=split-worker
-NIXPACKS_CONFIG_FILE=ufc245-predictions/nixpacks.worker.toml
 ```
 
 Note: in split mode, web and worker keep separate local runtime state.

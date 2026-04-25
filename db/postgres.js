@@ -736,6 +736,7 @@ async function getPredictions(opts = {}) {
   if (opts.fight_id) { sql += ' AND p.fight_id = ?'; params.push(opts.fight_id); }
   if (opts.upcoming) {
     sql += ` AND p.actual_winner_id IS NULL AND p.is_stale = 0
+      AND (p.event_date IS NULL OR p.event_date >= CURRENT_DATE::text)
       AND p.id = (
         SELECT p2.id
         FROM predictions p2
@@ -751,6 +752,21 @@ async function getPredictions(opts = {}) {
   sql += ' ORDER BY p.event_date ASC, p.predicted_at DESC';
   if (opts.limit) { sql += ' LIMIT ?'; params.push(opts.limit); }
   return allRows(sql, params);
+}
+
+async function prunePastPredictions({ before, include_concluded = true } = {}) {
+  const cutoff = before || new Date().toISOString().slice(0, 10);
+  let sql = `UPDATE predictions p
+    SET is_stale = 1
+    FROM fights f
+    WHERE f.id = p.fight_id
+      AND p.is_stale = 0
+      AND (p.event_date < ?`;
+  const params = [cutoff];
+  if (include_concluded) sql += ' OR f.winner_id IS NOT NULL';
+  sql += ')';
+  const pruned = await run(sql, params);
+  return { pruned, before: cutoff };
 }
 
 async function reconcilePrediction(fightId, actualWinnerId) {
@@ -1188,7 +1204,7 @@ module.exports = {
   getCareerStats, getHeadToHead, getFighterRecord,
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats,
-  upsertPrediction, getPredictions, reconcilePrediction, getPredictionAccuracy,
+  upsertPrediction, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy,
   createUser, getUser, updateUser, deleteUser,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
   lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,

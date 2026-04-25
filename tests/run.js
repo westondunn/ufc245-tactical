@@ -252,6 +252,10 @@ async function run() {
   const explainedFight = comparison.find(f => f.fight_id === upsertFightId);
   assertTruthy(explainedFight.model.explanation, 'model comparison includes parsed prediction explanation');
   assertEq(explainedFight.model.explanation.factors[0].label, 'Reach', 'model explanation includes top factor labels');
+  const pruneResult = db.prunePastPredictions({ before: '2026-01-01', include_concluded: true });
+  assertGt(pruneResult.pruned, 0, 'prunePastPredictions marks past/concluded predictions stale');
+  const staleRows = db.getPredictions({ fight_id: upsertFightId }).filter(r => r.model_version === upsertModelVersion);
+  assertEq(staleRows[0].is_stale, 1, 'pruned prediction is stale instead of deleted');
 
   // Reconcile selects latest unresolved row deterministically (predicted_at desc, id desc)
   const reconcileFightId = mainEvent.id;

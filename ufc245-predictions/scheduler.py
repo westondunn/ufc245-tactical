@@ -1,7 +1,7 @@
 """APScheduler worker process — runs cron jobs independently of the web process.
 
 Schedule:
-  - daily_predict:    every day at 06:00 UTC
+  - daily_maintenance: every day at 06:00 UTC
   - refresh_near:     3x daily at 08:00, 14:00, 20:00 UTC
   - daily_reconcile:  every day at 07:00 UTC
   - weekly_retrain:   every Monday at 05:00 UTC
@@ -14,7 +14,7 @@ import sys
 from apscheduler.schedulers.blocking import BlockingScheduler
 
 from db import init_db
-from jobs import daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced
+from jobs import daily_maintenance, daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 logger = logging.getLogger("scheduler")
@@ -26,9 +26,9 @@ def main():
 
     scheduler = BlockingScheduler(timezone="UTC")
 
-    # Daily predictions at 06:00 UTC
-    scheduler.add_job(daily_predict, "cron", hour=6, minute=0,
-                      id="daily_predict", replace_existing=True)
+    # Daily upkeep after upstream scrapes/stat imports have had time to land.
+    scheduler.add_job(daily_maintenance, "cron", hour=6, minute=0,
+                      id="daily_maintenance", replace_existing=True)
 
     # Refresh near-term predictions 3x daily
     scheduler.add_job(refresh_near, "cron", hour="8,14,20", minute=0,
@@ -54,7 +54,7 @@ def main():
     signal.signal(signal.SIGTERM, shutdown)
     signal.signal(signal.SIGINT, shutdown)
 
-    logger.info("Scheduler running. Jobs: daily_predict, refresh_near, "
+    logger.info("Scheduler running. Jobs: daily_maintenance, refresh_near, "
                 "daily_reconcile, weekly_retrain, sync_unsynced")
     scheduler.start()
 

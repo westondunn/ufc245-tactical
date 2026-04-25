@@ -6,7 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException, Header
 
 from db import init_db, get_latest_model, get_unsynced_predictions
-from jobs import daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced
+from jobs import daily_maintenance, daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 logger = logging.getLogger("app")
@@ -26,8 +26,8 @@ def _configure_scheduler() -> BackgroundScheduler:
         return scheduler
 
     scheduler = BackgroundScheduler(timezone="UTC")
-    scheduler.add_job(daily_predict, "cron", hour=6, minute=0,
-                      id="daily_predict", replace_existing=True)
+    scheduler.add_job(daily_maintenance, "cron", hour=6, minute=0,
+                      id="daily_maintenance", replace_existing=True)
     scheduler.add_job(refresh_near, "cron", hour="8,14,20", minute=0,
                       id="refresh_near", replace_existing=True)
     scheduler.add_job(daily_reconcile, "cron", hour=7, minute=0,
@@ -99,6 +99,12 @@ def shutdown():
 def trigger_predict(x_prediction_key: str = Header(default="")):
     _require_key(x_prediction_key)
     return daily_predict()
+
+
+@app.post("/trigger/maintenance")
+def trigger_maintenance(x_prediction_key: str = Header(default="")):
+    _require_key(x_prediction_key)
+    return daily_maintenance()
 
 
 @app.post("/trigger/refresh")

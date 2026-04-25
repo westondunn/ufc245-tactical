@@ -53,6 +53,8 @@ function resolveAction(url: URL) {
       return "retrain";
     case "/trigger/predict":
       return "predict";
+    case "/trigger/maintenance":
+      return "maintenance";
     case "/trigger/reconcile":
       return "reconcile";
     case "/trigger/refresh":
@@ -106,6 +108,17 @@ Bun.serve({
         });
       }
 
+      if (action === "maintenance") {
+        const maintenance = await callPredictions("/trigger/maintenance");
+        const upcoming = await getUpcomingCount();
+        return json(maintenance.ok && upcoming.ok ? 200 : 502, {
+          action,
+          maintenance,
+          upcoming_count: upcoming.upcomingCount,
+          main_status: upcoming.status,
+        });
+      }
+
       if (action === "reconcile") {
         const reconcile = await callPredictions("/trigger/reconcile");
         return json(reconcile.ok ? 200 : 502, { action, reconcile });
@@ -122,17 +135,13 @@ Bun.serve({
         return json(sync.ok ? 200 : 502, { action, sync });
       }
 
-      const predict = await callPredictions("/trigger/predict");
-      const reconcile = await callPredictions("/trigger/reconcile");
-      const sync = await callPredictions("/trigger/sync");
+      const maintenance = await callPredictions("/trigger/maintenance");
       const upcoming = await getUpcomingCount();
 
-      const ok = predict.ok && reconcile.ok && sync.ok && upcoming.ok;
+      const ok = maintenance.ok && upcoming.ok;
       return json(ok ? 200 : 502, {
         action: "daily",
-        predict,
-        reconcile,
-        sync,
+        maintenance,
         upcoming_count: upcoming.upcomingCount,
         main_status: upcoming.status,
       });

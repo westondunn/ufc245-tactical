@@ -77,10 +77,14 @@ def test_train_and_predict():
         assert explanation["favored_corner"] in {"red", "blue"}
         assert 0.0 <= explanation["confidence"] <= 1.0
         assert isinstance(explanation["factors"], list)
+        assert isinstance(explanation["categories"], list)
         assert explanation["summary"]
         if explanation["factors"]:
             assert "label" in explanation["factors"][0]
             assert explanation["factors"][0]["favors"] in {"red", "blue"}
+            assert "evidence" in explanation["factors"][0]
+        if explanation["categories"]:
+            assert "evidence" in explanation["categories"][0]
         print("  PASS: explain_prediction")
 
 

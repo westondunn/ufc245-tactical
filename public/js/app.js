@@ -4384,12 +4384,58 @@ function renderModelExplanation(explanation, fight){
         <div class="pick-model-why__meter"><span style="width:${pct}%"></span></div>
       </div>`;
   }).join('');
+  const categories = Array.isArray(explanation.categories)
+    ? explanation.categories.slice(0, 6).map(c => renderModelEvidenceCategory(c, fight)).join('')
+    : '';
   return `
     <div class="pick-model-why">
       <div class="pick-model-why__title">Why the model leans this way</div>
       ${summary}
       ${rows}
+      ${categories ? `<div class="pick-model-why__evidence">${categories}</div>` : ''}
     </div>`;
+}
+
+function renderModelEvidenceCategory(category, fight){
+  const favorsRed = category.favors !== 'blue';
+  const fighter = favorsRed ? fight.red_name : fight.blue_name;
+  const evidence = Array.isArray(category.evidence) ? category.evidence[0] : null;
+  const source = evidence && evidence.source ? evidence.source : '';
+  const detail = evidence ? formatModelEvidence(evidence) : '';
+  return `
+    <div class="pick-model-why__category ${favorsRed ? 'favors-red' : 'favors-blue'}">
+      <div class="pick-model-why__category-head">
+        <span>${escHtml(category.category || 'Model evidence')}</span>
+        <span>${escHtml(fighter || (favorsRed ? 'Red' : 'Blue'))}</span>
+      </div>
+      ${detail ? `<div class="pick-model-why__category-detail">${escHtml(detail)}</div>` : ''}
+      ${source ? `<div class="pick-model-why__category-source">${escHtml(source)}</div>` : ''}
+    </div>`;
+}
+
+function formatModelEvidence(e){
+  const red = e.red || {};
+  const blue = e.blue || {};
+  const unit = e.unit || '';
+  const redVal = formatEvidenceNumber(red.value, unit);
+  const blueVal = formatEvidenceNumber(blue.value, unit);
+  const delta = formatEvidenceNumber(e.delta, unit);
+  if (redVal || blueVal) {
+    return `${red.fighter || 'Red'} ${redVal || 'n/a'} vs ${blue.fighter || 'Blue'} ${blueVal || 'n/a'}${delta ? ' · delta ' + delta : ''}`;
+  }
+  return e.interpretation || '';
+}
+
+function formatEvidenceNumber(value, unit){
+  const n = Number(value);
+  if (!Number.isFinite(n)) return '';
+  const abs = Math.abs(n);
+  const sign = n > 0 ? '+' : (n < 0 ? '−' : '');
+  if (unit === 'pct') return sign + Math.round(abs * 100) + '%';
+  if ((unit || '').includes('cm')) return sign + Math.round(abs) + ' cm';
+  if ((unit || '').includes('sec')) return sign + Math.round(abs) + ' sec';
+  const rendered = abs >= 10 ? Math.round(abs) : abs.toFixed(1);
+  return sign + rendered + (unit && unit !== 'delta' ? ' ' + unit : '');
 }
 
 function formatModelFactorValue(f){

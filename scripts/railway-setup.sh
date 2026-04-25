@@ -9,6 +9,11 @@
 # Usage:
 #   bash scripts/railway-setup.sh
 #   bash scripts/railway-setup.sh --split
+#
+# Config-as-code:
+#   web              root /
+#   predictions      root ufc245-predictions
+#   function-bun     root railway-function
 # ============================================================
 set -euo pipefail
 
@@ -118,7 +123,6 @@ if [ "$MODE" = "single" ]; then
     MODEL_DIR="/data/model_store" \
     ENABLE_SCHEDULER="1" \
     DEPLOYMENT_MODE="single" \
-    NIXPACKS_CONFIG_FILE="ufc245-predictions/nixpacks.toml" \
     --service "$PRED_SERVICE_ID" >/dev/null
   ok "Predictions env vars set"
 
@@ -162,7 +166,6 @@ railway variables set \
   MODEL_DIR="/data/model-web-store" \
   ENABLE_SCHEDULER="0" \
   DEPLOYMENT_MODE="split-web" \
-  NIXPACKS_CONFIG_FILE="ufc245-predictions/nixpacks.web.toml" \
   --service "$PRED_WEB_ID" >/dev/null
 ok "predictions-web env vars set"
 
@@ -174,7 +177,6 @@ railway variables set \
   MODEL_DIR="/data/model-worker-store" \
   ENABLE_SCHEDULER="1" \
   DEPLOYMENT_MODE="split-worker" \
-  NIXPACKS_CONFIG_FILE="ufc245-predictions/nixpacks.worker.toml" \
   --service "$PRED_WORKER_ID" >/dev/null
 ok "predictions-worker env vars set"
 
