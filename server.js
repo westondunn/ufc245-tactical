@@ -5,7 +5,7 @@
 const express = require('express');
 const compression = require('compression');
 const cookieParser = require('cookie-parser');
-const { toNodeHandler, fromNodeHeaders } = require('better-auth/node');
+let toNodeHandler, fromNodeHeaders;
 const path = require('path');
 const fs = require('fs');
 const db = require('./db');
@@ -21,13 +21,6 @@ const NODE_ENV = process.env.NODE_ENV || 'production';
 
 app.set('trust proxy', 1);
 app.use(compression());
-
-// Better-auth must mount BEFORE express.json() — it parses its own bodies.
-// All sign-up / sign-in / verify / reset / sign-out routes live under here.
-app.all('/api/auth/{*any}', toNodeHandler(auth));
-
-app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
-app.use(cookieParser());
 
 // Version header on all responses
 app.use((req, res, next) => {
@@ -774,7 +767,18 @@ async function warmCache() {
 // ============================================================
 // START (async for db init)
 // ============================================================
-(async () => {
+async function bootstrap() {
+  const betterAuthNode = await import('better-auth/node');
+  toNodeHandler = betterAuthNode.toNodeHandler;
+  fromNodeHeaders = betterAuthNode.fromNodeHeaders;
+
+  // Better-auth must mount BEFORE express.json() — it parses its own bodies.
+  // All sign-up / sign-in / verify / reset / sign-out routes live under here.
+  app.all('/api/auth/{*any}', toNodeHandler(auth));
+
+  app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
+  app.use(cookieParser());
+
   await db.init();
   console.log('[db] initialized');
   await warmCache();
@@ -800,4 +804,9 @@ async function warmCache() {
       setTimeout(() => process.exit(1), 10_000).unref();
     });
   });
-})();
+}
+
+bootstrap().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
