@@ -15,6 +15,16 @@
  * Event identity: name (case-insensitive) — UFC 328 or "UFC Fight Night: Sterling vs Zalal"
  * Fighter identity: name OR ufc_slug (when present)
  */
+if (typeof global.File === 'undefined') {
+  global.File = class File extends Blob {
+    constructor(chunks, name, options = {}) {
+      super(chunks, options);
+      this.name = String(name || '');
+      this.lastModified = options.lastModified || Date.now();
+    }
+  };
+}
+
 const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');
@@ -53,6 +63,68 @@ function isoDateFromTimestamp(tsSec){
   const d = new Date(parseInt(tsSec, 10) * 1000);
   if (isNaN(d.getTime())) return null;
   return d.toISOString().slice(0, 10);
+}
+
+function inchesToCm(value){
+  const n = parseFloat(String(value || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? Math.round(n * 2.54) : null;
+}
+
+function parsePct(value){
+  const m = String(value || '').match(/(\d+(?:\.\d+)?)\s*%/);
+  return m ? parseFloat(m[1]) : null;
+}
+
+function parseProfileNumber(value){
+  const n = parseFloat(String(value || '').replace(/[^\d.]/g, ''));
+  return Number.isFinite(n) ? n : null;
+}
+
+function mergeProfile(target, profile){
+  let changed = false;
+  for (const [key, value] of Object.entries(profile || {})) {
+    if (value == null || value === '') continue;
+    if (target[key] == null || target[key] === '') {
+      target[key] = value;
+      changed = true;
+    }
+  }
+  return changed;
+}
+
+async function fetchFighterProfile(slug){
+  if (!slug) return {};
+  const html = await fetchPage(`${BASE}/athlete/${slug}`);
+  const $ = cheerio.load(html);
+  const profile = {};
+
+  $('.c-bio__field').each((_, el) => {
+    const label = clean($(el).find('.c-bio__label').text()).toLowerCase();
+    const value = clean($(el).find('.c-bio__text').text());
+    if (label === 'height') profile.height_cm = inchesToCm(value);
+    if (label === 'reach') profile.reach_cm = inchesToCm(value);
+  });
+
+  $('.c-stat-compare__group').each((_, el) => {
+    const label = clean($(el).find('.c-stat-compare__label').text()).toLowerCase();
+    const value = parseProfileNumber($(el).find('.c-stat-compare__number').text());
+    if (value == null) return;
+    if (label === 'sig. str. landed') profile.slpm = value;
+    if (label === 'sig. str. absorbed') profile.sapm = value;
+    if (label === 'takedown avg') profile.td_avg = value;
+    if (label === 'submission avg') profile.sub_avg = value;
+  });
+
+  $('svg.e-chart-circle title').each((_, el) => {
+    const text = clean($(el).text()).toLowerCase();
+    const pct = parsePct(text);
+    if (pct == null) return;
+    if (text.includes('striking accuracy')) profile.str_acc = pct;
+    if (text.includes('takedown accuracy')) profile.td_acc = pct;
+    if (text.includes('takedown defense')) profile.td_def = pct;
+  });
+
+  return profile;
 }
 
 /**
@@ -153,8 +225,10 @@ async function run(){
 
   // Fighter index by name (case-insensitive) and by ufc_slug if present
   const seedFighterByName = new Map();
+  const seedFighterBySlug = new Map();
   for (const f of seed.fighters) {
     seedFighterByName.set(normName(f.name), f);
+    if (f.ufc_slug) seedFighterBySlug.set(normName(f.ufc_slug), f);
   }
 
   let nextEventId = Math.max(0, ...seed.events.map(e => e.id)) + 1;
@@ -164,14 +238,30 @@ async function run(){
   const addedEvents = [];
   const addedFights = [];
   const addedFighters = [];
+  let enrichedFighters = 0;
+  const profileCache = new Map();
+
+  async function enrichFromUfcProfile(fighter, slug){
+    if (!fighter || !slug) return;
+    if (!fighter.ufc_slug) fighter.ufc_slug = slug;
+    if (!profileCache.has(slug)) {
+      await sleep(DELAY_MS);
+      try { profileCache.set(slug, await fetchFighterProfile(slug)); }
+      catch (e) {
+        console.warn(`    ⚠ Profile failed for ${fighter.name}: ${e.message}`);
+        profileCache.set(slug, {});
+      }
+    }
+    if (mergeProfile(fighter, profileCache.get(slug))) enrichedFighters++;
+  }
+
+  function findSeedFighter(name, slug){
+    return seedFighterBySlug.get(normName(slug)) || seedFighterByName.get(normName(name));
+  }
 
   for (let idx = 0; idx < upcoming.length; idx++) {
     const ev = upcoming[idx];
     const existing = seedEventByName.get(normName(ev.title));
-    if (existing) {
-      console.log(`  skip (exists): ${ev.title}`);
-      continue;
-    }
 
     console.log(`[2/3] ${idx + 1}/${upcoming.length} Fetching card: ${ev.title}`);
     await sleep(DELAY_MS);
@@ -179,6 +269,15 @@ async function run(){
     try { card = await fetchEventCard(ev.slug); }
     catch (e) { console.warn(`    ⚠ Failed: ${e.message}`); continue; }
     if (!card.length) { console.warn(`    ⚠ Empty card, skipping`); continue; }
+
+    if (existing) {
+      for (const bout of card) {
+        await enrichFromUfcProfile(findSeedFighter(bout.red_name, bout.red_slug), bout.red_slug);
+        await enrichFromUfcProfile(findSeedFighter(bout.blue_name, bout.blue_slug), bout.blue_slug);
+      }
+      console.log(`    exists; refreshed fighter profiles for ${card.length} fights`);
+      continue;
+    }
 
     const number = parseUfcNumber(ev.title);
     const [city, country] = (ev.location || '').split(',').map(s => clean(s));
@@ -196,8 +295,8 @@ async function run(){
     addedEvents.push(eventRow);
 
     for (const bout of card) {
-      const redExisting = seedFighterByName.get(normName(bout.red_name));
-      const blueExisting = seedFighterByName.get(normName(bout.blue_name));
+      const redExisting = findSeedFighter(bout.red_name, bout.red_slug);
+      const blueExisting = findSeedFighter(bout.blue_name, bout.blue_slug);
 
       let redId = redExisting ? redExisting.id : null;
       let blueId = blueExisting ? blueExisting.id : null;
@@ -214,7 +313,11 @@ async function run(){
         };
         addedFighters.push(stub);
         seedFighterByName.set(normName(stub.name), stub);
+        if (stub.ufc_slug) seedFighterBySlug.set(normName(stub.ufc_slug), stub);
         redId = stub.id;
+        await enrichFromUfcProfile(stub, bout.red_slug);
+      } else {
+        await enrichFromUfcProfile(redExisting, bout.red_slug);
       }
       if (!blueId) {
         const stub = {
@@ -228,7 +331,11 @@ async function run(){
         };
         addedFighters.push(stub);
         seedFighterByName.set(normName(stub.name), stub);
+        if (stub.ufc_slug) seedFighterBySlug.set(normName(stub.ufc_slug), stub);
         blueId = stub.id;
+        await enrichFromUfcProfile(stub, bout.blue_slug);
+      } else {
+        await enrichFromUfcProfile(blueExisting, bout.blue_slug);
       }
 
       addedFights.push({
@@ -256,6 +363,7 @@ async function run(){
   console.log(`  + ${addedEvents.length} events`);
   console.log(`  + ${addedFights.length} fights`);
   console.log(`  + ${addedFighters.length} fighter stubs`);
+  console.log(`  + ${enrichedFighters} fighter profile enrichments`);
   if (addedEvents.length) {
     console.log('\nNew upcoming events:');
     for (const e of addedEvents) console.log(`  UFC ${e.number || '—'} · ${e.date} · ${e.name}`);
@@ -266,7 +374,7 @@ async function run(){
     return;
   }
 
-  if (!addedEvents.length && !addedFights.length && !addedFighters.length) {
+  if (!addedEvents.length && !addedFights.length && !addedFighters.length && !enrichedFighters) {
     console.log('\nNothing new — seed.json unchanged.');
     return;
   }

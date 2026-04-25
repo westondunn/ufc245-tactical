@@ -312,10 +312,10 @@ async function seedFromFile(seedPath) {
          VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)
          ON CONFLICT (id) DO NOTHING`,
         [
-          f.id, f.name, f.nickname || null, f.height_cm || null, f.reach_cm || null, f.stance || null,
-          f.weight_class || null, f.nationality || null, f.dob || null, f.slpm || null, f.str_acc || null,
-          f.sapm || null, f.str_def || null, f.td_avg || null, f.td_acc || null, f.td_def || null,
-          f.sub_avg || null, f.ufcstats_hash || null
+          f.id, f.name, f.nickname || null, f.height_cm ?? null, f.reach_cm ?? null, f.stance || null,
+          f.weight_class || null, f.nationality || null, f.dob || null, f.slpm ?? null, f.str_acc ?? null,
+          f.sapm ?? null, f.str_def ?? null, f.td_avg ?? null, f.td_acc ?? null, f.td_def ?? null,
+          f.sub_avg ?? null, f.ufcstats_hash || null
         ]
       );
     }
@@ -611,19 +611,34 @@ async function getAllFighters(limit = 500) { return allRows('SELECT * FROM fight
 
 async function upsertFighter(f) {
   await run(
-    `INSERT INTO fighters (id,name,nickname,height_cm,reach_cm,stance,weight_class,nationality,dob,ufcstats_hash)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
+    `INSERT INTO fighters
+     (id,name,nickname,height_cm,reach_cm,stance,weight_class,nationality,dob,
+      slpm,str_acc,sapm,str_def,td_avg,td_acc,td_def,sub_avg,ufcstats_hash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT (id) DO UPDATE SET
-       name = EXCLUDED.name,
-       nickname = EXCLUDED.nickname,
-       height_cm = EXCLUDED.height_cm,
-       reach_cm = EXCLUDED.reach_cm,
-       stance = EXCLUDED.stance,
-       weight_class = EXCLUDED.weight_class,
-       nationality = EXCLUDED.nationality,
-       dob = EXCLUDED.dob,
-       ufcstats_hash = EXCLUDED.ufcstats_hash`,
-    [f.id, f.name, f.nickname || null, f.height_cm || null, f.reach_cm || null, f.stance || null, f.weight_class || null, f.nationality || null, f.dob || null, f.ufcstats_hash || null]
+       name = COALESCE(EXCLUDED.name, fighters.name),
+       nickname = COALESCE(EXCLUDED.nickname, fighters.nickname),
+       height_cm = COALESCE(EXCLUDED.height_cm, fighters.height_cm),
+       reach_cm = COALESCE(EXCLUDED.reach_cm, fighters.reach_cm),
+       stance = COALESCE(EXCLUDED.stance, fighters.stance),
+       weight_class = COALESCE(EXCLUDED.weight_class, fighters.weight_class),
+       nationality = COALESCE(EXCLUDED.nationality, fighters.nationality),
+       dob = COALESCE(EXCLUDED.dob, fighters.dob),
+       slpm = COALESCE(EXCLUDED.slpm, fighters.slpm),
+       str_acc = COALESCE(EXCLUDED.str_acc, fighters.str_acc),
+       sapm = COALESCE(EXCLUDED.sapm, fighters.sapm),
+       str_def = COALESCE(EXCLUDED.str_def, fighters.str_def),
+       td_avg = COALESCE(EXCLUDED.td_avg, fighters.td_avg),
+       td_acc = COALESCE(EXCLUDED.td_acc, fighters.td_acc),
+       td_def = COALESCE(EXCLUDED.td_def, fighters.td_def),
+       sub_avg = COALESCE(EXCLUDED.sub_avg, fighters.sub_avg),
+       ufcstats_hash = COALESCE(EXCLUDED.ufcstats_hash, fighters.ufcstats_hash)`,
+    [
+      f.id, f.name, f.nickname || null, f.height_cm ?? null, f.reach_cm ?? null, f.stance || null,
+      f.weight_class || null, f.nationality || null, f.dob || null, f.slpm ?? null, f.str_acc ?? null,
+      f.sapm ?? null, f.str_def ?? null, f.td_avg ?? null, f.td_acc ?? null, f.td_def ?? null,
+      f.sub_avg ?? null, f.ufcstats_hash || null
+    ]
   );
 }
 
@@ -724,6 +739,17 @@ async function upsertPrediction(p) {
       p.model_version, p.feature_hash || null, explanationJson, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0
     ]
   );
+  if (!p.is_stale) {
+    await run(
+      `UPDATE predictions
+       SET is_stale = 1
+       WHERE fight_id = ?
+         AND model_version <> ?
+         AND is_stale = 0
+         AND actual_winner_id IS NULL`,
+      [p.fight_id, p.model_version]
+    );
+  }
 }
 
 async function getPredictions(opts = {}) {

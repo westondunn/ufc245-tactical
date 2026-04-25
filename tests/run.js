@@ -90,6 +90,28 @@ async function run() {
   assertTruthy(fighter.slpm, 'McGregor has slpm metric');
   assertGt(fighter.slpm, 3, 'McGregor slpm > 3');
   assertTruthy(fighter.str_acc, 'McGregor has str_acc metric');
+  db.upsertFighter({
+    id: fighter.id,
+    name: fighter.name,
+    nickname: null,
+    height_cm: null,
+    reach_cm: null,
+    stance: null,
+    weight_class: fighter.weight_class,
+    nationality: null,
+    dob: null,
+    slpm: null,
+    str_acc: null,
+    sapm: null,
+    str_def: null,
+    td_avg: null,
+    td_acc: null,
+    td_def: null,
+    sub_avg: null
+  });
+  const preservedFighter = db.getFighter(fighter.id);
+  assertEq(preservedFighter.slpm, fighter.slpm, 'sparse fighter upsert preserves existing slpm');
+  assertEq(preservedFighter.str_acc, fighter.str_acc, 'sparse fighter upsert preserves existing str_acc');
   const usmanFighter = db.getFighter(db.searchFighters('Usman')[0].id);
   assertGt(usmanFighter.td_def, 90, 'Usman td_def > 90%');
   // Some fighters should not have metrics
@@ -252,6 +274,30 @@ async function run() {
   const explainedFight = comparison.find(f => f.fight_id === upsertFightId);
   assertTruthy(explainedFight.model.explanation, 'model comparison includes parsed prediction explanation');
   assertEq(explainedFight.model.explanation.factors[0].label, 'Reach', 'model explanation includes top factor labels');
+  db.run("DELETE FROM predictions WHERE fight_id = ? AND model_version IN ('v.test.latest.old','v.test.latest.new')", [upsertFightId]);
+  db.upsertPrediction({
+    fight_id: upsertFightId,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.51,
+    blue_win_prob: 0.49,
+    model_version: 'v.test.latest.old',
+    predicted_at: '2026-01-01T02:00:00.000Z',
+    event_date: ufc245.date
+  });
+  db.upsertPrediction({
+    fight_id: upsertFightId,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.64,
+    blue_win_prob: 0.36,
+    model_version: 'v.test.latest.new',
+    predicted_at: '2026-01-01T03:00:00.000Z',
+    event_date: ufc245.date
+  });
+  const latestRows = db.getPredictions({ fight_id: upsertFightId });
+  assertEq(latestRows.find(r => r.model_version === 'v.test.latest.old').is_stale, 1, 'newer model marks older unresolved model stale');
+  assertEq(latestRows.find(r => r.model_version === 'v.test.latest.new').is_stale, 0, 'newer model remains active');
   const pruneResult = db.prunePastPredictions({ before: '2026-01-01', include_concluded: true });
   assertGt(pruneResult.pruned, 0, 'prunePastPredictions marks past/concluded predictions stale');
   const staleRows = db.getPredictions({ fight_id: upsertFightId }).filter(r => r.model_version === upsertModelVersion);

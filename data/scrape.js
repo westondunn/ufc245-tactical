@@ -12,6 +12,16 @@
  * UFCStats.com is HTTP-only, static HTML, no auth, no rate limiting.
  * Be polite: 1 request/second delay built in.
  */
+if (typeof global.File === 'undefined') {
+  global.File = class File extends Blob {
+    constructor(chunks, name, options = {}) {
+      super(chunks, options);
+      this.name = String(name || '');
+      this.lastModified = options.lastModified || Date.now();
+    }
+  };
+}
+
 const cheerio = require('cheerio');
 const fs = require('fs');
 const path = require('path');

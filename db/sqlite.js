@@ -232,7 +232,7 @@ function seedFromFile(seedPath) {
     'INSERT OR IGNORE INTO fighters (id,name,nickname,height_cm,reach_cm,stance,weight_class,nationality,dob,slpm,str_acc,sapm,str_def,td_avg,td_acc,td_def,sub_avg,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)'
   );
   for (const f of seed.fighters || []) {
-    insFighter.run([f.id,f.name,f.nickname,f.height_cm,f.reach_cm,f.stance,f.weight_class,f.nationality,f.dob||null,f.slpm||null,f.str_acc||null,f.sapm||null,f.str_def||null,f.td_avg||null,f.td_acc||null,f.td_def||null,f.sub_avg||null,f.ufcstats_hash||null]);
+    insFighter.run([f.id,f.name,f.nickname,f.height_cm,f.reach_cm,f.stance,f.weight_class,f.nationality,f.dob||null,f.slpm??null,f.str_acc??null,f.sapm??null,f.str_def??null,f.td_avg??null,f.td_acc??null,f.td_def??null,f.sub_avg??null,f.ufcstats_hash||null]);
   }
   insFighter.free();
 
@@ -346,8 +346,32 @@ function ensurePredictionExplanationColumn() {
 
 /* ── UPSERT (for scraper) ── */
 function upsertFighter(f) {
-  run('INSERT OR REPLACE INTO fighters (id,name,nickname,height_cm,reach_cm,stance,weight_class,nationality,dob,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?)',
-    [f.id,f.name,f.nickname||null,f.height_cm||null,f.reach_cm||null,f.stance||null,f.weight_class||null,f.nationality||null,f.dob||null,f.ufcstats_hash||null]);
+  run(
+    `INSERT INTO fighters
+     (id,name,nickname,height_cm,reach_cm,stance,weight_class,nationality,dob,
+      slpm,str_acc,sapm,str_def,td_avg,td_acc,td_def,sub_avg,ufcstats_hash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(id) DO UPDATE SET
+       name = COALESCE(excluded.name, fighters.name),
+       nickname = COALESCE(excluded.nickname, fighters.nickname),
+       height_cm = COALESCE(excluded.height_cm, fighters.height_cm),
+       reach_cm = COALESCE(excluded.reach_cm, fighters.reach_cm),
+       stance = COALESCE(excluded.stance, fighters.stance),
+       weight_class = COALESCE(excluded.weight_class, fighters.weight_class),
+       nationality = COALESCE(excluded.nationality, fighters.nationality),
+       dob = COALESCE(excluded.dob, fighters.dob),
+       slpm = COALESCE(excluded.slpm, fighters.slpm),
+       str_acc = COALESCE(excluded.str_acc, fighters.str_acc),
+       sapm = COALESCE(excluded.sapm, fighters.sapm),
+       str_def = COALESCE(excluded.str_def, fighters.str_def),
+       td_avg = COALESCE(excluded.td_avg, fighters.td_avg),
+       td_acc = COALESCE(excluded.td_acc, fighters.td_acc),
+       td_def = COALESCE(excluded.td_def, fighters.td_def),
+       sub_avg = COALESCE(excluded.sub_avg, fighters.sub_avg),
+       ufcstats_hash = COALESCE(excluded.ufcstats_hash, fighters.ufcstats_hash)`,
+    [f.id,f.name,f.nickname||null,f.height_cm??null,f.reach_cm??null,f.stance||null,f.weight_class||null,f.nationality||null,f.dob||null,
+     f.slpm??null,f.str_acc??null,f.sapm??null,f.str_def??null,f.td_avg??null,f.td_acc??null,f.td_def??null,f.sub_avg??null,f.ufcstats_hash||null]
+  );
 }
 
 function upsertEvent(e) {
@@ -543,9 +567,20 @@ function upsertPrediction(p) {
        predicted_at = excluded.predicted_at,
        event_date = excluded.event_date,
        is_stale = excluded.is_stale`,
-    [p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
-     p.model_version, p.feature_hash || null, explanationJson, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
-  );
+	    [p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
+	     p.model_version, p.feature_hash || null, explanationJson, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
+	  );
+  if (!p.is_stale) {
+    run(
+      `UPDATE predictions
+       SET is_stale = 1
+       WHERE fight_id = ?
+         AND model_version <> ?
+         AND is_stale = 0
+         AND actual_winner_id IS NULL`,
+      [p.fight_id, p.model_version]
+    );
+  }
 }
 
 function getPredictions(opts = {}) {

@@ -2205,6 +2205,42 @@ footer{
 .pick-fight__meta{
   font-family:var(--f-mono);font-size:10px;color:var(--muted);
   letter-spacing:.08em;margin-top:4px;
+  display:flex;align-items:center;gap:6px;flex-wrap:wrap;
+}
+.pick-fight__corner--red .pick-fight__meta{justify-content:flex-end}
+.pick-fighter-stats{
+  position:relative;display:inline-flex;align-items:center;
+  padding:2px 6px;border:1px solid var(--border);background:#080A10;
+  color:var(--cyan);font-size:8px;line-height:1;text-transform:uppercase;
+  letter-spacing:.14em;cursor:help;outline:none;
+}
+.pick-fighter-stats:hover,
+.pick-fighter-stats:focus{border-color:var(--cyan);color:var(--fg)}
+.pick-fighter-stats__panel{
+  position:absolute;z-index:30;top:calc(100% + 8px);left:0;
+  width:240px;padding:10px 11px;border:1px solid var(--border-soft);
+  background:#090B12;box-shadow:0 16px 36px rgba(0,0,0,.55);
+  color:var(--fg-dim);text-align:left;opacity:0;pointer-events:none;
+  transform:translateY(-4px);transition:opacity .14s ease,transform .14s ease;
+}
+.pick-fighter-stats--red .pick-fighter-stats__panel{left:auto;right:0}
+.pick-fighter-stats:hover .pick-fighter-stats__panel,
+.pick-fighter-stats:focus .pick-fighter-stats__panel{
+  opacity:1;pointer-events:auto;transform:translateY(0);
+}
+.pick-fighter-stats__title{
+  display:block;color:var(--fg);font-family:var(--f-disp);font-size:13px;
+  letter-spacing:.02em;margin-bottom:7px;text-transform:none;
+}
+.pick-fighter-stats__row{
+  display:flex;justify-content:space-between;gap:12px;
+  padding:5px 0;border-top:1px solid rgba(255,255,255,.06);
+  font-size:9px;line-height:1.3;text-transform:none;letter-spacing:.04em;
+}
+.pick-fighter-stats__row strong{color:var(--fg);font-weight:700;text-align:right}
+.pick-fighter-stats__note{
+  display:block;margin-top:7px;color:var(--muted-dim);
+  font-size:8px;line-height:1.35;text-transform:none;letter-spacing:.03em;
 }
 .pick-fight__vs{
   font-family:var(--f-disp);font-size:22px;font-weight:600;
@@ -2299,6 +2335,10 @@ footer{
 .pick-model__top{display:flex;align-items:center;gap:10px;flex-wrap:wrap;margin-bottom:8px}
 .pick-model__icon{color:var(--cyan);font-size:11px}
 .pick-model__label{color:var(--muted);text-transform:uppercase;letter-spacing:.16em}
+.pick-model__latest{
+  padding:2px 6px;border:1px solid var(--green);color:var(--green);
+  font-size:8px;line-height:1;text-transform:uppercase;letter-spacing:.14em;
+}
 .pick-model__pred{color:var(--fg);font-weight:600}
 .pick-model__agreement{
   margin-left:auto;padding:2px 8px;border:1px solid currentColor;
@@ -2386,12 +2426,35 @@ footer{
   margin-top:5px;color:var(--fg-dim);font-size:9px;line-height:1.35;
 }
 .pick-model-why__category-source{
-  margin-top:4px;color:var(--muted-dim);font-family:var(--f-mono);font-size:8px;line-height:1.3;
+  margin-top:5px;color:var(--muted-dim);font-family:var(--f-mono);font-size:8px;line-height:1.3;
+  display:flex;align-items:center;justify-content:space-between;gap:8px;
 }
 .pick-model-why__category.favors-red .pick-model-why__category-head span:last-child{color:var(--red-soft)}
 .pick-model-why__category.favors-blue .pick-model-why__category-head span:last-child{color:var(--blue-soft)}
+.pick-evidence-pill{
+  position:relative;display:inline-flex;align-items:center;flex:0 0 auto;
+  padding:2px 5px;border:1px solid var(--border);color:var(--cyan);
+  background:#080A10;text-transform:uppercase;letter-spacing:.12em;cursor:help;
+  outline:none;
+}
+.pick-evidence-pill:hover,
+.pick-evidence-pill:focus{border-color:var(--cyan);color:var(--fg)}
+.pick-evidence-pill__panel{
+  position:absolute;z-index:35;right:0;bottom:calc(100% + 8px);
+  width:260px;padding:9px 10px;border:1px solid var(--border-soft);
+  background:#090B12;box-shadow:0 16px 36px rgba(0,0,0,.55);
+  color:var(--fg-dim);font-size:9px;line-height:1.45;text-transform:none;
+  letter-spacing:.03em;opacity:0;pointer-events:none;transform:translateY(4px);
+  transition:opacity .14s ease,transform .14s ease;
+}
+.pick-evidence-pill:hover .pick-evidence-pill__panel,
+.pick-evidence-pill:focus .pick-evidence-pill__panel{
+  opacity:1;pointer-events:auto;transform:translateY(0);
+}
 @media (max-width: 760px){
   .pick-model-why__evidence{grid-template-columns:1fr}
+  .pick-fighter-stats__panel{width:min(230px,70vw)}
+  .pick-evidence-pill__panel{width:min(250px,76vw)}
 }
 
 /* Lock / status row */

@@ -632,9 +632,12 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
   if (!fs.existsSync(seedPath)) return res.status(404).json({ error: 'seed_not_found' });
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
   const added = { fighters: 0, events: 0, fights: 0 };
+  const updated = { fighters: 0 };
   for (const f of (seed.fighters || [])) {
     const existing = await db.oneRow('SELECT id FROM fighters WHERE id = ?', [f.id]);
-    if (!existing) { await db.upsertFighter(f); added.fighters++; }
+    await db.upsertFighter(f);
+    if (!existing) added.fighters++;
+    else updated.fighters++;
   }
   for (const e of (seed.events || [])) {
     const existing = await db.oneRow('SELECT id FROM events WHERE id = ?', [e.id]);
@@ -646,8 +649,8 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
   }
   await db.save();
   cache.invalidateAll();
-  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights}`);
-  res.json({ status: 'ok', added, cacheEntries: cache.size() });
+  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights} updated_fighters=${updated.fighters}`);
+  res.json({ status: 'ok', added, updated, cacheEntries: cache.size() });
 }));
 
 app.use((req, res) => {

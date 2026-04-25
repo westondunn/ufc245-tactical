@@ -3989,6 +3989,7 @@ let _picksState = {
   eventCard: [],
   userPicks: new Map(),      // fight_id → pick row
   modelByFightId: new Map(), // fight_id → { picked_fighter_id, confidence, version }
+  latestModelVersion: null,
   lbScope: 'event'
 };
 {
@@ -4112,6 +4113,7 @@ async function loadUpcomingView(){
     _picksState.eventCard = normalized;
     _picksState.userPicks = new Map((picks || []).map(p => [p.fight_id, p]));
     _picksState.modelByFightId = new Map((compFights || []).map(c => [c.fight_id, c.model]));
+    _picksState.latestModelVersion = getLatestModelVersion(_picksState.modelByFightId);
 
     // Upcoming view shows only fights without a winner. Concluded fights
     // appear in "My history" with their points + correctness.
@@ -4202,6 +4204,74 @@ function renderPicksCardSummary(openFights){
   `;
 }
 
+function getLatestModelVersion(modelByFightId){
+  const versions = Array.from(modelByFightId.values())
+    .map(model => model && model.version)
+    .filter(Boolean);
+  if (!versions.length) return null;
+  return versions.sort(compareModelVersions).at(-1);
+}
+
+function compareModelVersions(a, b){
+  const parse = v => {
+    const match = String(v || '').match(/v?(\d+)\.(\d+)\.(\d+)/);
+    if (!match) return [0, 0, 0, String(v || '')];
+    return [Number(match[1]), Number(match[2]), Number(match[3]), String(v || '')];
+  };
+  const aa = parse(a);
+  const bb = parse(b);
+  for (let i = 0; i < 3; i++) {
+    if (aa[i] !== bb[i]) return aa[i] - bb[i];
+  }
+  return aa[3].localeCompare(bb[3]);
+}
+
+function renderFighterStatsHover(fight, model, corner){
+  const items = getFighterEvidenceItems(fight, model, corner).slice(0, 5);
+  if (!items.length) return '';
+  const fighterName = corner === 'red' ? fight.red_name : fight.blue_name;
+  const rows = items.map(item => `
+    <span class="pick-fighter-stats__row">
+      <span>${escHtml(item.label)}</span>
+      <strong>${escHtml(item.value)}</strong>
+    </span>`).join('');
+  return `
+    <span class="pick-fighter-stats pick-fighter-stats--${corner}" tabindex="0">
+      Stats
+      <span class="pick-fighter-stats__panel">
+        <span class="pick-fighter-stats__title">${escHtml(fighterName || (corner === 'red' ? 'Red' : 'Blue'))}</span>
+        ${rows}
+        <span class="pick-fighter-stats__note">Model evidence from completed fight records and fighter profile metrics.</span>
+      </span>
+    </span>`;
+}
+
+function getFighterEvidenceItems(fight, model, corner){
+  const categories = model && model.explanation && Array.isArray(model.explanation.categories)
+    ? model.explanation.categories
+    : [];
+  const key = corner === 'red' ? 'red' : 'blue';
+  const items = [];
+  for (const category of categories) {
+    const evidence = Array.isArray(category.evidence) ? category.evidence[0] : null;
+    if (!evidence || !evidence[key]) continue;
+    const value = formatEvidenceNumber(evidence[key].value, evidence.unit || '');
+    if (!value) continue;
+    items.push({
+      label: category.category || evidence.label || 'Model stat',
+      value,
+      source: evidence.source || ''
+    });
+  }
+  if (!items.length) {
+    const height = corner === 'red' ? fight.red_height : fight.blue_height;
+    const reach = corner === 'red' ? fight.red_reach : fight.blue_reach;
+    if (height) items.push({ label: 'Height', value: `${Math.round(height)} cm` });
+    if (reach) items.push({ label: 'Reach', value: `${Math.round(reach)} cm` });
+  }
+  return items;
+}
+
 function renderPickWidget(fight){
   const pick = _picksState.userPicks.get(fight.id);
   const model = _picksState.modelByFightId.get(fight.id);
@@ -4214,12 +4284,17 @@ function renderPickWidget(fight){
   const methodVal = pick && pick.method_pick || '';
   const roundVal = pick && pick.round_pick || '';
   const notesVal = pick && pick.notes || '';
+  const redStatsHover = model ? renderFighterStatsHover(fight, model, 'red') : '';
+  const blueStatsHover = model ? renderFighterStatsHover(fight, model, 'blue') : '';
 
   // Model comparison with horizontal probability bar
   let modelHtml;
   if (model && model.picked_fighter_id) {
     const modelWinnerName = model.picked_fighter_id === fight.red_fighter_id ? fight.red_name : fight.blue_name;
     const pct = Math.round((model.confidence || 0) * 100);
+    const latestBadge = model.version && model.version === _picksState.latestModelVersion
+      ? '<span class="pick-model__latest">Latest</span>'
+      : '';
     // red_win_prob + blue_win_prob in the model object (server sends both)
     const redPct = Math.round((model.red_win_prob || 0) * 100);
     const bluePct = 100 - redPct;
@@ -4245,6 +4320,7 @@ function renderPickWidget(fight){
         <div class="pick-model__top">
           <span class="pick-model__icon">⚡</span>
           <span class="pick-model__label">Model · ${escHtml(model.version)}</span>
+          ${latestBadge}
           <span class="pick-model__pred">${escHtml(modelWinnerName)} favored · ${pct}%</span>
           ${badge}
         </div>
@@ -4302,13 +4378,13 @@ function renderPickWidget(fight){
         <div class="pick-fight__corner pick-fight__corner--red">
           <div class="pick-fight__tag">Red corner</div>
           <div class="pick-fight__name">${escHtml(fight.red_name || '—')}</div>
-          <div class="pick-fight__meta">${escHtml(fight.weight_class || '')}</div>
+          <div class="pick-fight__meta">${escHtml(fight.weight_class || '')}${redStatsHover}</div>
         </div>
         <div class="pick-fight__vs">VS</div>
         <div class="pick-fight__corner pick-fight__corner--blue">
           <div class="pick-fight__tag">Blue corner</div>
           <div class="pick-fight__name">${escHtml(fight.blue_name || '—')}</div>
-          <div class="pick-fight__meta">${fight.is_main ? 'MAIN EVENT' : (fight.is_title ? 'TITLE FIGHT' : '')}</div>
+          <div class="pick-fight__meta">${fight.is_main ? 'MAIN EVENT' : (fight.is_title ? 'TITLE FIGHT' : '')}${blueStatsHover}</div>
         </div>
       </div>
 
@@ -4402,6 +4478,7 @@ function renderModelEvidenceCategory(category, fight){
   const evidence = Array.isArray(category.evidence) ? category.evidence[0] : null;
   const source = evidence && evidence.source ? evidence.source : '';
   const detail = evidence ? formatModelEvidence(evidence) : '';
+  const sourceTip = evidence ? formatEvidenceSourceTip(evidence, category) : '';
   return `
     <div class="pick-model-why__category ${favorsRed ? 'favors-red' : 'favors-blue'}">
       <div class="pick-model-why__category-head">
@@ -4409,8 +4486,24 @@ function renderModelEvidenceCategory(category, fight){
         <span>${escHtml(fighter || (favorsRed ? 'Red' : 'Blue'))}</span>
       </div>
       ${detail ? `<div class="pick-model-why__category-detail">${escHtml(detail)}</div>` : ''}
-      ${source ? `<div class="pick-model-why__category-source">${escHtml(source)}</div>` : ''}
+      ${source ? `
+        <div class="pick-model-why__category-source">
+          <span>${escHtml(source)}</span>
+          <span class="pick-evidence-pill" tabindex="0">
+            Evidence
+            <span class="pick-evidence-pill__panel">${escHtml(sourceTip)}</span>
+          </span>
+        </div>` : ''}
     </div>`;
+}
+
+function formatEvidenceSourceTip(evidence, category){
+  const bits = [
+    `${category.category || evidence.label || 'This category'} is calculated from ${evidence.source || 'engineered model inputs'}.`,
+    'Career metrics aggregate completed fight rows; profile metrics come from fighter profile fields.',
+    evidence.interpretation || ''
+  ].filter(Boolean);
+  return bits.join(' ');
 }
 
 function formatModelEvidence(e){
@@ -4456,7 +4549,10 @@ function formatModelFactorValue(f){
 }
 
 function attachPickHandlers(container){
-  container.querySelectorAll('.pick-fight').forEach(card => {
+  const cards = container.matches && container.matches('.pick-fight')
+    ? [container]
+    : Array.from(container.querySelectorAll('.pick-fight'));
+  cards.forEach(card => {
     const fightId = parseInt(card.dataset.fightId, 10);
 
     // Fighter pick toggles
@@ -4482,6 +4578,19 @@ function attachPickHandlers(container){
     const delBtn = card.querySelector('[data-pick-action="delete"]');
     if (delBtn) delBtn.addEventListener('click', () => deletePickFromCard(card, fightId));
   });
+}
+
+function rerenderPickCard(fightId){
+  const fight = (_picksState.eventCard || []).find(f => f.id === fightId);
+  const current = document.querySelector(`.pick-fight[data-fight-id="${fightId}"]`);
+  if (!fight || !current) return false;
+  const wrap = document.createElement('div');
+  wrap.innerHTML = renderPickWidget(fight).trim();
+  const next = wrap.firstElementChild;
+  if (!next) return false;
+  current.replaceWith(next);
+  attachPickHandlers(next);
+  return true;
 }
 
 function getPickInputs(card){
@@ -4530,8 +4639,10 @@ async function submitPickFromCard(card, fightId){
     }
     const data = await res.json();
     _picksState.userPicks.set(fightId, data.pick);
-    setPickStatus(card, 'saved', 'Saved', 'Pick recorded. Edit anytime until lock.');
-    if (saveBtn) saveBtn.textContent = 'Update pick';
+    if (!rerenderPickCard(fightId)) {
+      setPickStatus(card, 'saved', 'Saved', 'Pick recorded. Edit anytime until lock.');
+      if (saveBtn) saveBtn.textContent = 'Update pick';
+    }
     renderPicksCardSummary();
   } catch (e) {
     setPickStatus(card, 'error', 'Error', e.message || 'Network error');
