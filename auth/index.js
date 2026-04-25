@@ -18,7 +18,7 @@
  * Uses our custom adapter (auth/adapter.js) so dev (sql.js) and prod (pg)
  * keep working through the existing db/index.js router.
  */
-const { ufcAdapter } = require('./adapter');
+const { buildUfcAdapter } = require('./adapter');
 const { sendMail } = require('./email');
 const db = require('../db');
 
@@ -82,6 +82,10 @@ async function buildAuth() {
 
   const { betterAuth, APIError } = betterAuthMod;
   const { createAuthMiddleware } = betterAuthApiMod;
+
+  // Adapter is built via its own async factory — better-auth/adapters is
+  // also ESM-only, see auth/adapter.js for the same dynamic-import pattern.
+  const ufcAdapter = await buildUfcAdapter();
 
   if (typeof betterAuth !== 'function') {
     throw new TypeError(

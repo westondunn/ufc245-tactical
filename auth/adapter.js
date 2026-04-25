@@ -11,7 +11,10 @@
  * ↔ snake_case mapping declared below. We just translate the cleaned where
  * clauses into parameterized SQL.
  */
-const { createAdapterFactory } = require('better-auth/adapters');
+// better-auth/adapters is ESM-only. We can't require() it on Node <22.12,
+// so the adapter is built inside an async factory that does dynamic import().
+// auth/index.js's buildAuth() awaits buildUfcAdapter() before constructing
+// the better-auth instance.
 const db = require('../db');
 
 // Better-auth uses camelCase field names. Our DB columns are snake_case.
@@ -80,7 +83,16 @@ function buildWhere(where) {
   return { sql: ' WHERE ' + parts.join(' '), params };
 }
 
-const ufcAdapter = createAdapterFactory({
+async function buildUfcAdapter() {
+  const adaptersMod = await import('better-auth/adapters');
+  const createAdapterFactory = adaptersMod.createAdapterFactory;
+  if (typeof createAdapterFactory !== 'function') {
+    throw new TypeError(
+      `better-auth/adapters did not export 'createAdapterFactory' as a function. ` +
+      `Got: ${typeof createAdapterFactory}.`
+    );
+  }
+  return createAdapterFactory({
   config: {
     adapterId: 'ufc-tactical-sql',
     adapterName: 'UFC Tactical SQL Adapter',
@@ -194,6 +206,7 @@ const ufcAdapter = createAdapterFactory({
     },
     };
   },
-});
+  });
+}
 
-module.exports = { ufcAdapter, buildWhere, KEY_MAP_IN, KEY_MAP_OUT };
+module.exports = { buildUfcAdapter, buildWhere, KEY_MAP_IN, KEY_MAP_OUT };
