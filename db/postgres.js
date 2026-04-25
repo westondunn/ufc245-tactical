@@ -193,6 +193,7 @@ async function ensureSchema() {
       blue_win_prob DOUBLE PRECISION NOT NULL,
       model_version TEXT NOT NULL,
       feature_hash TEXT,
+      explanation_json TEXT,
       predicted_at TEXT NOT NULL,
       event_date TEXT,
       is_stale INTEGER DEFAULT 0,
@@ -211,6 +212,7 @@ async function ensureSchema() {
 
   await run('CREATE INDEX IF NOT EXISTS idx_predictions_fight ON predictions(fight_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_predictions_event_date ON predictions(event_date)');
+  await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS explanation_json TEXT');
   await run('CREATE INDEX IF NOT EXISTS idx_fighters_name ON fighters(name)');
   await run('CREATE INDEX IF NOT EXISTS idx_events_number ON events(number)');
   await run('CREATE INDEX IF NOT EXISTS idx_fights_event ON fights(event_id)');
@@ -699,23 +701,27 @@ async function upsertFightStats(s) {
 }
 
 async function upsertPrediction(p) {
+  const explanationJson = p.explanation_json != null
+    ? p.explanation_json
+    : (p.explanation != null ? JSON.stringify(p.explanation) : null);
   await run(
     `INSERT INTO predictions
      (fight_id, red_fighter_id, blue_fighter_id, red_win_prob, blue_win_prob,
-      model_version, feature_hash, predicted_at, event_date, is_stale)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
+      model_version, feature_hash, explanation_json, predicted_at, event_date, is_stale)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(fight_id, model_version) DO UPDATE SET
        red_fighter_id = EXCLUDED.red_fighter_id,
        blue_fighter_id = EXCLUDED.blue_fighter_id,
        red_win_prob = EXCLUDED.red_win_prob,
        blue_win_prob = EXCLUDED.blue_win_prob,
        feature_hash = EXCLUDED.feature_hash,
+       explanation_json = EXCLUDED.explanation_json,
        predicted_at = EXCLUDED.predicted_at,
        event_date = EXCLUDED.event_date,
        is_stale = EXCLUDED.is_stale`,
     [
       p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
-      p.model_version, p.feature_hash || null, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0
+      p.model_version, p.feature_hash || null, explanationJson, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0
     ]
   );
 }
@@ -1153,7 +1159,8 @@ async function getEventPickComparison(eventId) {
         red_win_prob: pred.red_win_prob,
         blue_win_prob: pred.blue_win_prob,
         picked_fighter_id: pred.red_win_prob >= pred.blue_win_prob ? fight.red_fighter_id : fight.blue_fighter_id,
-        confidence: Math.max(pred.red_win_prob, pred.blue_win_prob)
+        confidence: Math.max(pred.red_win_prob, pred.blue_win_prob),
+        explanation: parsePredictionExplanation(pred.explanation_json)
       } : null,
       users: {
         total: agg ? agg.total : 0,
@@ -1165,6 +1172,13 @@ async function getEventPickComparison(eventId) {
     });
   }
   return result;
+}
+
+function parsePredictionExplanation(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try { return JSON.parse(raw); }
+  catch { return null; }
 }
 
 module.exports = {
