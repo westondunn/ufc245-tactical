@@ -147,14 +147,6 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_fights_winner ON fights(winner_id);
   CREATE INDEX IF NOT EXISTS idx_fight_stats_fighter ON fight_stats(fighter_id);
 
-  CREATE TABLE IF NOT EXISTS users (
-    id TEXT PRIMARY KEY,
-    display_name TEXT NOT NULL,
-    avatar_key TEXT,
-    created_at TEXT NOT NULL,
-    updated_at TEXT NOT NULL,
-    is_guest INTEGER DEFAULT 1
-  );
   CREATE TABLE IF NOT EXISTS user_picks (
     id INTEGER PRIMARY KEY AUTOINCREMENT,
     user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
@@ -204,6 +196,7 @@ async function init(options = {}) {
     db.run(SCHEMA); // safe — IF NOT EXISTS
     ensurePredictionExplanationColumn();
     migratePredictionsUniqueness();
+    runProfileSchemaV1();
     const c = oneRow('SELECT COUNT(*) as c FROM fighters');
     console.log('[db] loaded from ' + dbPath + ': ' + (c ? c.c : 0) + ' fighters');
     return db;
@@ -220,6 +213,7 @@ async function init(options = {}) {
   }
 
   migratePredictionsUniqueness();
+  runProfileSchemaV1();
   if (dbPath) { save(); console.log('[db] persisted to ' + dbPath); }
   return db;
 }
@@ -341,6 +335,118 @@ function ensurePredictionExplanationColumn() {
   const cols = allRows('PRAGMA table_info(predictions)').map(c => c.name);
   if (!cols.includes('explanation_json')) {
     run('ALTER TABLE predictions ADD COLUMN explanation_json TEXT');
+  }
+}
+
+/**
+ * Profile system v1 schema migration.
+ *
+ * Handles three states idempotently via db_meta.users_migrated_v1 flag:
+ *   1. Fresh DB           → create new users table + auth tables
+ *   2. Pre-migration DB   → rename old users → users_legacy (audit columns added),
+ *                            create new users table + auth tables
+ *   3. Already migrated   → no-op (CREATE IF NOT EXISTS still safe)
+ *
+ * The new `users` table extends the original (display_name, avatar_key, is_guest)
+ * with better-auth fields (email, email_verified, name, image). Legacy guest rows
+ * stay in users_legacy until claimed; user_picks.user_id softly references either
+ * table (sqlite FK enforcement is off — see db/index.js comment).
+ */
+function runProfileSchemaV1() {
+  const flag = oneRow("SELECT value FROM db_meta WHERE key = 'users_migrated_v1'");
+  const alreadyMigrated = !!flag;
+
+  if (!alreadyMigrated) {
+    const oldUsers = oneRow("SELECT name FROM sqlite_master WHERE type='table' AND name='users'");
+    if (oldUsers) {
+      const cols = allRows('PRAGMA table_info(users)').map(c => c.name);
+      const isLegacySchema = !cols.includes('email');
+      if (isLegacySchema) {
+        run('ALTER TABLE users RENAME TO users_legacy');
+        run('ALTER TABLE users_legacy ADD COLUMN claimed_by TEXT');
+        run('ALTER TABLE users_legacy ADD COLUMN claimed_at TEXT');
+      }
+    }
+  }
+
+  run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE,
+      email_verified INTEGER DEFAULT 0,
+      name TEXT,
+      image TEXT,
+      display_name TEXT,
+      avatar_key TEXT,
+      is_guest INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  run('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+
+  run(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  run('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)');
+  run('CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)');
+  run('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)');
+
+  run(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      password TEXT,
+      access_token TEXT,
+      refresh_token TEXT,
+      id_token TEXT,
+      access_token_expires_at TEXT,
+      refresh_token_expires_at TEXT,
+      scope TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  run('CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id)');
+  run('CREATE INDEX IF NOT EXISTS idx_accounts_provider_account ON accounts(provider_id, account_id)');
+
+  run(`
+    CREATE TABLE IF NOT EXISTS verifications (
+      id TEXT PRIMARY KEY,
+      identifier TEXT NOT NULL,
+      value TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  run('CREATE INDEX IF NOT EXISTS idx_verifications_identifier ON verifications(identifier)');
+  run('CREATE INDEX IF NOT EXISTS idx_verifications_expires ON verifications(expires_at)');
+
+  run(`
+    CREATE TABLE IF NOT EXISTS auth_login_attempts (
+      id INTEGER PRIMARY KEY AUTOINCREMENT,
+      email TEXT NOT NULL,
+      ip TEXT,
+      success INTEGER NOT NULL DEFAULT 0,
+      attempted_at TEXT NOT NULL
+    )
+  `);
+  run('CREATE INDEX IF NOT EXISTS idx_login_attempts_email_time ON auth_login_attempts(email, attempted_at)');
+
+  if (!alreadyMigrated) {
+    run("INSERT OR REPLACE INTO db_meta (key, value) VALUES ('users_migrated_v1', '1')");
   }
 }
 
@@ -700,6 +806,63 @@ function deleteUser(id) {
   return db.getRowsModified() > 0;
 }
 
+/**
+ * Claim a legacy guest profile under a new authenticated account.
+ *
+ * Atomically:
+ *   1. Marks users_legacy.claimed_by/claimed_at (only if not already claimed).
+ *   2. Rewrites user_picks.user_id from the guest id to the new account id.
+ *   3. Backfills users.display_name/avatar_key from the legacy row when the
+ *      new account doesn't have its own values yet.
+ *
+ * Returns { claimed_picks, display_name, avatar_key } on success, or throws
+ * with err.code = 'guest_not_found' | 'already_claimed'.
+ */
+function claimGuestProfile(guestId, newUserId) {
+  const legacy = oneRow('SELECT * FROM users_legacy WHERE id = ?', [guestId]);
+  if (!legacy) {
+    const err = new Error('guest_not_found'); err.code = 'guest_not_found'; err.status = 404; throw err;
+  }
+  if (legacy.claimed_by) {
+    const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
+  }
+  run('BEGIN');
+  try {
+    const now = new Date().toISOString();
+    run('UPDATE users_legacy SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL',
+      [newUserId, now, guestId]);
+    if (db.getRowsModified() === 0) {
+      // Race: another claim won between the check and the update.
+      run('ROLLBACK');
+      const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
+    }
+    run('UPDATE user_picks SET user_id = ? WHERE user_id = ?', [newUserId, guestId]);
+    const claimedPicks = db.getRowsModified();
+    // Only backfill if the new account doesn't already have its own values.
+    const newUser = oneRow('SELECT display_name, avatar_key FROM users WHERE id = ?', [newUserId]);
+    if (newUser) {
+      const patches = [];
+      const params = [];
+      if (!newUser.display_name && legacy.display_name) { patches.push('display_name = ?'); params.push(legacy.display_name); }
+      if (!newUser.avatar_key && legacy.avatar_key)     { patches.push('avatar_key = ?');   params.push(legacy.avatar_key); }
+      if (patches.length) {
+        patches.push('updated_at = ?'); params.push(now);
+        params.push(newUserId);
+        run(`UPDATE users SET ${patches.join(', ')} WHERE id = ?`, params);
+      }
+    }
+    run('COMMIT');
+    return {
+      claimed_picks: claimedPicks,
+      display_name: legacy.display_name,
+      avatar_key: legacy.avatar_key,
+    };
+  } catch (err) {
+    try { run('ROLLBACK'); } catch (_) { /* ignore */ }
+    throw err;
+  }
+}
+
 /* ── PICK LOCK STATE ── */
 
 function getPickLockState(userId, fightId) {
@@ -1035,7 +1198,7 @@ module.exports = {
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats,
   upsertPrediction, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy,
-  createUser, getUser, updateUser, deleteUser,
+  createUser, getUser, updateUser, deleteUser, claimGuestProfile,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
   lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,
   getLeaderboard, getUserStats, getEventPickComparison,

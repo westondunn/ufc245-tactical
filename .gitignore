@@ -29,3 +29,6 @@ blob-report/
 predictions.db
 model_store/
 .gstack/
+
+# Dev mail stub output (auth/email.js)
+tmp/

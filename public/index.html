@@ -13,6 +13,14 @@
 <body>
 
 <!-- ============================================================
+     DISCLAIMER BANNER · hobby-project notice
+============================================================ -->
+<div class="disclaimer-banner" role="note" aria-label="Project disclaimer">
+  <span class="disclaimer-banner__dot"></span>
+  Hobby project · educational use only · not affiliated with the UFC · not for commercial use
+</div>
+
+<!-- ============================================================
      SPOTLIGHT PILL · dashboard-wide filter
 ============================================================ -->
 <div class="spotlight-pill" id="spotlightPill">
@@ -34,8 +42,81 @@
   <div class="top-bar__right">
     <span class="top-bar__tc" title="Timecode — reflects the fight moment of the section you're reading">TC <span id="tc">PRE-FIGHT</span></span>
     <span class="top-bar__live">Data · Live</span>
+    <span class="auth-ind" id="authIndicator" aria-live="polite"></span>
   </div>
 </header>
+
+<!-- ============================================================
+     CLAIM MODAL · prompts to migrate legacy guest picks
+============================================================ -->
+<div class="profile-modal" id="claimModal" style="display:none" aria-hidden="true">
+  <div class="profile-modal__scrim" data-claim-close="1"></div>
+  <div class="profile-modal__card" role="dialog" aria-modal="true" aria-labelledby="claimModalTitle">
+    <div class="profile-modal__head">
+      <div class="section-tag" style="color:var(--amber)">Claim picks</div>
+      <h3 class="profile-modal__title" id="claimModalTitle">Bring your guest picks to your account?</h3>
+      <div class="profile-modal__sub" id="claimModalSub">We found picks from when you used this site as a guest.</div>
+    </div>
+    <div class="profile-modal__body">
+      <div class="profile-modal__hint" id="claimModalDetail" style="margin-top:0"></div>
+      <div class="profile-modal__error" id="claimModalError" style="display:none"></div>
+      <div class="profile-actions-buttons" style="flex-direction:row;margin-top:18px;gap:10px">
+        <button class="rec-btn" type="button" id="claimSkipBtn" style="flex:1">Skip</button>
+        <button class="rec-btn rec-btn--primary" type="button" id="claimConfirmBtn" style="flex:1">Claim picks</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- ============================================================
+     AUTH MODAL · sign-in / sign-up
+============================================================ -->
+<div class="profile-modal" id="authModal" style="display:none" aria-hidden="true">
+  <div class="profile-modal__scrim" data-auth-close="1"></div>
+  <div class="profile-modal__card" role="dialog" aria-modal="true" aria-labelledby="authModalTitle">
+    <div class="profile-modal__head">
+      <div class="section-tag" style="color:var(--cyan)">Account</div>
+      <h3 class="profile-modal__title" id="authModalTitle">Sign in or create an account</h3>
+      <div class="profile-modal__sub">Your picks travel with your account, on any device.</div>
+    </div>
+    <div class="profile-modal__body">
+      <div class="auth-tabs">
+        <button class="auth-tab active" id="authTabSignIn" type="button">Sign in</button>
+        <button class="auth-tab" id="authTabSignUp" type="button">Create account</button>
+      </div>
+      <form id="authForm" data-mode="signin" autocomplete="on">
+        <div id="authNameRow" style="display:none">
+          <label class="profile-modal__label" for="authName">Display name</label>
+          <input class="profile-modal__input" id="authName" name="name" type="text" maxlength="40"
+                 autocomplete="name" placeholder="Your name or handle">
+        </div>
+        <div id="authEmailRow">
+          <label class="profile-modal__label" for="authEmail" style="margin-top:14px">Email</label>
+          <input class="profile-modal__input" id="authEmail" name="email" type="email" required
+                 autocomplete="email" placeholder="you@example.com">
+        </div>
+        <div id="authPasswordRow">
+          <label class="profile-modal__label" for="authPassword" style="margin-top:14px" id="authPasswordLabel">Password</label>
+          <input class="profile-modal__input" id="authPassword" name="password" type="password" required minlength="8"
+                 autocomplete="current-password" placeholder="At least 8 characters">
+        </div>
+        <div class="profile-modal__error" id="authError" style="display:none"></div>
+        <div class="profile-modal__hint" id="authNotice" style="display:none;color:var(--green);margin-top:10px"></div>
+        <div style="margin-top:10px;text-align:right" id="authForgotRow">
+          <a href="#" id="authForgotLink"
+             style="font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--cyan);text-decoration:none">
+            Forgot password?
+          </a>
+        </div>
+        <div class="profile-actions-buttons" style="flex-direction:row;margin-top:14px;gap:10px">
+          <button class="rec-btn" type="button" id="authBackBtn" style="flex:1;display:none">Back</button>
+          <button class="rec-btn" type="button" data-auth-close="1" id="authCancelBtn" style="flex:1">Cancel</button>
+          <button class="rec-btn rec-btn--primary" id="authSubmitBtn" type="submit" style="flex:1">Sign in</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
 
 <!-- PRIMARY TAB NAVIGATION -->
 <nav class="primary-tabs" id="primaryTabs">
@@ -1650,6 +1731,7 @@
 </footer>
 </div><!-- /tab-dashboard -->
 
+<script src="/js/auth.js"></script>
 <script src="/js/app.js"></script>
 </body>
 </html>

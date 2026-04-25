@@ -4,9 +4,12 @@
  */
 const express = require('express');
 const compression = require('compression');
+const cookieParser = require('cookie-parser');
+const { toNodeHandler, fromNodeHeaders } = require('better-auth/node');
 const path = require('path');
 const fs = require('fs');
 const db = require('./db');
+const { auth } = require('./auth');
 const bio = require('./lib/biomechanics');
 const tactical = require('./lib/tactical');
 const ver = require('./lib/version');
@@ -18,7 +21,13 @@ const NODE_ENV = process.env.NODE_ENV || 'production';
 
 app.set('trust proxy', 1);
 app.use(compression());
+
+// Better-auth must mount BEFORE express.json() — it parses its own bodies.
+// All sign-up / sign-in / verify / reset / sign-out routes live under here.
+app.all('/api/auth/{*any}', toNodeHandler(auth));
+
 app.use(express.json({ limit: process.env.JSON_BODY_LIMIT || '2mb' }));
+app.use(cookieParser());
 
 // Version header on all responses
 app.use((req, res, next) => {
@@ -422,19 +431,49 @@ const rateLimit = require('./lib/rate-limit');
 const ENABLE_PICKS = /^(1|true|yes|on)$/i.test(String(process.env.ENABLE_PICKS || ''));
 const CREATE_USER_PER_HOUR = Math.max(1, parseInt(process.env.PICKS_RATE_LIMIT_CREATE_USER || '5', 10) || 5);
 const PICK_WRITES_PER_MIN = Math.max(1, parseInt(process.env.PICKS_RATE_LIMIT_PER_MIN || '60', 10) || 60);
+// Transition flag: while flipped on, requireUser still accepts the legacy
+// `x-user-id` header so the existing frontend keeps working before the auth UI
+// ships. Remove in Phase 10 once the frontend is fully cookie-based.
+const LEGACY_HEADER_AUTH = /^(1|true|yes|on)$/i.test(String(process.env.LEGACY_HEADER_AUTH || '1'));
 
 function requirePicksFlag(_req, res, next) {
   if (!ENABLE_PICKS) return res.status(503).json({ error: 'picks_disabled', message: 'Set ENABLE_PICKS=true to enable' });
   next();
 }
 
+/**
+ * Resolve the authenticated user from (a) a better-auth session cookie, or
+ * (b) when LEGACY_HEADER_AUTH=1, the x-user-id header. Used as a primitive by
+ * requireUser/optionalAuth.
+ *
+ * Returns the user row or null. Never throws.
+ */
+async function resolveUser(req) {
+  try {
+    const session = await auth.api.getSession({ headers: fromNodeHeaders(req.headers) });
+    if (session && session.user) return session.user;
+  } catch (_) { /* fall through to legacy */ }
+  if (LEGACY_HEADER_AUTH) {
+    const userId = req.headers['x-user-id'];
+    if (userId) return db.getUser(userId);
+  }
+  return null;
+}
+
 async function requireUser(req, res, next) {
   try {
-    const userId = req.headers['x-user-id'];
-    if (!userId) return res.status(401).json({ error: 'missing_user_id' });
-    const user = await db.getUser(userId);
-    if (!user) return res.status(401).json({ error: 'unknown_user' });
+    const user = await resolveUser(req);
+    if (!user) return res.status(401).json({ error: 'unauthorized' });
     req.user = user;
+    next();
+  } catch (err) {
+    next(err);
+  }
+}
+
+async function optionalAuth(req, _res, next) {
+  try {
+    req.user = await resolveUser(req);
     next();
   } catch (err) {
     next(err);
@@ -451,6 +490,34 @@ app.post('/api/users', requirePicksFlag, apiHandler(async (req, res) => {
   const user = await db.createUser(input);
   await db.save();
   res.json({ user });
+}));
+
+// Lightweight count for the claim prompt — checks both `users` and `users_legacy`
+// so a pre-migration guest id can be looked up. Returns { exists, count }.
+// Public (unauthenticated) — knowing the id was already the auth token in the
+// guest-only era, so leaking the count is consistent with that model.
+app.get('/api/picks/guest-count/:guestId', requirePicksFlag, apiHandler(async (req, res) => {
+  const id = req.params.guestId;
+  const inUsers = await db.getUser(id);
+  const inLegacy = inUsers ? null : await db.oneRow('SELECT id FROM users_legacy WHERE id = ?', [id]);
+  const exists = !!(inUsers || inLegacy);
+  if (!exists) return res.json({ exists: false, count: 0 });
+  const row = await db.oneRow('SELECT COUNT(*) AS c FROM user_picks WHERE user_id = ?', [id]);
+  res.json({ exists: true, count: row ? Number(row.c) : 0 });
+}));
+
+// Claim a legacy guest profile under the current authenticated account.
+// Body: { guestId }. Atomically rewrites user_picks ownership and marks the
+// legacy row as claimed. Returns claimed_picks count + any backfilled fields.
+// (Lives under /api/picks/* rather than /api/auth/* — the auth wildcard mount
+// catches everything under /api/auth/.)
+app.post('/api/picks/claim-guest', requirePicksFlag, requireUser, apiHandler(async (req, res) => {
+  const guestId = String(req.body && req.body.guestId || '').trim();
+  if (!guestId) return res.status(400).json({ error: 'missing_guest_id' });
+  if (guestId === req.user.id) return res.status(400).json({ error: 'self_claim' });
+  const result = await db.claimGuestProfile(guestId, req.user.id);
+  await db.save();
+  res.json({ ok: true, ...result });
 }));
 
 // Fetch profile (public — used to resume sessions)

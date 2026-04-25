@@ -224,21 +224,15 @@ async function ensureSchema() {
   await run('CREATE INDEX IF NOT EXISTS idx_fight_stats_fighter ON fight_stats(fighter_id)');
 
   // ── User picks feature (additive) ──
-  await run(`
-    CREATE TABLE IF NOT EXISTS users (
-      id TEXT PRIMARY KEY,
-      display_name TEXT NOT NULL,
-      avatar_key TEXT,
-      created_at TEXT NOT NULL,
-      updated_at TEXT NOT NULL,
-      is_guest INTEGER DEFAULT 1
-    )
-  `);
-
+  // NOTE: `users` table is created/migrated by runProfileSchemaV1() instead of here,
+  // so the schema can be extended for better-auth without breaking existing prod rows.
+  // NOTE: user_id is a soft reference to users(id) OR users_legacy(id) — no FK
+  // constraint, so the claim flow can rewrite legacy guest ids → new account ids
+  // without violating constraints during the transition.
   await run(`
     CREATE TABLE IF NOT EXISTS user_picks (
       id BIGSERIAL PRIMARY KEY,
-      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      user_id TEXT NOT NULL,
       event_id INTEGER NOT NULL REFERENCES events(id),
       fight_id INTEGER NOT NULL REFERENCES fights(id),
       picked_fighter_id INTEGER NOT NULL REFERENCES fighters(id),
@@ -276,6 +270,143 @@ async function ensureSchema() {
   await run('CREATE INDEX IF NOT EXISTS idx_user_picks_fight ON user_picks(fight_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_user_picks_user_event ON user_picks(user_id, event_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_pick_snapshots_pick ON pick_model_snapshots(user_pick_id)');
+}
+
+/**
+ * Profile system v1 schema migration (Postgres).
+ *
+ * Mirrors db/sqlite.js runProfileSchemaV1 — handles three states idempotently
+ * via db_meta.users_migrated_v1:
+ *   1. Fresh DB           → create new users + auth tables
+ *   2. Pre-migration DB   → drop user_picks FK, rename users → users_legacy
+ *                            (audit cols added), create new users + auth tables
+ *   3. Already migrated   → no-op (CREATE IF NOT EXISTS still safe)
+ *
+ * Postgres-specific: the existing user_picks_user_id_fkey FK must be dropped
+ * BEFORE renaming `users`, otherwise Postgres would silently retarget the FK
+ * at users_legacy and reject any new picks against the new users table.
+ */
+async function runProfileSchemaV1() {
+  const flag = await oneRow("SELECT value FROM db_meta WHERE key = 'users_migrated_v1'");
+  const alreadyMigrated = !!flag;
+
+  if (!alreadyMigrated) {
+    const usersTable = await oneRow(
+      `SELECT table_name FROM information_schema.tables
+       WHERE table_schema = 'public' AND table_name = 'users'`
+    );
+    if (usersTable) {
+      const emailCol = await oneRow(
+        `SELECT column_name FROM information_schema.columns
+         WHERE table_schema = 'public' AND table_name = 'users' AND column_name = 'email'`
+      );
+      if (!emailCol) {
+        // Drop any FK on user_picks.user_id (constraint name follows pg default
+        // user_picks_user_id_fkey, but search by column to be safe across renames).
+        const fk = await oneRow(`
+          SELECT tc.constraint_name
+          FROM information_schema.table_constraints tc
+          JOIN information_schema.key_column_usage kcu
+            ON tc.constraint_name = kcu.constraint_name
+           AND tc.table_schema = kcu.table_schema
+          WHERE tc.table_schema = 'public'
+            AND tc.table_name = 'user_picks'
+            AND tc.constraint_type = 'FOREIGN KEY'
+            AND kcu.column_name = 'user_id'
+          LIMIT 1
+        `);
+        if (fk && fk.constraint_name) {
+          await run(`ALTER TABLE user_picks DROP CONSTRAINT "${fk.constraint_name}"`);
+        }
+        await run('ALTER TABLE users RENAME TO users_legacy');
+        await run('ALTER TABLE users_legacy ADD COLUMN IF NOT EXISTS claimed_by TEXT');
+        await run('ALTER TABLE users_legacy ADD COLUMN IF NOT EXISTS claimed_at TEXT');
+      }
+    }
+  }
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS users (
+      id TEXT PRIMARY KEY,
+      email TEXT UNIQUE,
+      email_verified INTEGER DEFAULT 0,
+      name TEXT,
+      image TEXT,
+      display_name TEXT,
+      avatar_key TEXT,
+      is_guest INTEGER DEFAULT 0,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)');
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS sessions (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      token TEXT NOT NULL UNIQUE,
+      expires_at TEXT NOT NULL,
+      ip_address TEXT,
+      user_agent TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_sessions_user ON sessions(user_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_sessions_token ON sessions(token)');
+  await run('CREATE INDEX IF NOT EXISTS idx_sessions_expires ON sessions(expires_at)');
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS accounts (
+      id TEXT PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      provider_id TEXT NOT NULL,
+      account_id TEXT NOT NULL,
+      password TEXT,
+      access_token TEXT,
+      refresh_token TEXT,
+      id_token TEXT,
+      access_token_expires_at TEXT,
+      refresh_token_expires_at TEXT,
+      scope TEXT,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_accounts_user ON accounts(user_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_accounts_provider_account ON accounts(provider_id, account_id)');
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS verifications (
+      id TEXT PRIMARY KEY,
+      identifier TEXT NOT NULL,
+      value TEXT NOT NULL,
+      expires_at TEXT NOT NULL,
+      created_at TEXT NOT NULL,
+      updated_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_verifications_identifier ON verifications(identifier)');
+  await run('CREATE INDEX IF NOT EXISTS idx_verifications_expires ON verifications(expires_at)');
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS auth_login_attempts (
+      id BIGSERIAL PRIMARY KEY,
+      email TEXT NOT NULL,
+      ip TEXT,
+      success INTEGER NOT NULL DEFAULT 0,
+      attempted_at TEXT NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_login_attempts_email_time ON auth_login_attempts(email, attempted_at)');
+
+  if (!alreadyMigrated) {
+    await run(`
+      INSERT INTO db_meta (key, value) VALUES ('users_migrated_v1', '1')
+      ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+    `);
+  }
 }
 
 async function migratePredictionsUniqueness() {
@@ -419,6 +550,7 @@ async function init(options = {}) {
   }
 
   await migratePredictionsUniqueness();
+  await runProfileSchemaV1();
   return pool;
 }
 
@@ -872,6 +1004,65 @@ async function deleteUser(id) {
   return res > 0;
 }
 
+/**
+ * Postgres mirror of db/sqlite.js claimGuestProfile. Wraps all mutations in a
+ * single client-bound transaction (BEGIN/COMMIT/ROLLBACK) — the standard
+ * `query()` helper above acquires a fresh pool connection per call, so it
+ * cannot be used for atomicity. Returns / throws the same shape as sqlite.
+ */
+async function claimGuestProfile(guestId, newUserId) {
+  ensurePool();
+  const client = await pool.connect();
+  const q = (sql, params = []) => client.query(toPgPlaceholders(sql), params);
+  const now = new Date().toISOString();
+  try {
+    await client.query('BEGIN');
+    const legacyRes = await q('SELECT * FROM users_legacy WHERE id = ?', [guestId]);
+    const legacy = legacyRes.rows[0];
+    if (!legacy) {
+      await client.query('ROLLBACK');
+      const err = new Error('guest_not_found'); err.code = 'guest_not_found'; err.status = 404; throw err;
+    }
+    if (legacy.claimed_by) {
+      await client.query('ROLLBACK');
+      const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
+    }
+    const claimRes = await q(
+      'UPDATE users_legacy SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL',
+      [newUserId, now, guestId]
+    );
+    if (claimRes.rowCount === 0) {
+      await client.query('ROLLBACK');
+      const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
+    }
+    const picksRes = await q('UPDATE user_picks SET user_id = ? WHERE user_id = ?', [newUserId, guestId]);
+    const claimedPicks = picksRes.rowCount;
+    const newUserRes = await q('SELECT display_name, avatar_key FROM users WHERE id = ?', [newUserId]);
+    const newUser = newUserRes.rows[0];
+    if (newUser) {
+      const patches = []; const params = [];
+      if (!newUser.display_name && legacy.display_name) { patches.push('display_name = ?'); params.push(legacy.display_name); }
+      if (!newUser.avatar_key && legacy.avatar_key)     { patches.push('avatar_key = ?');   params.push(legacy.avatar_key); }
+      if (patches.length) {
+        patches.push('updated_at = ?'); params.push(now);
+        params.push(newUserId);
+        await q(`UPDATE users SET ${patches.join(', ')} WHERE id = ?`, params);
+      }
+    }
+    await client.query('COMMIT');
+    return {
+      claimed_picks: claimedPicks,
+      display_name: legacy.display_name,
+      avatar_key: legacy.avatar_key,
+    };
+  } catch (err) {
+    try { await client.query('ROLLBACK'); } catch (_) { /* swallow */ }
+    throw err;
+  } finally {
+    client.release();
+  }
+}
+
 /* ── PICK LOCK STATE ──
    A pick is locked if: user_picks.locked_at is set, OR fights.winner_id is set. */
 
@@ -1231,7 +1422,7 @@ module.exports = {
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats,
   upsertPrediction, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy,
-  createUser, getUser, updateUser, deleteUser,
+  createUser, getUser, updateUser, deleteUser, claimGuestProfile,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
   lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,
   getLeaderboard, getUserStats, getEventPickComparison,

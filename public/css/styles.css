@@ -63,6 +63,11 @@
 
   --f-disp:'Barlow Condensed',system-ui,sans-serif;
   --f-mono:'JetBrains Mono',ui-monospace,monospace;
+
+  /* Fixed-chrome heights — change here to push everything down consistently */
+  --top-bar-h:44px;
+  --banner-h:22px;
+  --chrome-h:calc(var(--top-bar-h) + var(--banner-h));
 }
 
 *,*::before,*::after{box-sizing:border-box;margin:0;padding:0}
@@ -95,11 +100,75 @@ body::after{
 }
 
 /* =============================================================
+   DISCLAIMER BANNER · hobby-project notice, sits above top-bar
+============================================================= */
+.disclaimer-banner{
+  position:fixed;top:0;left:0;right:0;
+  height:var(--banner-h);
+  background:rgba(255,176,32,.08);
+  border-bottom:1px solid rgba(255,176,32,.18);
+  color:var(--amber);
+  font-family:var(--f-mono);
+  font-size:9.5px;letter-spacing:.16em;
+  text-transform:uppercase;
+  display:flex;align-items:center;justify-content:center;
+  padding:0 16px;
+  z-index:101;
+  white-space:nowrap;overflow:hidden;text-overflow:ellipsis;
+}
+.disclaimer-banner__dot{
+  display:inline-block;width:5px;height:5px;border-radius:50%;
+  background:var(--amber);margin-right:10px;flex-shrink:0;
+  box-shadow:0 0 6px rgba(255,176,32,.5);
+}
+
+/* =============================================================
+   AUTH INDICATOR · sits in top-bar right side
+============================================================= */
+.auth-ind{
+  display:inline-flex;align-items:center;gap:8px;
+  margin-left:18px;padding-left:18px;
+  border-left:1px solid var(--border);
+}
+.auth-ind__email{
+  font-family:var(--f-mono);font-size:10px;color:var(--fg-dim);
+  letter-spacing:.08em;text-transform:none;
+  max-width:160px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;
+}
+.auth-ind__btn{
+  font-family:var(--f-mono);font-size:9.5px;letter-spacing:.14em;
+  text-transform:uppercase;
+  background:transparent;border:1px solid var(--border);color:var(--fg-dim);
+  padding:5px 10px;cursor:pointer;
+  transition:border-color .15s ease,color .15s ease;
+}
+.auth-ind__btn:hover{border-color:var(--cyan);color:var(--cyan)}
+.auth-ind__btn--primary{
+  border-color:var(--cyan);color:var(--cyan);
+}
+.auth-ind__btn--primary:hover{background:rgba(45,220,255,.08)}
+
+/* Auth modal tabs */
+.auth-tabs{
+  display:flex;gap:0;border-bottom:1px solid var(--border);
+  margin-bottom:6px;
+}
+.auth-tab{
+  flex:1;background:transparent;border:0;border-bottom:2px solid transparent;
+  font-family:var(--f-mono);font-size:11px;letter-spacing:.16em;
+  text-transform:uppercase;color:var(--muted);
+  padding:12px 8px;cursor:pointer;
+  transition:color .15s ease,border-color .15s ease;
+}
+.auth-tab:hover{color:var(--fg-dim)}
+.auth-tab.active{color:var(--cyan);border-bottom-color:var(--cyan)}
+
+/* =============================================================
    TOP BAR
 ============================================================= */
 .top-bar{
-  position:fixed;top:0;left:0;right:0;
-  height:44px;
+  position:fixed;top:var(--banner-h);left:0;right:0;
+  height:var(--top-bar-h);
   background:linear-gradient(180deg,rgba(4,5,10,.92) 0%,rgba(4,5,10,.78) 100%);
   backdrop-filter:blur(12px);
   -webkit-backdrop-filter:blur(12px);
@@ -376,7 +445,7 @@ body::after{
 ============================================================= */
 .primary-tabs{
   display:flex;gap:0;background:#06080E;border-bottom:2px solid var(--border);
-  position:sticky;top:44px;z-index:90;padding:0 16px;
+  position:sticky;top:var(--chrome-h);z-index:90;padding:0 16px;
   overflow-x:auto;-webkit-overflow-scrolling:touch;
 }
 .primary-tab{
@@ -580,7 +649,7 @@ section.full-h{min-height:100vh;display:flex;flex-direction:column;justify-conte
 #hero{
   min-height:100vh;
   display:flex;flex-direction:column;
-  padding-top:44px;
+  padding-top:var(--chrome-h);
   max-width:none;
   margin:0;
   padding-left:0;padding-right:0;
@@ -1420,7 +1489,7 @@ body.spotlight-blue .fill-red{
 /* Spotlight pill */
 .spotlight-pill{
   position:fixed;
-  top:56px;left:50%;
+  top:calc(var(--chrome-h) + 12px);left:50%;
   transform:translateX(-50%) translateY(-40px);
   background:rgba(4,5,10,.96);
   backdrop-filter:blur(12px);
@@ -1908,7 +1977,7 @@ footer{
 ============================================================= */
 .picks-header{
   display:flex;justify-content:space-between;align-items:center;
-  gap:16px;margin-bottom:20px;padding-top:44px;
+  gap:16px;margin-bottom:20px;padding-top:var(--chrome-h);
 }
 .picks-header__title{flex:1;min-width:0}
 .picks-subnav{
