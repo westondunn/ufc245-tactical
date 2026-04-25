@@ -123,6 +123,7 @@ const SCHEMA = `
     blue_win_prob REAL NOT NULL,
     model_version TEXT NOT NULL,
     feature_hash TEXT,
+    explanation_json TEXT,
     predicted_at TEXT NOT NULL,
     event_date TEXT,
     is_stale INTEGER DEFAULT 0,
@@ -201,6 +202,7 @@ async function init(options = {}) {
     const buf = fs.readFileSync(dbPath);
     db = new SQL.Database(buf);
     db.run(SCHEMA); // safe — IF NOT EXISTS
+    ensurePredictionExplanationColumn();
     migratePredictionsUniqueness();
     const c = oneRow('SELECT COUNT(*) as c FROM fighters');
     console.log('[db] loaded from ' + dbPath + ': ' + (c ? c.c : 0) + ' fighters');
@@ -210,6 +212,7 @@ async function init(options = {}) {
   // Fresh database — seed from JSON
   db = new SQL.Database();
   db.run(SCHEMA);
+  ensurePredictionExplanationColumn();
 
   const seedPath = options.seedPath || path.join(__dirname, '..', 'data', 'seed.json');
   if (fs.existsSync(seedPath)) {
@@ -332,6 +335,13 @@ function migratePredictionsUniqueness() {
     CREATE UNIQUE INDEX IF NOT EXISTS idx_predictions_fight_model
     ON predictions(fight_id, model_version)
   `);
+}
+
+function ensurePredictionExplanationColumn() {
+  const cols = allRows('PRAGMA table_info(predictions)').map(c => c.name);
+  if (!cols.includes('explanation_json')) {
+    run('ALTER TABLE predictions ADD COLUMN explanation_json TEXT');
+  }
 }
 
 /* ── UPSERT (for scraper) ── */
@@ -515,22 +525,26 @@ function getAllFighters(limit = 500) { return allRows('SELECT * FROM fighters OR
 /* ── PREDICTIONS ── */
 
 function upsertPrediction(p) {
+  const explanationJson = p.explanation_json != null
+    ? p.explanation_json
+    : (p.explanation != null ? JSON.stringify(p.explanation) : null);
   run(
     `INSERT INTO predictions
      (fight_id, red_fighter_id, blue_fighter_id, red_win_prob, blue_win_prob,
-      model_version, feature_hash, predicted_at, event_date, is_stale)
-     VALUES (?,?,?,?,?,?,?,?,?,?)
+      model_version, feature_hash, explanation_json, predicted_at, event_date, is_stale)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(fight_id, model_version) DO UPDATE SET
        red_fighter_id = excluded.red_fighter_id,
        blue_fighter_id = excluded.blue_fighter_id,
        red_win_prob = excluded.red_win_prob,
        blue_win_prob = excluded.blue_win_prob,
        feature_hash = excluded.feature_hash,
+       explanation_json = excluded.explanation_json,
        predicted_at = excluded.predicted_at,
        event_date = excluded.event_date,
        is_stale = excluded.is_stale`,
     [p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
-     p.model_version, p.feature_hash || null, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
+     p.model_version, p.feature_hash || null, explanationJson, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
   );
 }
 
@@ -938,7 +952,8 @@ function getEventPickComparison(eventId) {
         red_win_prob: pred.red_win_prob,
         blue_win_prob: pred.blue_win_prob,
         picked_fighter_id: pred.red_win_prob >= pred.blue_win_prob ? fight.red_fighter_id : fight.blue_fighter_id,
-        confidence: Math.max(pred.red_win_prob, pred.blue_win_prob)
+        confidence: Math.max(pred.red_win_prob, pred.blue_win_prob),
+        explanation: parsePredictionExplanation(pred.explanation_json)
       } : null,
       users: {
         total: agg ? (agg.total || 0) : 0,
@@ -950,6 +965,13 @@ function getEventPickComparison(eventId) {
     });
   }
   return result;
+}
+
+function parsePredictionExplanation(raw) {
+  if (!raw) return null;
+  if (typeof raw === 'object') return raw;
+  try { return JSON.parse(raw); }
+  catch { return null; }
 }
 
 module.exports = {

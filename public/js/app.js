@@ -4239,6 +4239,7 @@ function renderPickWidget(fight){
         : (redPct + bluePct * (1 - conf / 100));
       youTick = `<div class="pick-model__bar-tick" style="left:${Math.max(0, Math.min(100, tickPct))}%"></div>`;
     }
+    const explanation = renderModelExplanation(model.explanation, fight);
     modelHtml = `
       <div class="pick-model">
         <div class="pick-model__top">
@@ -4256,6 +4257,7 @@ function renderPickWidget(fight){
           <span class="pick-model__legend-red">${escHtml(fight.red_name || '')}</span>
           <span class="pick-model__legend-blue">${escHtml(fight.blue_name || '')}</span>
         </div>
+        ${explanation}
       </div>`;
   } else {
     modelHtml = `<div class="pick-model"><span class="pick-model__empty">No model prediction available for this fight yet.</span></div>`;
@@ -4360,6 +4362,51 @@ function renderPickWidget(fight){
       `}
     </div>
   `;
+}
+
+function renderModelExplanation(explanation, fight){
+  if (!explanation || !Array.isArray(explanation.factors) || explanation.factors.length === 0) return '';
+  const summary = explanation.summary
+    ? `<div class="pick-model-why__summary">${escHtml(explanation.summary)}</div>`
+    : '';
+  const maxImpact = Math.max(...explanation.factors.map(f => Number(f.impact) || 0), 0.01);
+  const rows = explanation.factors.slice(0, 5).map(f => {
+    const favorsRed = f.favors === 'red';
+    const fighterName = f.fighter || (favorsRed ? fight.red_name : fight.blue_name);
+    const pct = Math.max(8, Math.min(100, Math.round(((Number(f.impact) || 0) / maxImpact) * 100)));
+    const value = formatModelFactorValue(f);
+    return `
+      <div class="pick-model-why__factor ${favorsRed ? 'favors-red' : 'favors-blue'}">
+        <div class="pick-model-why__factor-head">
+          <span>${escHtml(f.label || f.feature || 'Factor')}</span>
+          <span>${escHtml(fighterName || (favorsRed ? 'Red' : 'Blue'))}${value ? ' · ' + escHtml(value) : ''}</span>
+        </div>
+        <div class="pick-model-why__meter"><span style="width:${pct}%"></span></div>
+      </div>`;
+  }).join('');
+  return `
+    <div class="pick-model-why">
+      <div class="pick-model-why__title">Why the model leans this way</div>
+      ${summary}
+      ${rows}
+    </div>`;
+}
+
+function formatModelFactorValue(f){
+  const v = Number(f && f.value);
+  if (!Number.isFinite(v)) return '';
+  const abs = Math.abs(v);
+  const sign = v > 0 ? '+' : (v < 0 ? '−' : '');
+  if ((f.feature || '').includes('_accuracy') || (f.feature || '').includes('_def') || (f.feature || '').includes('win_pct')) {
+    return sign + Math.round(abs * 100) + ' pts';
+  }
+  if ((f.feature || '').includes('reach') || (f.feature || '').includes('height')) {
+    return sign + Math.round(abs) + ' cm';
+  }
+  if ((f.feature || '').includes('ctrl_sec')) {
+    return sign + Math.round(abs) + ' sec/fight';
+  }
+  return sign + (abs >= 10 ? Math.round(abs) : abs.toFixed(1));
 }
 
 function attachPickHandlers(container){

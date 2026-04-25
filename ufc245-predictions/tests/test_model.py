@@ -49,7 +49,7 @@ def test_feature_hash():
 
 
 def test_train_and_predict():
-    from model import FEATURE_NAMES, train, predict
+    from model import FEATURE_NAMES, explain_prediction, train, predict
     # Use temp dir for model storage
     with tempfile.TemporaryDirectory() as tmpdir:
         os.environ["MODEL_DIR"] = tmpdir
@@ -73,6 +73,16 @@ def test_train_and_predict():
         assert abs(red_prob + blue_prob - 1.0) < 0.01
         print(f"  PASS: predict (red={red_prob:.3f}, blue={blue_prob:.3f})")
 
+        explanation = explain_prediction(pipe, X[0], red_name="Red A", blue_name="Blue B")
+        assert explanation["favored_corner"] in {"red", "blue"}
+        assert 0.0 <= explanation["confidence"] <= 1.0
+        assert isinstance(explanation["factors"], list)
+        assert explanation["summary"]
+        if explanation["factors"]:
+            assert "label" in explanation["factors"][0]
+            assert explanation["factors"][0]["favors"] in {"red", "blue"}
+        print("  PASS: explain_prediction")
+
 
 def test_db_operations():
     from db import init_db, save_model_record, get_latest_model, log_prediction, get_unsynced_predictions, mark_synced
@@ -87,11 +97,15 @@ def test_db_operations():
         assert model["version"] == "v0.1.test"
         print("  PASS: save/get model record")
 
-        pred_id = log_prediction(1, 10, 20, 0.6, 0.4, "v0.1.test", "abc123", "2026-05-01")
+        pred_id = log_prediction(
+            1, 10, 20, 0.6, 0.4, "v0.1.test", "abc123", "2026-05-01",
+            explanation={"summary": "Red A has the stronger pace.", "factors": []}
+        )
         assert pred_id > 0
         unsynced = get_unsynced_predictions()
         assert len(unsynced) == 1
         assert unsynced[0]["fight_id"] == 1
+        assert "stronger pace" in unsynced[0]["explanation_json"]
         assert len(get_unsynced_predictions(limit=1)) == 1
         print("  PASS: log_prediction + get_unsynced")
 

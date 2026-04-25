@@ -236,6 +236,10 @@ async function run() {
     blue_win_prob: 0.45,
     model_version: upsertModelVersion,
     feature_hash: 'def456',
+    explanation: {
+      summary: 'Usman pressure and reach drive the pick.',
+      factors: [{ label: 'Reach', favors: 'red', impact: 0.7, value: 10 }]
+    },
     predicted_at: '2026-01-01T01:00:00.000Z',
     event_date: ufc245.date
   });
@@ -243,6 +247,11 @@ async function run() {
     .filter(r => r.model_version === upsertModelVersion);
   assertEq(upsertRows.length, 1, 'prediction ingest upserts same fight_id + model_version');
   assertEq(upsertRows[0].red_win_prob, 0.55, 'prediction upsert keeps latest values');
+  assert(upsertRows[0].explanation_json.includes('pressure and reach'), 'prediction upsert stores explanation JSON');
+  const comparison = db.getEventPickComparison(ufc245.id);
+  const explainedFight = comparison.find(f => f.fight_id === upsertFightId);
+  assertTruthy(explainedFight.model.explanation, 'model comparison includes parsed prediction explanation');
+  assertEq(explainedFight.model.explanation.factors[0].label, 'Reach', 'model explanation includes top factor labels');
 
   // Reconcile selects latest unresolved row deterministically (predicted_at desc, id desc)
   const reconcileFightId = mainEvent.id;

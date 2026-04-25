@@ -65,13 +65,15 @@ def test_daily_predict_marks_only_current_batch_synced():
                 patched(jobs, "load_model", lambda _p: object()), \
                 patched(jobs, "engineer_features", lambda *_a, **_k: np.zeros(len(FEATURE_NAMES))), \
                 patched(jobs, "feature_hash", lambda _x: "hash123"), \
-                patched(jobs, "predict", lambda _pipe, _x: (0.6, 0.4)):
+                patched(jobs, "predict", lambda _pipe, _x: (0.6, 0.4)), \
+                patched(jobs, "explain_prediction", lambda *_a, **_k: {"summary": "Red pressure", "factors": []}):
             result = jobs.daily_predict()
 
         assert result["status"] == "ok"
         assert result["predicted"] == 1
         assert result["synced"] == 1
         assert sent_payloads, "Expected a sync payload to be sent"
+        assert sent_payloads[0][1]["predictions"][0]["explanation"]["summary"] == "Red pressure"
         unsynced = get_unsynced_predictions()
         assert len(unsynced) == 1, f"Expected only backlog row unsynced, got {len(unsynced)}"
         assert unsynced[0]["id"] == backlog_id, "Backlog row should remain unsynced"

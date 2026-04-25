@@ -14,7 +14,7 @@ from datetime import datetime, timedelta
 import httpx
 import numpy as np
 
-from model import engineer_features, feature_hash, predict, train, load_model, FEATURE_NAMES
+from model import engineer_features, explain_prediction, feature_hash, predict, train, load_model, FEATURE_NAMES
 from db import (
     get_latest_model, save_model_record, log_prediction,
     mark_synced, init_db, get_unsynced_predictions
@@ -128,6 +128,12 @@ def _predict_window(days: int, label: str) -> dict:
             X = engineer_features(r_career, b_career, red_fighter, blue_fighter)
             fhash = feature_hash(X)
             red_prob, blue_prob = predict(pipe, X)
+            explanation = explain_prediction(
+                pipe,
+                X,
+                red_name=bout.get("red_name") or "Red",
+                blue_name=bout.get("blue_name") or "Blue",
+            )
 
             local_id = log_prediction(
                 fight_id=bout["id"],
@@ -137,7 +143,8 @@ def _predict_window(days: int, label: str) -> dict:
                 blue_prob=blue_prob,
                 model_version=version,
                 feature_hash=fhash,
-                event_date=ev["date"]
+                event_date=ev["date"],
+                explanation=explanation,
             )
             local_prediction_ids.append(local_id)
             predictions.append({
@@ -149,7 +156,8 @@ def _predict_window(days: int, label: str) -> dict:
                 "model_version": version,
                 "feature_hash": fhash,
                 "predicted_at": datetime.utcnow().isoformat(),
-                "event_date": ev["date"]
+                "event_date": ev["date"],
+                "explanation": explanation,
             })
 
     synced = _sync_predictions(predictions, local_prediction_ids, label)
@@ -186,7 +194,8 @@ def sync_unsynced(limit: int = 500) -> int:
         "model_version": row["model_version"],
         "feature_hash": row["feature_hash"],
         "predicted_at": row["predicted_at"],
-        "event_date": row["event_date"]
+        "event_date": row["event_date"],
+        "explanation_json": row.get("explanation_json"),
     } for row in queued]
 
     result = _post_json("/api/predictions/ingest", {"predictions": predictions})

@@ -63,6 +63,22 @@ FEATURE_NAMES = [
     "experience_delta",
 ]
 
+FEATURE_LABELS = {
+    "sig_str_landed_avg_delta": "Striking pace",
+    "sig_accuracy_delta": "Striking accuracy",
+    "td_landed_avg_delta": "Takedown volume",
+    "td_accuracy_delta": "Takedown accuracy",
+    "ctrl_sec_avg_delta": "Control time",
+    "knockdowns_avg_delta": "Knockdown threat",
+    "sub_attempts_avg_delta": "Submission activity",
+    "reach_delta_cm": "Reach",
+    "height_delta_cm": "Height",
+    "profile_slpm_delta": "Profile striking pace",
+    "profile_str_def_delta": "Striking defense",
+    "profile_td_def_delta": "Takedown defense",
+    "win_pct_last3_delta": "Recent form",
+    "experience_delta": "UFC experience",
+}
 
 def engineer_features(red_stats: dict, blue_stats: dict,
                       red_fighter: dict, blue_fighter: dict) -> np.ndarray:
@@ -185,3 +201,69 @@ def predict(pipe, X: np.ndarray) -> tuple[float, float]:
     else:
         red_prob = blue_prob = 0.5
     return red_prob, blue_prob
+
+
+def explain_prediction(pipe, X: np.ndarray, red_name: str = "Red",
+                       blue_name: str = "Blue", limit: int = 5) -> dict:
+    """Explain a logistic-regression prediction with top feature contributions.
+
+    Positive contributions favor the red corner. Negative contributions favor
+    the blue corner. Values are model-logit contributions after scaler
+    transformation, so they are directional rather than standalone odds.
+    """
+    red_prob, blue_prob = predict(pipe, X)
+    favored_corner = "red" if red_prob >= blue_prob else "blue"
+    favored_name = red_name if favored_corner == "red" else blue_name
+
+    lr = pipe.named_steps.get("lr") if hasattr(pipe, "named_steps") else None
+    scaler = pipe.named_steps.get("scaler") if hasattr(pipe, "named_steps") else None
+    if lr is None or scaler is None or not hasattr(lr, "coef_"):
+        return {
+            "favored_corner": favored_corner,
+            "favored_name": favored_name,
+            "confidence": max(red_prob, blue_prob),
+            "summary": f"{favored_name} is favored by the model.",
+            "factors": [],
+        }
+
+    scaled = scaler.transform(X.reshape(1, -1))[0]
+    coefs = lr.coef_[0]
+    contributions = scaled * coefs
+
+    factors = []
+    for idx, feature in enumerate(FEATURE_NAMES):
+        if feature not in FEATURE_LABELS:
+            continue
+        contribution = float(contributions[idx])
+        if abs(contribution) < 0.01:
+            continue
+        raw_value = float(X[idx])
+        favors_corner = "red" if contribution > 0 else "blue"
+        factors.append({
+            "feature": feature,
+            "label": FEATURE_LABELS[feature],
+            "favors": favors_corner,
+            "fighter": red_name if favors_corner == "red" else blue_name,
+            "value": raw_value,
+            "impact": abs(contribution),
+            "direction": "positive" if contribution > 0 else "negative",
+        })
+
+    factors.sort(key=lambda f: f["impact"], reverse=True)
+    top = factors[:limit]
+    if top:
+        lead = top[0]
+        summary = (
+            f"{favored_name} is favored, led by {lead['label'].lower()} "
+            f"favoring {lead['fighter']}."
+        )
+    else:
+        summary = f"{favored_name} is favored, but no single factor dominates."
+
+    return {
+        "favored_corner": favored_corner,
+        "favored_name": favored_name,
+        "confidence": max(red_prob, blue_prob),
+        "summary": summary,
+        "factors": top,
+    }
