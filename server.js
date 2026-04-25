@@ -897,4 +897,9 @@ async function warmCache() {
       setTimeout(() => process.exit(1), 10_000).unref();
     });
   });
-})();
+}
+
+bootstrap().catch(err => {
+  console.error('Failed to start server:', err);
+  process.exit(1);
+});
