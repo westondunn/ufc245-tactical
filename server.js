@@ -47,7 +47,11 @@ const cookieParser = require('cookie-parser');
 const path = require('path');
 const fs = require('fs');
 const db = require('./db');
-const { auth } = require('./auth');
+const { buildAuth } = require('./auth');
+// `auth` is populated inside the async bootstrap by awaiting buildAuth().
+// Middleware closures (resolveUser etc.) reference this binding directly;
+// JS resolves the variable at call-time, by which time bootstrap has run.
+let auth;
 const bio = require('./lib/biomechanics');
 const tactical = require('./lib/tactical');
 const ver = require('./lib/version');
@@ -865,6 +869,12 @@ async function bootstrap() {
     process.exit(1);
   }
   // ─────────────────────────────────────────────────────────────────────────
+
+  // Construct the better-auth instance. buildAuth() does its own dynamic
+  // import() of better-auth + better-auth/api so we don't depend on the
+  // builder image's Node version supporting require(esm).
+  ({ auth } = await buildAuth());
+  console.log('[auth] better-auth instance built');
 
   // Register the better-auth route handler now that toNodeHandler is resolved.
   // This must happen before the server starts listening so the route is ready
