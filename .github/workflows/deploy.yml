@@ -3,10 +3,10 @@ name: Deploy · Version Bump + Railway
 on:
   push:
     branches: [main]
-    # Don't trigger on version bump commits (prevents infinite loop)
-    paths-ignore:
-      - 'package.json'
-      - 'package-lock.json'
+    # Note: we intentionally do NOT use paths-ignore for package.json/lock.
+    # The [skip-version] guard in the version-bump job already prevents the
+    # auto-bump loop, and ignoring package.json blocks deploys for any
+    # human commit that legitimately edits it (e.g. dep bumps, engines pin).
 
 permissions:
   contents: write
