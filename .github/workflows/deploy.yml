@@ -38,10 +38,21 @@ jobs:
         # backticks, `$`, etc. in the body don't break bash parsing.
         env:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
+        # Anchor on Conventional Commits semantics, not substring soup. The
+        # previous regex matched "major" and "feat" anywhere in the message
+        # body — so a paragraph saying "...breaks every deployment, this is
+        # a fix..." would trigger a major bump (3.17.x → 4.0.0 happened).
+        # Now:
+        #   major: trailer "BREAKING CHANGE:" or `!` after type/scope
+        #          (e.g. "feat!: ..." or "fix(api)!: ...")
+        #   minor: subject starts with "feat:" or "feat(scope):"
+        #   patch: anything else
         run: |
-          if echo "$COMMIT_MSG" | grep -qi "BREAKING\|major"; then
+          SUBJECT=$(printf '%s' "$COMMIT_MSG" | head -n1)
+          if printf '%s' "$COMMIT_MSG" | grep -qE '^BREAKING CHANGE:' \
+             || printf '%s' "$SUBJECT" | grep -qE '^[a-zA-Z]+(\([^)]+\))?!:'; then
             echo "type=major" >> $GITHUB_OUTPUT
-          elif echo "$COMMIT_MSG" | grep -qi "feat\|feature\|add\|new"; then
+          elif printf '%s' "$SUBJECT" | grep -qE '^feat(\([^)]+\))?:'; then
             echo "type=minor" >> $GITHUB_OUTPUT
           else
             echo "type=patch" >> $GITHUB_OUTPUT

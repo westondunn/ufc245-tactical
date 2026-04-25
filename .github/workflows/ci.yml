@@ -122,15 +122,16 @@ jobs:
             console.log('Security headers: OK');
           "
 
-      - name: Verify no secrets in codebase
-        run: |
-          echo "Scanning for potential secrets..."
-          if grep -rn "github_pat_\|ghp_\|sk-\|password\s*=" --include="*.js" --include="*.json" --include="*.html" . \
-             --exclude-dir=node_modules --exclude-dir=.git; then
-            echo "::error::Potential secrets found in codebase"
-            exit 1
-          fi
-          echo "No secrets found: OK"
+      - name: Scan for secrets (gitleaks)
+        # The previous home-grown grep regex `password\s*=` matched any
+        # JS local named `password` and broke CI on every commit that
+        # happened to use that variable name. gitleaks ships proper rules
+        # tuned for actual secret formats (PEM blocks, AWS keys, GH PATs,
+        # Slack tokens, Stripe keys, JWTs, etc.) with low false-positive
+        # rates and per-rule allowlists.
+        uses: gitleaks/gitleaks-action@v2
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Server boot test
         env:

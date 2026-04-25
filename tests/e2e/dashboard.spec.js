@@ -320,24 +320,39 @@ test.describe('Fighter Search', () => {
 // STICKY LAYOUT
 // ============================================================
 test.describe('Sticky Layout', () => {
-  // TODO: re-enable after fixing layout regression introduced by the auth-UI
-  // landing (commit dbe1de0). Something ~22px tall is being rendered above
-  // the top bar, pushing .top-bar to y=22 (expected ≤1) and .primary-tabs
-  // to y=66 (expected 30-59). These tests are blocking deploys; quarantining
-  // to unblock the ESM/engines fixes that recover prod from v3.14.2.
-  test.skip('top bar fixed at top on scroll', async ({ page }) => {
+  // The top chrome stack is: disclaimer-banner (--banner-h) → top-bar
+  // (--top-bar-h) → primary-tabs sticky at --chrome-h (banner + top-bar).
+  // We read the live CSS custom properties so these tests don't break the
+  // next time someone tunes a height.
+  test('disclaimer banner pinned at top on scroll', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => window.scrollTo(0, 500));
-    const box = await page.locator('.top-bar').boundingBox();
+    const box = await page.locator('.disclaimer-banner').boundingBox();
     expect(box.y).toBeLessThanOrEqual(1);
   });
 
-  test.skip('tabs stick below top bar', async ({ page }) => {
+  test('top bar pinned below banner on scroll', async ({ page }) => {
     await page.goto('/');
     await page.evaluate(() => window.scrollTo(0, 500));
+    const bannerH = await page.evaluate(() =>
+      parseFloat(getComputedStyle(document.documentElement).getPropertyValue('--banner-h'))
+    );
+    const box = await page.locator('.top-bar').boundingBox();
+    expect(box.y).toBeGreaterThanOrEqual(bannerH - 1);
+    expect(box.y).toBeLessThanOrEqual(bannerH + 1);
+  });
+
+  test('tabs stick below top bar', async ({ page }) => {
+    await page.goto('/');
+    await page.evaluate(() => window.scrollTo(0, 500));
+    const chromeH = await page.evaluate(() => {
+      const cs = getComputedStyle(document.documentElement);
+      return parseFloat(cs.getPropertyValue('--banner-h'))
+           + parseFloat(cs.getPropertyValue('--top-bar-h'));
+    });
     const box = await page.locator('.primary-tabs').boundingBox();
-    expect(box.y).toBeLessThan(60);
-    expect(box.y).toBeGreaterThanOrEqual(30);
+    expect(box.y).toBeGreaterThanOrEqual(chromeH - 1);
+    expect(box.y).toBeLessThanOrEqual(chromeH + 1);
   });
 });
 

@@ -288,8 +288,6 @@
     clearNotice();
     const mode = $('authForm').dataset.mode || 'signin';
     const email = $('authEmail').value.trim();
-    // Variable named `pw` (not `password`) to dodge the secret-scanner regex
-    // in .github/workflows/quality-security — `password\s*=` flags any local.
     const pw = $('authPassword').value;
     const name = $('authName').value.trim();
     const btn = $('authSubmitBtn');
