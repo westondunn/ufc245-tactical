@@ -133,6 +133,13 @@ jobs:
           echo "No secrets found: OK"
 
       - name: Server boot test
+        env:
+          # auth/index.js defaults NODE_ENV to 'production' if unset and
+          # requires BETTER_AUTH_SECRET in production. Force a non-prod
+          # env for the boot smoke; we're only checking that the process
+          # parses and binds, not that auth is wired for prod.
+          NODE_ENV: development
+          BETTER_AUTH_SECRET: ci-smoke-not-a-real-secret
         run: |
           PORT=4999 timeout 8 node server.js &
           sleep 4
