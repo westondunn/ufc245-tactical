@@ -10,6 +10,7 @@ on:
 
 permissions:
   contents: write
+  checks: read
 
 jobs:
   version-bump:
@@ -21,6 +22,39 @@ jobs:
       new_version: ${{ steps.bump.outputs.new_version }}
 
     steps:
+      - name: Wait for CI Quality Gates to pass on this sha
+        # CI runs on the same `push: main` trigger as this workflow. Poll the
+        # check-suite for this sha until it completes — abort if it failed.
+        # This is the workflow-level CI gate; we can't enforce it via classic
+        # branch protection because github-actions[bot] can't bypass status
+        # checks when pushing the version-bump commit back to main.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          SHA: ${{ github.sha }}
+        run: |
+          set -euo pipefail
+          for i in $(seq 1 60); do
+            # Look at all check-runs for this sha; ignore the deploy workflow's
+            # own runs (this very job) by name.
+            CONCLUSIONS=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" \
+              --jq '[.check_runs[] | select(.name=="Quality & Security" or .name=="Playwright E2E") | {name, status, conclusion}]')
+            DONE=$(echo "$CONCLUSIONS" | python -c "import sys,json; r=json.load(sys.stdin); print('yes' if r and all(c['status']=='completed' for c in r) else 'no')")
+            if [ "$DONE" = "yes" ]; then
+              FAILED=$(echo "$CONCLUSIONS" | python -c "import sys,json; r=json.load(sys.stdin); print('yes' if any(c['conclusion'] not in ('success','skipped','neutral') for c in r) else 'no')")
+              if [ "$FAILED" = "yes" ]; then
+                echo "::error::CI Quality Gates failed for sha ${SHA} — refusing to bump version"
+                echo "$CONCLUSIONS"
+                exit 1
+              fi
+              echo "CI passed for ${SHA}: $CONCLUSIONS"
+              exit 0
+            fi
+            echo "CI still running for ${SHA} (attempt $i/60)…"
+            sleep 20
+          done
+          echo "::error::CI did not complete within 20 minutes for ${SHA}"
+          exit 1
+
       - name: Checkout
         uses: actions/checkout@v4
         with:
