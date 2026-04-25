@@ -180,6 +180,11 @@ jobs:
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
+        env:
+          # Playwright spawns server.js via webServer config; same auth/index.js
+          # check applies as in the boot smoke step above.
+          NODE_ENV: development
+          BETTER_AUTH_SECRET: ci-smoke-not-a-real-secret
         run: npx playwright test
 
       - name: Upload test report
