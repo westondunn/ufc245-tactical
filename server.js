@@ -56,6 +56,7 @@ const bio = require('./lib/biomechanics');
 const tactical = require('./lib/tactical');
 const ver = require('./lib/version');
 const cache = require('./lib/cache');
+const { buildPredictionReview } = require('./lib/predictionReview');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -293,6 +294,21 @@ app.get('/api/events/:id/tactical', apiHandler(async (req, res) => {
     result = cache.set(key, { event, analyses });
   }
   res.json(result);
+}));
+
+// Read-only prediction-review overlay for an event card.
+// Returns event identity (with date_mismatch vs ?official_date=YYYY-MM-DD),
+// per-fight matrix with trust grade + missing-data warning, model audit,
+// and a live-checklist skeleton. Never mutates predictions.
+app.get('/api/events/:id/prediction-review', apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (isNaN(eventId)) return res.status(400).json({ error: 'invalid_id' });
+  const officialDate = typeof req.query.official_date === 'string' && /^\d{4}-\d{2}-\d{2}$/.test(req.query.official_date)
+    ? req.query.official_date
+    : null;
+  const review = await buildPredictionReview({ db, eventId, officialDate });
+  if (!review) return res.status(404).json({ error: 'event_not_found' });
+  res.json(review);
 }));
 
 // All tactical breakdowns (bulk)

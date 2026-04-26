@@ -124,6 +124,7 @@
   <button class="primary-tab" data-tab="events">Events & Fights</button>
   <button class="primary-tab" data-tab="fighters">Fighters</button>
   <button class="primary-tab" data-tab="stats">Stat Leaders</button>
+  <button class="primary-tab" data-tab="review">Review</button>
   <button class="primary-tab picks-tab-btn" data-tab="picks" id="picksTabBtn" style="display:none">Picks</button>
 </nav>
 
@@ -293,6 +294,26 @@
     Career aggregates from fights in database. Source: UFCStats.com
   </p>
   <div class="leader-grid" id="leaderGrid"></div>
+</div>
+
+<!-- TAB: PREDICTION REVIEW (read-only overlay; never mutates predictions) -->
+<div class="tab-content" id="tab-review">
+  <h2>Prediction Review</h2>
+  <p style="font-family:var(--f-mono);font-size:10px;color:var(--muted);margin-bottom:14px;letter-spacing:.1em">
+    Pre-fight model audit · Live observations are NOT persisted · Cross-check with official sources only
+  </p>
+  <div class="review-controls" style="display:flex;gap:10px;align-items:center;margin-bottom:12px;flex-wrap:wrap">
+    <label style="font-family:var(--f-mono);font-size:10px;color:var(--muted);letter-spacing:.12em">EVENT</label>
+    <select id="reviewEventSelect" class="event-dropdown"
+      style="background:#0A0C14;border:1px solid var(--border-soft);color:var(--fg);font-family:var(--f-mono);font-size:11px;padding:6px 12px;outline:none"></select>
+    <label style="font-family:var(--f-mono);font-size:10px;color:var(--muted);letter-spacing:.12em">OFFICIAL DATE</label>
+    <input id="reviewOfficialDate" type="date"
+      style="background:#0A0C14;border:1px solid var(--border-soft);color:var(--fg);font-family:var(--f-mono);font-size:11px;padding:5px 8px;outline:none">
+    <button id="reviewReloadBtn" class="rec-btn" style="font-size:10px;padding:6px 12px">Reload</button>
+  </div>
+  <div id="reviewBody">
+    <div class="review-loading" style="color:var(--muted);font-family:var(--f-mono);font-size:11px;padding:14px 0">Pick an event to load review…</div>
+  </div>
 </div>
 
 <!-- DASHBOARD TAB (existing content) -->

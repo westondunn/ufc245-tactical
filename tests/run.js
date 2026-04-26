@@ -935,6 +935,120 @@ async function run() {
     .filter(r => r.model_version === 'v.test.persistence');
   assertEq(persistedRows.length, 1, 'predictions persist across db restart with DB_PATH');
 
+  // ── Prediction Review (event 101 — Sterling vs Zalal) ──
+  console.log('\nPrediction Review (event 101):');
+  // Re-init from seed so this section runs against the canonical dataset
+  await db.init();
+  const { buildPredictionReview } = require('../lib/predictionReview');
+
+  const review = await buildPredictionReview({ db, eventId: 101, officialDate: null });
+  assertTruthy(review, 'review payload returned for event 101');
+  assertEq(review.event.id, 101, 'review.event.id is 101');
+  assertEq(review.event.local_date, '2026-04-26', 'review.event.local_date is local seed date');
+  assertEq(review.event.official_date, null, 'official_date null when not provided');
+  assertEq(review.event.date_mismatch, false, 'no mismatch when official_date omitted');
+  assertEq(review.card.length, 13, 'review.card has 13 fights');
+
+  const fightIds = review.card.map((c) => c.fight_id).sort((a, b) => a - b);
+  const expectedIds = [740, 741, 742, 743, 744, 745, 746, 747, 748, 749, 750, 751, 752];
+  assert(JSON.stringify(fightIds) === JSON.stringify(expectedIds),
+    `fight ids 740-752 all present (got ${fightIds.join(',')})`);
+
+  const reviewMismatch = await buildPredictionReview({ db, eventId: 101, officialDate: '2026-04-25' });
+  assertEq(reviewMismatch.event.official_date, '2026-04-25', 'official_date echoed back');
+  assertEq(reviewMismatch.event.date_mismatch, true, 'date_mismatch true when official_date=2026-04-25');
+
+  const reviewMatch = await buildPredictionReview({ db, eventId: 101, officialDate: '2026-04-26' });
+  assertEq(reviewMatch.event.date_mismatch, false, 'date_mismatch false when official matches local');
+
+  // Main event: Sterling complete, Zalal missing stance/str_def/td_def
+  const main = review.card.find((c) => c.is_main);
+  assertTruthy(main, 'main event present');
+  assertEq(main.matchup, 'Aljamain Sterling vs Youssef Zalal', 'main matchup label correct');
+  assertEq(main.red.completeness.missing_core.length, 0, 'red main fighter has all core fields');
+  assertEq(main.blue.completeness.missing_core.length, 2, 'blue main fighter missing 2 core fields');
+  assert(main.blue.completeness.missing.includes('stance'), 'blue missing stance');
+  assert(main.blue.completeness.missing.includes('str_def'), 'blue missing str_def');
+  assert(main.blue.completeness.missing.includes('td_def'), 'blue missing td_def');
+
+  // No active predictions in local seed → every fight should be model_status=missing
+  const allMissing = review.card.every((c) => c.model_status === 'missing' && c.model === null);
+  assert(allMissing, 'all fights have model_status=missing without seeded predictions');
+  // Without a model, trust grade collapses to Very Low
+  assertEq(main.trust_grade, 'Very Low', 'no prediction → trust grade Very Low');
+  assertTruthy(main.missing_data_warning, 'missing_data_warning surfaced when prediction missing');
+  assert(Array.isArray(main.live_checklist) && main.live_checklist.length >= 5,
+    'live_checklist skeleton present');
+
+  // Audit summary reflects missing predictions + missing core fields
+  assertGt(review.audit.blockers.length, 0, 'audit.blockers populated when predictions missing');
+  assertGt(review.audit.confidence_reducers.length, 0, 'audit.confidence_reducers populated');
+  assertGt(review.audit.future_enhancements.length, 0, 'audit.future_enhancements populated');
+
+  // Official sources present + scoped to the cleared list
+  assertEq(review.official_sources.length, 5, 'exactly 5 official source URLs');
+  assert(review.official_sources.every((u) => /^https:\/\/(www\.ufc\.com|ufcstats\.com)\//.test(u)),
+    'all official_sources are ufc.com or ufcstats.com');
+
+  // Seed a synthetic prediction for the main event and re-run — exercises the
+  // model parsing path and proves a populated prediction lifts trust above Very Low.
+  db.upsertPrediction({
+    fight_id: 740,
+    red_fighter_id: main.red.id,
+    blue_fighter_id: main.blue.id,
+    red_win_prob: 0.62,
+    blue_win_prob: 0.38,
+    model_version: 'v0.2.test-review',
+    feature_hash: 'test-review',
+    predicted_at: '2026-04-24T18:00:00.000Z',
+    event_date: '2026-04-26',
+    explanation_json: JSON.stringify({
+      favored_corner: 'red',
+      favored_name: 'Aljamain Sterling',
+      confidence: 0.62,
+      summary: 'Sterling favored on grappling pressure.',
+      factors: [
+        { feature: 'td_landed_avg_delta', label: 'Takedown volume', favors: 'red',
+          fighter: 'Aljamain Sterling', impact: 0.41, value: 1.2 }
+      ]
+    })
+  });
+  const seeded = await buildPredictionReview({ db, eventId: 101, officialDate: '2026-04-25' });
+  const seededMain = seeded.card.find((c) => c.fight_id === 740);
+  assertEq(seededMain.model_status, 'ok', 'seeded prediction → model_status ok');
+  assertTruthy(seededMain.model, 'seeded prediction → model block populated');
+  assertEq(seededMain.model.lean, 'red', 'lean=red when red_win_prob > blue_win_prob');
+  assertEq(seededMain.model.lean_fighter_name, 'Aljamain Sterling', 'lean_fighter_name correct');
+  assertEq(seededMain.model.version, 'v0.2.test-review', 'model.version echoes prediction');
+  assert(Math.abs(seededMain.model.confidence - 0.62) < 1e-9, 'confidence equals max(red,blue)');
+  assertTruthy(seededMain.model.explanation, 'explanation parsed from explanation_json');
+  assertEq(seededMain.model.explanation.top_factors.length, 1, 'top_factors parsed');
+  // Zalal is still missing core profile fields → grade should NOT be High
+  assert(['Medium', 'Low'].includes(seededMain.trust_grade),
+    `sparse data lowers trust grade (got ${seededMain.trust_grade})`);
+
+  // Invalid explanation_json must not throw — regression guard for safe parser
+  db.upsertPrediction({
+    fight_id: 741,
+    red_fighter_id: review.card.find((c) => c.fight_id === 741).red.id,
+    blue_fighter_id: review.card.find((c) => c.fight_id === 741).blue.id,
+    red_win_prob: 0.55,
+    blue_win_prob: 0.45,
+    model_version: 'v0.2.test-review',
+    feature_hash: 'test-bad-json',
+    predicted_at: '2026-04-24T18:00:00.000Z',
+    event_date: '2026-04-26',
+    explanation_json: '{ not valid json'
+  });
+  const seeded2 = await buildPredictionReview({ db, eventId: 101, officialDate: null });
+  const fight741 = seeded2.card.find((c) => c.fight_id === 741);
+  assertEq(fight741.model_status, 'ok', 'fight 741 with bad explanation_json still ok');
+  assertEq(fight741.model.explanation, null, 'bad explanation_json parses to null safely');
+
+  // Unknown event id → null (route layer returns 404)
+  const noEvent = await buildPredictionReview({ db, eventId: 99999999, officialDate: null });
+  assertEq(noEvent, null, 'unknown event id returns null');
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);

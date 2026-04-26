@@ -3174,6 +3174,7 @@ function activatePrimaryTab(target, opts = {}){
   if (target === 'events' && !_tabsLoaded.events) { loadEventsTab(); _tabsLoaded.events = true; }
   if (target === 'fighters' && !_tabsLoaded.fighters) { loadFightersTab(); _tabsLoaded.fighters = true; }
   if (target === 'stats' && !_tabsLoaded.stats) { loadStatsTab(); _tabsLoaded.stats = true; }
+  if (target === 'review' && !_tabsLoaded.review) { loadReviewTab(); _tabsLoaded.review = true; }
   if (opts.persist !== false) {
     setStoredViewState({ tab: target });
     updateViewHash(target, target === 'picks' && _picksState ? _picksState.view : null);
@@ -4951,6 +4952,204 @@ window.toggleFightDetail = toggleFightDetail;
 window.selectDbFight = selectDbFight;
 window.showFighterProfile = showFighterProfile;
 window.renderFighterDir = function(){ renderFighterDir(_allFightersData); };
+
+/* -----------------------------------------------------------
+   PREDICTION REVIEW TAB — read-only QA overlay
+----------------------------------------------------------- */
+const REVIEW_DEFAULT_EVENT_ID = 101;
+const REVIEW_DEFAULT_OFFICIAL_DATE = '2026-04-25';
+let _reviewEvents = null;
+
+async function loadReviewTab(){
+  const select = document.getElementById('reviewEventSelect');
+  const dateInput = document.getElementById('reviewOfficialDate');
+  const reloadBtn = document.getElementById('reviewReloadBtn');
+  if (!select || !dateInput || !reloadBtn) return;
+
+  if (!_reviewEvents) {
+    try {
+      const res = await fetch('/api/events');
+      _reviewEvents = await res.json();
+    } catch (e) {
+      document.getElementById('reviewBody').innerHTML =
+        '<div style="color:var(--red);font-family:var(--f-mono);font-size:11px">Failed to load events.</div>';
+      return;
+    }
+  }
+  select.innerHTML = _reviewEvents.map(e =>
+    '<option value="' + e.id + '">' + escHtml((e.number ? '#' + e.number + ' ' : '') + e.name + ' — ' + (e.date || '')) + '</option>'
+  ).join('');
+  if (_reviewEvents.some(e => e.id === REVIEW_DEFAULT_EVENT_ID)) {
+    select.value = String(REVIEW_DEFAULT_EVENT_ID);
+    dateInput.value = REVIEW_DEFAULT_OFFICIAL_DATE;
+  } else if (_reviewEvents[0]) {
+    select.value = String(_reviewEvents[0].id);
+  }
+
+  const trigger = () => fetchAndRenderReview(parseInt(select.value, 10), dateInput.value || null);
+  select.addEventListener('change', trigger);
+  reloadBtn.addEventListener('click', trigger);
+  trigger();
+}
+
+async function fetchAndRenderReview(eventId, officialDate){
+  const body = document.getElementById('reviewBody');
+  body.innerHTML = '<div style="color:var(--muted);font-family:var(--f-mono);font-size:11px;padding:14px 0">Loading review…</div>';
+  try {
+    const url = '/api/events/' + eventId + '/prediction-review' +
+      (officialDate ? '?official_date=' + encodeURIComponent(officialDate) : '');
+    const res = await fetch(url);
+    if (!res.ok) {
+      body.innerHTML = '<div style="color:var(--red);font-family:var(--f-mono);font-size:11px">Review unavailable (' + res.status + ').</div>';
+      return;
+    }
+    const data = await res.json();
+    body.innerHTML = renderReviewPayload(data);
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--red);font-family:var(--f-mono);font-size:11px">Error loading review: ' + escHtml(String(e && e.message || e)) + '</div>';
+  }
+}
+
+function _trustColor(grade){
+  return grade === 'High' ? 'var(--cyan)' :
+         grade === 'Medium' ? '#e6c84a' :
+         grade === 'Low' ? '#e08947' : 'var(--red)';
+}
+
+function _fmtPct(p){
+  if (p == null || isNaN(p)) return '—';
+  return (p * 100).toFixed(0) + '%';
+}
+
+function renderReviewPayload(data){
+  if (!data || !data.event) return '<div style="color:var(--muted)">No data.</div>';
+  const ev = data.event;
+  const mismatch = ev.date_mismatch
+    ? '<div class="review-banner" style="background:rgba(220,90,90,.15);border:1px solid var(--red);color:var(--red);padding:10px 14px;font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;margin-bottom:14px">' +
+      'DATE MISMATCH — local seed ' + escHtml(ev.local_date || '—') + ' · official ' + escHtml(ev.official_date || '—') +
+      ' · review metadata only; seed not mutated</div>'
+    : (ev.official_date
+        ? '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted);margin-bottom:10px;letter-spacing:.1em">DATES OK · local ' + escHtml(ev.local_date || '—') + ' · official ' + escHtml(ev.official_date) + '</div>'
+        : '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted);margin-bottom:10px;letter-spacing:.1em">LOCAL DATE ' + escHtml(ev.local_date || '—') + ' · pass ?official_date= to compare</div>');
+
+  const head = '<div class="review-head" style="display:flex;justify-content:space-between;align-items:flex-end;flex-wrap:wrap;gap:8px;margin-bottom:6px">' +
+    '<div><div class="section-tag">Prediction Review</div>' +
+    '<h3 style="margin:4px 0 0 0;font-size:22px">' + escHtml(ev.name || '') + '</h3>' +
+    '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted);letter-spacing:.1em">' +
+      escHtml((ev.venue || '') + (ev.city ? ' · ' + ev.city : '') + (ev.country ? ' · ' + ev.country : '')) + '</div></div>' +
+    '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);letter-spacing:.12em;text-align:right">PRE-FIGHT MODEL · LIVE OBSERVATIONS NOT PERSISTED</div>' +
+    '</div>';
+
+  const rows = (data.card || []).map(c => {
+    const trustColor = _trustColor(c.trust_grade);
+    const lean = c.model
+      ? '<span style="color:' + (c.model.lean === 'red' ? 'var(--red)' : 'var(--cyan)') + '">' +
+          escHtml(c.model.lean_fighter_name || '') + '</span>' +
+          ' <span style="font-family:var(--f-mono);font-size:9px;color:var(--muted)">' + _fmtPct(c.model.confidence) + '</span>'
+      : '<span style="color:var(--muted);font-family:var(--f-mono);font-size:10px">no prediction</span>';
+    const probs = c.model
+      ? '<span style="font-family:var(--f-mono);font-size:10px">R ' + _fmtPct(c.model.red_win_prob) +
+          ' · B ' + _fmtPct(c.model.blue_win_prob) + '</span>'
+      : '<span style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">—</span>';
+    const factors = (c.model && c.model.explanation && c.model.explanation.top_factors)
+      ? c.model.explanation.top_factors.map(f =>
+          escHtml((f.label || f.feature || '') + ' → ' + (f.fighter || ''))).join('<br>')
+      : '';
+    const explanationCell = c.model && c.model.explanation && c.model.explanation.summary
+      ? '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted);max-width:280px;white-space:normal">' +
+          escHtml(c.model.explanation.summary) +
+          (factors ? '<div style="margin-top:4px;font-size:9px;color:var(--muted)">' + factors + '</div>' : '') +
+        '</div>'
+      : '<span style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">—</span>';
+    const completeness =
+      'R ' + c.red.completeness.score + '/' + c.red.completeness.total +
+      ' · B ' + c.blue.completeness.score + '/' + c.blue.completeness.total +
+      ' · stats R' + (c.red.career_stats.total_fights || 0) +
+      '/B' + (c.blue.career_stats.total_fights || 0) +
+      ' · rounds ' + c.round_stat_rows;
+    const warning = c.missing_data_warning
+      ? '<div style="font-family:var(--f-mono);font-size:9px;color:#e08947;margin-top:4px;max-width:260px;white-space:normal">' +
+          escHtml(c.missing_data_warning) + '</div>'
+      : '';
+    return '<tr ' + (c.is_main ? 'style="background:rgba(0,255,255,.04)"' : '') + '>' +
+      '<td style="text-align:center">' + (c.is_main ? '★' : (c.is_title ? '◆' : (c.card_position || ''))) + '</td>' +
+      '<td><b>' + escHtml(c.matchup) + '</b>' +
+        (c.weight_class ? '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted)">' + escHtml(c.weight_class) + '</div>' : '') +
+      '</td>' +
+      '<td>' + lean + '<div>' + probs + '</div>' +
+        (c.model ? '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted)">' + escHtml(c.model.version || '') + '</div>' : '') +
+      '</td>' +
+      '<td>' + explanationCell + '</td>' +
+      '<td><span style="color:' + trustColor + ';font-weight:600">' + escHtml(c.trust_grade) + '</span>' + warning + '</td>' +
+      '<td><span style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">' + escHtml(completeness) + '</span></td>' +
+      '<td><button class="rec-btn" style="font-size:9px;padding:4px 8px" onclick="showReviewChecklist(' + c.fight_id + ')">Checklist</button></td>' +
+      '</tr>';
+  }).join('');
+
+  const table =
+    '<div style="overflow-x:auto;border:1px solid var(--border-soft);margin-top:10px">' +
+    '<table class="evt-table" style="width:100%">' +
+    '<thead><tr><th style="width:34px">#</th><th>Matchup</th><th>Pre-fight model lean</th><th>Top factors</th><th>Trust</th><th>Data coverage</th><th></th></tr></thead>' +
+    '<tbody id="reviewTableBody">' + rows + '</tbody></table></div>';
+
+  const audit = data.audit || { blockers: [], confidence_reducers: [], future_enhancements: [] };
+  const auditBlock =
+    '<div class="review-audit" style="display:grid;grid-template-columns:repeat(auto-fit,minmax(260px,1fr));gap:12px;margin-top:18px">' +
+    _renderAuditCol('Blockers', audit.blockers, 'var(--red)') +
+    _renderAuditCol('Confidence reducers', audit.confidence_reducers, '#e6c84a') +
+    _renderAuditCol('Future enhancements', audit.future_enhancements, 'var(--cyan)') +
+    '</div>';
+
+  const sources = (data.official_sources || []).map(u =>
+    '<li><a href="' + escHtml(u) + '" target="_blank" rel="noopener" style="color:var(--cyan);font-family:var(--f-mono);font-size:10px;word-break:break-all">' + escHtml(u) + '</a></li>'
+  ).join('');
+  const sourcesBlock =
+    '<div style="margin-top:18px;border-top:1px solid var(--border-soft);padding-top:12px">' +
+      '<div class="section-tag" style="color:var(--cyan)">Official sources</div>' +
+      '<ul style="list-style:none;padding:0;margin:6px 0 0 0">' + sources + '</ul>' +
+    '</div>';
+
+  const checklistAnchor =
+    '<div id="reviewChecklistPane" style="margin-top:18px;display:none;border:1px solid var(--border-soft);padding:12px"></div>';
+
+  // Stash payload globally so checklist button can pull from it without refetch.
+  window._lastReview = data;
+
+  return head + mismatch + table + auditBlock + sourcesBlock + checklistAnchor;
+}
+
+function _renderAuditCol(title, items, color){
+  const list = (items && items.length)
+    ? '<ul style="margin:6px 0 0 14px;padding:0;font-family:var(--f-mono);font-size:10px;color:var(--muted)">' +
+        items.map(t => '<li>' + escHtml(t) + '</li>').join('') + '</ul>'
+    : '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted);margin-top:6px">— none —</div>';
+  return '<div style="border:1px solid var(--border-soft);padding:10px">' +
+    '<div style="font-family:var(--f-mono);font-size:9px;letter-spacing:.14em;color:' + color + '">' + escHtml(title.toUpperCase()) + '</div>' +
+    list + '</div>';
+}
+
+function showReviewChecklist(fightId){
+  const data = window._lastReview;
+  const pane = document.getElementById('reviewChecklistPane');
+  if (!data || !pane) return;
+  const fight = (data.card || []).find(c => c.fight_id === fightId);
+  if (!fight) return;
+  pane.style.display = 'block';
+  const items = (fight.live_checklist || []).map(item =>
+    '<li style="display:flex;gap:10px;align-items:flex-start;margin:4px 0">' +
+      '<input type="checkbox" data-checklist-key="' + escHtml(item.key) + '" style="margin-top:3px"> ' +
+      '<span style="font-family:var(--f-mono);font-size:11px">' + escHtml(item.label) + '</span></li>'
+  ).join('');
+  pane.innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center">' +
+      '<div><div class="section-tag">Live observation checklist</div>' +
+      '<div style="font-size:14px;margin-top:2px"><b>' + escHtml(fight.matchup) + '</b></div></div>' +
+      '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);letter-spacing:.12em">NOT PERSISTED · NOT A PREDICTION INPUT</div>' +
+    '</div>' +
+    '<ul style="list-style:none;padding:0;margin:8px 0 0 0">' + items + '</ul>';
+  pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
+}
+window.showReviewChecklist = showReviewChecklist;
 
 // Fetch and display version from API
 fetch('/api/version').then(r=>r.json()).then(v=>{
