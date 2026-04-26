@@ -585,7 +585,41 @@ async function init(options = {}) {
   await migratePredictionsUniqueness();
   await runProfileSchemaV1();
   await backfillFighterImagesFromJson();
+  await backfillEventTimingFromSeed(options.seedPath);
   return pool;
+}
+
+// Re-applies start_time / end_time / timezone from seed.json on every boot.
+// The seed-on-init path only INSERTs when the table is empty, so production
+// Postgres rows from older deploys keep their NULL timing fields forever
+// without an explicit UPDATE pass. Cheap (only touches rows whose value
+// would change).
+async function backfillEventTimingFromSeed(seedPath) {
+  const sp = seedPath || path.join(__dirname, '..', 'data', 'seed.json');
+  if (!fs.existsSync(sp)) return { applied: 0 };
+  let seed;
+  try { seed = JSON.parse(fs.readFileSync(sp, 'utf8')); }
+  catch (e) { console.warn('[db] seed.json parse failed for timing backfill:', e.message); return { applied: 0 }; }
+  let applied = 0;
+  for (const e of seed.events || []) {
+    if (!e || !Number.isFinite(+e.id)) continue;
+    if (e.start_time == null && e.end_time == null && e.timezone == null) continue;
+    const rc = await run(
+      `UPDATE events SET
+         start_time = COALESCE(?, start_time),
+         end_time   = COALESCE(?, end_time),
+         timezone   = COALESCE(?, timezone)
+       WHERE id = ?
+         AND (COALESCE(start_time,'') IS DISTINCT FROM COALESCE(?,'')
+           OR COALESCE(end_time,'')   IS DISTINCT FROM COALESCE(?,'')
+           OR COALESCE(timezone,'')   IS DISTINCT FROM COALESCE(?,''))`,
+      [e.start_time || null, e.end_time || null, e.timezone || null, e.id,
+       e.start_time || null, e.end_time || null, e.timezone || null]
+    );
+    if (typeof rc === 'number') applied += rc;
+  }
+  if (applied > 0) console.log(`[db] backfilled ${applied} event timing rows`);
+  return { applied };
 }
 
 // Reads data/fighter_images.json (output of scripts/build-fighter-images.js)

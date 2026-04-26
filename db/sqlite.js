@@ -227,6 +227,7 @@ async function init(options = {}) {
     ensurePredictionExplanationColumn();
     ensureEventTimingColumns();
     ensureFighterImageColumns();
+    backfillEventTimingFromSeed(options.seedPath);
     backfillFighterImagesFromJson();
     migratePredictionsUniqueness();
     runProfileSchemaV1();
@@ -247,6 +248,7 @@ async function init(options = {}) {
     seedFromFile(seedPath);
   }
 
+  backfillEventTimingFromSeed(options.seedPath);
   backfillFighterImagesFromJson();
   migratePredictionsUniqueness();
   runProfileSchemaV1();
@@ -391,6 +393,38 @@ function ensureFighterImageColumns() {
   const cols = allRows('PRAGMA table_info(fighters)').map(c => c.name);
   if (!cols.includes('headshot_url')) run('ALTER TABLE fighters ADD COLUMN headshot_url TEXT');
   if (!cols.includes('body_url')) run('ALTER TABLE fighters ADD COLUMN body_url TEXT');
+}
+
+// Re-applies start_time / end_time / timezone from seed.json on every boot.
+// The INSERT OR IGNORE seed path only inserts when a row is missing, so
+// existing rows from prior boots keep NULL timing fields forever without
+// this UPDATE pass. Idempotent — only touches rows whose value would change.
+function backfillEventTimingFromSeed(seedPath) {
+  const sp = seedPath || path.join(__dirname, '..', 'data', 'seed.json');
+  if (!fs.existsSync(sp)) return { applied: 0 };
+  let seed;
+  try { seed = JSON.parse(fs.readFileSync(sp, 'utf8')); }
+  catch (e) { console.warn('[db] seed.json parse failed for timing backfill:', e.message); return { applied: 0 }; }
+  let applied = 0;
+  const stmt = db.prepare(
+    `UPDATE events SET
+       start_time = COALESCE(?, start_time),
+       end_time   = COALESCE(?, end_time),
+       timezone   = COALESCE(?, timezone)
+     WHERE id = ?
+       AND (COALESCE(start_time,'') != COALESCE(?,'')
+         OR COALESCE(end_time,'')   != COALESCE(?,'')
+         OR COALESCE(timezone,'')   != COALESCE(?,''))`
+  );
+  for (const e of seed.events || []) {
+    if (!e || !Number.isFinite(+e.id)) continue;
+    if (e.start_time == null && e.end_time == null && e.timezone == null) continue;
+    stmt.run([e.start_time || null, e.end_time || null, e.timezone || null, e.id,
+              e.start_time || null, e.end_time || null, e.timezone || null]);
+    if (db.getRowsModified && db.getRowsModified() > 0) applied++;
+  }
+  stmt.free();
+  return { applied };
 }
 
 // Reads data/fighter_images.json (output of scripts/build-fighter-images.js)
