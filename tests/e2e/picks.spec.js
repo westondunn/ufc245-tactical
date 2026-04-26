@@ -319,6 +319,8 @@ test.describe('Picks UI — widget rendering', () => {
     await expect(page.locator('.pick-fight')).toHaveCount(0);
     await expect(page.locator('#picksEventStateBadge')).toContainText(/CONCLUDED/i);
     await expect(page.locator('#picksEventHint')).toContainText(/concluded|correct/i);
+    await expect(page.locator('#picksCardSummary .picks-card-summary__count')).toHaveText('0/13');
+    await expect(page.locator('#picksCardSummary')).toContainText('No picks saved for this event.');
   });
 
   test('subnav switches between views', async ({ page }) => {

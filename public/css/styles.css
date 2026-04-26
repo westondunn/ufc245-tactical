@@ -2248,6 +2248,11 @@ footer{
 }
 .picks-card-summary__bar div{height:100%;background:var(--cyan)}
 .picks-card-summary__list{display:flex;flex-direction:column;gap:10px}
+.picks-card-summary--locked .picks-card-summary__list{
+  max-height:520px;
+  overflow:auto;
+  padding-right:4px;
+}
 .picks-card-summary__row{
   border-top:1px solid var(--border-soft);
   padding-top:10px;

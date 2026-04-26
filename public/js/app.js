@@ -4303,11 +4303,12 @@ async function populatePicksEventSelect(){
   }
 }
 
-function updateEventStateBadge(state) {
+function updateEventStateBadge(state, event) {
   const el = document.getElementById('picksEventStateBadge');
   if (!el) return;
   if (!state) { el.style.display = 'none'; return; }
-  const label = state === 'live' ? 'LIVE' : state === 'history' ? 'CONCLUDED' : 'UPCOMING';
+  const pendingResults = state === 'history' && Number.isFinite(+(event && event.open_fights)) && +event.open_fights > 0;
+  const label = state === 'live' ? 'LIVE' : state === 'history' ? (pendingResults ? 'RESULTS PENDING' : 'CONCLUDED') : 'UPCOMING';
   el.textContent = label;
   el.className = `picks-event-state-badge picks-event-state-badge--${state}`;
   el.style.display = '';
@@ -4374,9 +4375,10 @@ async function loadEventView(){
     _picksState.event = event || null;
     _picksState.eventStarted = eventStarted;
 
-    updateEventStateBadge(state);
+    updateEventStateBadge(state, event);
     renderPicksEventInfo(event, card);
-    if (_tcForceSet) _tcForceSet(PICKS_EVENT_TC_BY_STATE[state] || 'PICKS · EVENT');
+    const pendingResults = state === 'history' && Number.isFinite(+(event && event.open_fights)) && +event.open_fights > 0;
+    if (_tcForceSet) _tcForceSet(pendingResults ? 'PICKS · RESULTS PENDING' : (PICKS_EVENT_TC_BY_STATE[state] || 'PICKS · EVENT'));
 
     // Normalize fighter-id field names — /api/events/:id/card uses red_id/blue_id,
     // other endpoints use red_fighter_id/blue_fighter_id. Widget reads *_fighter_id.
@@ -4452,23 +4454,25 @@ function renderEventHistoryBody(normalized, userPicks, event){
   const total = normalized.length;
   const resolved = normalized.filter(f => f.winner_id != null).length;
   const pending = Math.max(total - resolved, 0);
-  const yourPicks = userPicks.filter(p => p.actual_winner_id != null);
-  const correct = yourPicks.filter(p => p.correct === 1 || p.correct === true).length;
-  const accPct = yourPicks.length ? Math.round((correct / yourPicks.length) * 100) : null;
+  const savedPicks = normalized.map(f => userPickById.get(f.id)).filter(Boolean);
+  const scoredPicks = savedPicks.filter(p => p.correct === 1 || p.correct === 0 || p.correct === true || p.correct === false);
+  const correct = scoredPicks.filter(p => p.correct === 1 || p.correct === true).length;
+  const accPct = scoredPicks.length ? Math.round((correct / scoredPicks.length) * 100) : null;
 
   if (hint) {
     if (total === 0) hint.textContent = 'No fights on this card.';
     else if (pending > 0 && resolved === 0) hint.textContent = `${total} fight${total === 1 ? '' : 's'} ended · awaiting official results`;
     else if (pending > 0) hint.textContent = `${resolved} of ${total} results official · ${pending} pending`;
-    else if (yourPicks.length === 0) hint.textContent = `${total} fight${total === 1 ? '' : 's'} concluded · you didn't pick this event`;
-    else hint.textContent = `${correct} of ${yourPicks.length} correct · ${accPct}% accuracy`;
+    else if (savedPicks.length === 0) hint.textContent = `${total} fight${total === 1 ? '' : 's'} concluded · you didn't pick this event`;
+    else if (scoredPicks.length === 0) hint.textContent = `${savedPicks.length} pick${savedPicks.length === 1 ? '' : 's'} saved · awaiting scoring`;
+    else hint.textContent = `${correct} of ${scoredPicks.length} correct · ${accPct}% accuracy`;
   }
 
   const stats = `
     <div class="picks-stats-strip picks-stats-strip--event-history">
       <div class="picks-stat"><div class="picks-stat__label">Your accuracy</div><div class="picks-stat__value">${accPct == null ? '—' : `${accPct}%`}</div></div>
-      <div class="picks-stat"><div class="picks-stat__label">Picks made</div><div class="picks-stat__value">${yourPicks.length}</div></div>
-      <div class="picks-stat"><div class="picks-stat__label">Correct</div><div class="picks-stat__value">${correct}</div></div>
+      <div class="picks-stat"><div class="picks-stat__label">Picks made</div><div class="picks-stat__value">${savedPicks.length}</div></div>
+      <div class="picks-stat"><div class="picks-stat__label">Correct</div><div class="picks-stat__value">${scoredPicks.length ? correct : '—'}</div></div>
       <div class="picks-stat"><div class="picks-stat__label">Results official</div><div class="picks-stat__value">${resolved}/${total}</div></div>
     </div>`;
 
@@ -4496,12 +4500,13 @@ function renderEventHistoryBody(normalized, userPicks, event){
   }).join('');
 
   fightsEl.innerHTML = stats + `<div class="picks-event-history__rows">${rows}</div>`;
-  renderPicksCardSummary([]);  // no open picks to summarize
+  renderPicksCardSummary(normalized, { ended: true, pendingResults: pending > 0 });
 }
 
-function renderPicksCardSummary(openFights){
+function renderPicksCardSummary(openFights, opts = {}){
   const el = document.getElementById('picksCardSummary');
   if (!el) return;
+  const ended = !!opts.ended;
   const fights = Array.isArray(openFights) ? openFights : (_picksState.eventCard || []).filter(f => f.winner_id == null);
   const total = fights.length;
   const saved = fights.filter(f => _picksState.userPicks.has(f.id));
@@ -4511,9 +4516,14 @@ function renderPicksCardSummary(openFights){
     : 'Selected event';
 
   if (!_currentUser) {
+    el.className = 'picks-card-summary';
     el.innerHTML = '<div class="picks-card-summary__empty">Create a profile to build your pick card.</div>';
     return;
   }
+  el.className = `picks-card-summary${ended ? ' picks-card-summary--locked' : ''}`;
+  const emptyCopy = ended
+    ? 'No picks saved for this event.'
+    : 'No saved picks yet. Pick winners on the left and save each fight.';
 
   const rows = saved.map(f => {
     const pick = _picksState.userPicks.get(f.id);
@@ -4538,7 +4548,7 @@ function renderPicksCardSummary(openFights){
   el.innerHTML = `
     <div class="picks-card-summary__head">
       <div>
-        <div class="picks-card-summary__eyebrow">My pick card</div>
+        <div class="picks-card-summary__eyebrow">${ended ? 'My locked card' : 'My pick card'}</div>
         <div class="picks-card-summary__title">${escHtml(eventLabel)}</div>
       </div>
       <div class="picks-card-summary__count">${saved.length}/${total}</div>
@@ -4546,7 +4556,7 @@ function renderPicksCardSummary(openFights){
     <div class="picks-card-summary__bar">
       <div style="width:${total ? Math.round((saved.length / total) * 100) : 0}%"></div>
     </div>
-    ${saved.length ? `<div class="picks-card-summary__list">${rows}</div>` : '<div class="picks-card-summary__empty">No saved picks yet. Pick winners on the left and save each fight.</div>'}
+    ${saved.length ? `<div class="picks-card-summary__list">${rows}</div>` : `<div class="picks-card-summary__empty">${emptyCopy}</div>`}
   `;
 }
 
