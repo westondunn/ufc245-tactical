@@ -650,6 +650,10 @@ app.delete('/api/picks/:pickId', requirePicksFlag, requireUser, apiHandler(async
 // All-time leaderboard
 app.get('/api/leaderboard', requirePicksFlag, apiHandler(async (req, res) => {
   const limit = req.query.limit ? Math.min(parseInt(req.query.limit, 10) || 50, 500) : 50;
+  // Default top-50 is precomputed every 5 min by the cron task — serve from cache.
+  if (limit === 50 && cache.has('leaderboard:all:50')) {
+    return res.json(cache.get('leaderboard:all:50'));
+  }
   res.json({ leaderboard: await db.getLeaderboard({ limit }) });
 }));
 
@@ -835,6 +839,37 @@ async function warmCache() {
 }
 
 // ============================================================
+// CRON TASKS — light periodic jobs run inline (no separate service)
+// ============================================================
+
+const LOGIN_CLEANUP_MS = 24 * 60 * 60 * 1000;   // daily
+const LEADERBOARD_REFRESH_MS = 5 * 60 * 1000;   // every 5 min
+const LOGIN_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000; // keep last 24h of attempts
+
+async function cleanupLoginAttempts() {
+  const cutoff = new Date(Date.now() - LOGIN_ATTEMPT_TTL_MS).toISOString();
+  try {
+    await db.run('DELETE FROM auth_login_attempts WHERE attempted_at < ?', [cutoff]);
+  } catch (e) { console.error('[cron] login cleanup failed:', e.message); }
+}
+
+async function refreshLeaderboardCache() {
+  try {
+    const leaderboard = await db.getLeaderboard({ limit: 50 });
+    cache.set('leaderboard:all:50', { leaderboard });
+  } catch (e) { console.error('[cron] leaderboard refresh failed:', e.message); }
+}
+
+function startCronTasks() {
+  // Run once at boot, then on interval. .unref() so SIGTERM can exit.
+  cleanupLoginAttempts();
+  setInterval(cleanupLoginAttempts, LOGIN_CLEANUP_MS).unref();
+  refreshLeaderboardCache();
+  setInterval(refreshLeaderboardCache, LEADERBOARD_REFRESH_MS).unref();
+  console.log(`[cron] started: login-cleanup=${LOGIN_CLEANUP_MS/3600000}h, leaderboard-refresh=${LEADERBOARD_REFRESH_MS/60000}min`);
+}
+
+// ============================================================
 // START (async for db init)
 // ============================================================
 async function bootstrap() {
@@ -905,6 +940,7 @@ async function bootstrap() {
   await db.init();
   console.log('[db] initialized');
   await warmCache();
+  startCronTasks();
 
   const server = app.listen(PORT, () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
