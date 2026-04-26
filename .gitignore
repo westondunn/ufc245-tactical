@@ -32,3 +32,7 @@ model_store/
 
 # Dev mail stub output (auth/email.js)
 tmp/
+
+# Don't auto-commit pasted screenshots dropped in data/
+data/Screenshot*.png
+data/screenshot*.png
