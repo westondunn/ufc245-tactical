@@ -5833,6 +5833,48 @@ syncUnitsToggleUI();
   }
 }
 
+// Live-event indicator in the top bar. Polls /api/events occasionally so the
+// pill appears the moment a card flips into the live window and disappears
+// when it ends — no full reload required.
+async function updateTopBarLiveIndicator(){
+  const el = document.getElementById('topBarLive');
+  if (!el) return;
+  try {
+    const res = await fetch('/api/events');
+    if (!res.ok) { el.style.display = 'none'; return; }
+    const events = await res.json();
+    const live = (events || []).find(e => e && e.state === 'live');
+    if (!live) { el.style.display = 'none'; return; }
+    // Strip the leading "UFC <num>: " or "UFC Fight Night: " prefix when
+    // present so the chip is short. Falls back to the full name.
+    const short = String(live.name || '').replace(/^UFC\s+(?:\d+|Fight\s+Night)\s*[:\-]\s*/i, '').trim() || live.name;
+    el.innerHTML = `LIVE<span class="top-bar__live__name">· ${escHtml(short)}</span>`;
+    el.href = `#picks/event`;
+    el.dataset.eventId = String(live.id);
+    el.style.display = '';
+  } catch {
+    el.style.display = 'none';
+  }
+}
+{
+  const live = document.getElementById('topBarLive');
+  if (live) {
+    live.addEventListener('click', (e) => {
+      // Make sure the picks tab opens to the live event even if the user
+      // already had a different event stored.
+      const id = parseInt(live.dataset.eventId || '', 10);
+      if (Number.isFinite(id) && _picksState) {
+        _picksState.eventId = id;
+        try { setStoredViewState({ tab:'picks', picksView:'event', picksEventId:id }); } catch {}
+      }
+    });
+  }
+}
+updateTopBarLiveIndicator();
+// Refresh every 2 minutes — cheap (cache hit on the server) and keeps the
+// pill honest as the live window opens / closes.
+setInterval(updateTopBarLiveIndicator, 2 * 60 * 1000);
+
 // Fetch and display version from API
 fetch('/api/version').then(r=>r.json()).then(v=>{
   const tag = `v${v.version}+${v.sha}`;

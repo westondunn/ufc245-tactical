@@ -218,15 +218,33 @@ body::after{
 .top-bar__tc #tc.is-updating{
   color:var(--cyan);
 }
+/* Live-event indicator. Hidden by default — shown only when /api/events
+ * surfaces an event with state === 'live'. Clicks route to the picks Event
+ * view scoped to that event. */
 .top-bar__live{
-  color:var(--cyan);
+  color:#ff4d6d;text-decoration:none;font-family:var(--f-mono);
+  font-size:11px;font-weight:700;letter-spacing:.12em;text-transform:uppercase;
   display:flex;align-items:center;gap:8px;
+  padding:3px 8px;border:1px solid rgba(255,77,109,.45);border-radius:3px;
+  background:rgba(255,77,109,.07);
+  transition:background .15s ease,border-color .15s ease;
+  max-width:260px;
 }
+.top-bar__live:hover{background:rgba(255,77,109,.16);border-color:#ff4d6d}
 .top-bar__live::before{
-  content:'';width:6px;height:6px;border-radius:50%;
-  background:var(--cyan);
-  box-shadow:0 0 8px var(--cyan);
+  content:'';width:6px;height:6px;border-radius:50%;flex-shrink:0;
+  background:#ff4d6d;box-shadow:0 0 6px #ff4d6d;
+  animation:top-bar-live-pulse 1.6s ease-in-out infinite;
 }
+.top-bar__live__name{
+  overflow:hidden;text-overflow:ellipsis;white-space:nowrap;min-width:0;
+  font-weight:400;text-transform:none;letter-spacing:.04em;color:var(--fg);
+}
+@keyframes top-bar-live-pulse{
+  0%,100%{box-shadow:0 0 0 0 rgba(255,77,109,0)}
+  50%{box-shadow:0 0 0 4px rgba(255,77,109,.15)}
+}
+@media(max-width:600px){.top-bar__live{max-width:140px}.top-bar__live__name{display:none}}
 .units-toggle{
   appearance:none;background:transparent;border:1px solid var(--border-soft);
   border-radius:3px;padding:3px 0;
