@@ -142,7 +142,9 @@ async function run() {
 
   // ── Case 5: buildWhere unit tests (adapter helper) ──
   console.log('\nCase 5 — adapter buildWhere helper:');
-  const { buildWhere, ufcAdapter, KEY_MAP_IN, KEY_MAP_OUT } = require('../auth/adapter');
+  const { buildWhere, buildUfcAdapter, KEY_MAP_IN, KEY_MAP_OUT } = require('../auth/adapter');
+  // ufcAdapter is now async (better-auth/adapters is ESM-only — see auth/adapter.js).
+  const ufcAdapter = await buildUfcAdapter();
 
   let r = buildWhere([]);
   assertEq(r.sql, '', 'empty where → no SQL');
@@ -354,6 +356,54 @@ async function run() {
   try { claimDb.claimGuestProfile('nonexistent-id', newAcct.id); }
   catch (e) { notFoundErr = e; }
   assertEq(notFoundErr && notFoundErr.code, 'guest_not_found', 'unknown guest id → guest_not_found');
+
+  // ── Case 7b: claim falls back to `users` table when `users_legacy` is empty ──
+  // Repro for the prod bug — guest-count returns "13 picks" because the id
+  // exists in `users` (not users_legacy), but claim was throwing
+  // guest_not_found because claimGuestProfile only checked users_legacy.
+  console.log('\nCase 7b — claim with id in users (not users_legacy):');
+  const stranded = await claimDb.createUser({ display_name: 'Stranded Guest', avatar_key: 'b9' });
+  // Migrate the stranded id into users_legacy is NOT done — we want it to live only in `users`.
+  // Add picks under the stranded id.
+  const fight2 = claimDb.oneRow('SELECT id, blue_fighter_id, event_id FROM fights WHERE event_id = ? AND id != ? LIMIT 1', [ufc245.id, fight.id]);
+  claimDb.run('UPDATE fights SET winner_id = NULL WHERE id = ?', [fight2.id]);
+  claimDb.run(
+    `INSERT INTO user_picks (user_id, event_id, fight_id, picked_fighter_id, confidence, submitted_at, updated_at)
+     VALUES (?,?,?,?,?,?,?)`,
+    [stranded.id, fight2.event_id, fight2.id, fight2.blue_fighter_id, 60, '2026-01-03', '2026-01-03']
+  );
+  const claimer = await claimDb.createUser({ display_name: null, avatar_key: null });
+  claimDb.run('UPDATE users SET is_guest = 0 WHERE id = ?', [claimer.id]);
+
+  const result2 = claimDb.claimGuestProfile(stranded.id, claimer.id);
+  assertEq(result2.claimed_picks, 1, 'fallback claim: 1 pick migrated');
+  assertEq(result2.claim_source, 'users', 'fallback claim: source=users');
+  assertEq(result2.display_name, 'Stranded Guest', 'fallback claim: display_name from users');
+
+  const claimerAfter = claimDb.oneRow('SELECT display_name FROM users WHERE id = ?', [claimer.id]);
+  assertEq(claimerAfter.display_name, 'Stranded Guest', 'fallback claim: display_name backfilled');
+
+  // ── Case 7c: orphan-picks fallback (no row anywhere, picks exist) ──
+  console.log('\nCase 7c — claim with no row but orphan picks:');
+  const fight3 = claimDb.oneRow('SELECT id, red_fighter_id, event_id FROM fights WHERE event_id = ? AND id NOT IN (?, ?) LIMIT 1', [ufc245.id, fight.id, fight2.id]);
+  claimDb.run('UPDATE fights SET winner_id = NULL WHERE id = ?', [fight3.id]);
+  claimDb.run(
+    `INSERT INTO user_picks (user_id, event_id, fight_id, picked_fighter_id, confidence, submitted_at, updated_at)
+     VALUES (?,?,?,?,?,?,?)`,
+    ['orphan-no-row', fight3.event_id, fight3.id, fight3.red_fighter_id, 50, '2026-01-04', '2026-01-04']
+  );
+  const claimer2 = await claimDb.createUser({ display_name: null, avatar_key: null });
+  claimDb.run('UPDATE users SET is_guest = 0 WHERE id = ?', [claimer2.id]);
+
+  const result3 = claimDb.claimGuestProfile('orphan-no-row', claimer2.id);
+  assertEq(result3.claimed_picks, 1, 'orphan claim: 1 pick migrated');
+  assertEq(result3.claim_source, 'orphan-picks', 'orphan claim: source=orphan-picks');
+
+  // Truly nonexistent id (no row, no picks) still errors
+  let stillNotFoundErr = null;
+  try { claimDb.claimGuestProfile('truly-nonexistent', claimer2.id); }
+  catch (e) { stillNotFoundErr = e; }
+  assertEq(stillNotFoundErr && stillNotFoundErr.code, 'guest_not_found', 'no row + no picks → guest_not_found');
 
   // ── Cleanup ──
   fs.rmSync(tmpDir, { recursive: true, force: true });

@@ -819,22 +819,40 @@ function deleteUser(id) {
  * with err.code = 'guest_not_found' | 'already_claimed'.
  */
 function claimGuestProfile(guestId, newUserId) {
-  const legacy = oneRow('SELECT * FROM users_legacy WHERE id = ?', [guestId]);
-  if (!legacy) {
+  // See db/postgres.js for the same logic with comments. Some legacy guests
+  // are in users_legacy; others got left in the new users table; some have
+  // no row at all but picks still exist under their id. Mirror what
+  // /api/picks/guest-count already does so claim is symmetric.
+  let source = 'users_legacy';
+  let row = oneRow('SELECT id, display_name, avatar_key, claimed_by FROM users_legacy WHERE id = ?', [guestId]);
+  if (!row) {
+    row = oneRow('SELECT id, display_name, avatar_key FROM users WHERE id = ?', [guestId]);
+    if (row) { row.claimed_by = null; source = 'users'; }
+  }
+  if (!row) {
+    const cnt = oneRow('SELECT COUNT(*) AS c FROM user_picks WHERE user_id = ?', [guestId]);
+    if (cnt && cnt.c > 0) {
+      row = { id: guestId, display_name: null, avatar_key: null, claimed_by: null };
+      source = 'orphan-picks';
+    }
+  }
+  if (!row) {
     const err = new Error('guest_not_found'); err.code = 'guest_not_found'; err.status = 404; throw err;
   }
-  if (legacy.claimed_by) {
+  if (source === 'users_legacy' && row.claimed_by) {
     const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
   }
   run('BEGIN');
   try {
     const now = new Date().toISOString();
-    run('UPDATE users_legacy SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL',
-      [newUserId, now, guestId]);
-    if (db.getRowsModified() === 0) {
-      // Race: another claim won between the check and the update.
-      run('ROLLBACK');
-      const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
+    if (source === 'users_legacy') {
+      run('UPDATE users_legacy SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL',
+        [newUserId, now, guestId]);
+      if (db.getRowsModified() === 0) {
+        // Race: another claim won between the check and the update.
+        run('ROLLBACK');
+        const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
+      }
     }
     run('UPDATE user_picks SET user_id = ? WHERE user_id = ?', [newUserId, guestId]);
     const claimedPicks = db.getRowsModified();
@@ -843,8 +861,8 @@ function claimGuestProfile(guestId, newUserId) {
     if (newUser) {
       const patches = [];
       const params = [];
-      if (!newUser.display_name && legacy.display_name) { patches.push('display_name = ?'); params.push(legacy.display_name); }
-      if (!newUser.avatar_key && legacy.avatar_key)     { patches.push('avatar_key = ?');   params.push(legacy.avatar_key); }
+      if (!newUser.display_name && row.display_name) { patches.push('display_name = ?'); params.push(row.display_name); }
+      if (!newUser.avatar_key && row.avatar_key)     { patches.push('avatar_key = ?');   params.push(row.avatar_key); }
       if (patches.length) {
         patches.push('updated_at = ?'); params.push(now);
         params.push(newUserId);
@@ -854,8 +872,9 @@ function claimGuestProfile(guestId, newUserId) {
     run('COMMIT');
     return {
       claimed_picks: claimedPicks,
-      display_name: legacy.display_name,
-      avatar_key: legacy.avatar_key,
+      display_name: row.display_name,
+      avatar_key: row.avatar_key,
+      claim_source: source,
     };
   } catch (err) {
     try { run('ROLLBACK'); } catch (_) { /* ignore */ }

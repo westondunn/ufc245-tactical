@@ -1017,32 +1017,60 @@ async function claimGuestProfile(guestId, newUserId) {
   const now = new Date().toISOString();
   try {
     await client.query('BEGIN');
-    const legacyRes = await q('SELECT * FROM users_legacy WHERE id = ?', [guestId]);
-    const legacy = legacyRes.rows[0];
-    if (!legacy) {
+
+    // Look up the source row. Some legacy guests sit in `users_legacy` (the
+    // pre-better-auth table); others were left in the new `users` table when
+    // the migration didn't relocate them. The /api/picks/guest-count endpoint
+    // already checks both — claim has to be symmetric or you get the
+    // "13 picks shown, claim returns guest_not_found" inconsistency.
+    let source = 'users_legacy';
+    let row = (await q('SELECT id, display_name, avatar_key, claimed_by FROM users_legacy WHERE id = ?', [guestId])).rows[0];
+    if (!row) {
+      row = (await q('SELECT id, display_name, avatar_key, NULL::text AS claimed_by FROM users WHERE id = ?', [guestId])).rows[0];
+      if (row) source = 'users';
+    }
+    // Picks-only fallback: if the id is in neither table but picks exist
+    // under it, allow the migration anyway. This handles users whose row
+    // was deleted but whose orphaned picks remain referenced by user_id.
+    if (!row) {
+      const cnt = (await q('SELECT COUNT(*)::int AS c FROM user_picks WHERE user_id = ?', [guestId])).rows[0];
+      if (cnt && cnt.c > 0) {
+        row = { id: guestId, display_name: null, avatar_key: null, claimed_by: null };
+        source = 'orphan-picks';
+      }
+    }
+    if (!row) {
       await client.query('ROLLBACK');
       const err = new Error('guest_not_found'); err.code = 'guest_not_found'; err.status = 404; throw err;
     }
-    if (legacy.claimed_by) {
+
+    // claimed_by is only meaningful for users_legacy (other sources don't
+    // track it). Race-safe re-check happens in the UPDATE below.
+    if (source === 'users_legacy' && row.claimed_by) {
       await client.query('ROLLBACK');
       const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
     }
-    const claimRes = await q(
-      'UPDATE users_legacy SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL',
-      [newUserId, now, guestId]
-    );
-    if (claimRes.rowCount === 0) {
-      await client.query('ROLLBACK');
-      const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
+
+    if (source === 'users_legacy') {
+      const claimRes = await q(
+        'UPDATE users_legacy SET claimed_by = ?, claimed_at = ? WHERE id = ? AND claimed_by IS NULL',
+        [newUserId, now, guestId]
+      );
+      if (claimRes.rowCount === 0) {
+        await client.query('ROLLBACK');
+        const err = new Error('already_claimed'); err.code = 'already_claimed'; err.status = 409; throw err;
+      }
     }
+
     const picksRes = await q('UPDATE user_picks SET user_id = ? WHERE user_id = ?', [newUserId, guestId]);
     const claimedPicks = picksRes.rowCount;
+
     const newUserRes = await q('SELECT display_name, avatar_key FROM users WHERE id = ?', [newUserId]);
     const newUser = newUserRes.rows[0];
     if (newUser) {
       const patches = []; const params = [];
-      if (!newUser.display_name && legacy.display_name) { patches.push('display_name = ?'); params.push(legacy.display_name); }
-      if (!newUser.avatar_key && legacy.avatar_key)     { patches.push('avatar_key = ?');   params.push(legacy.avatar_key); }
+      if (!newUser.display_name && row.display_name) { patches.push('display_name = ?'); params.push(row.display_name); }
+      if (!newUser.avatar_key && row.avatar_key)     { patches.push('avatar_key = ?');   params.push(row.avatar_key); }
       if (patches.length) {
         patches.push('updated_at = ?'); params.push(now);
         params.push(newUserId);
@@ -1052,8 +1080,9 @@ async function claimGuestProfile(guestId, newUserId) {
     await client.query('COMMIT');
     return {
       claimed_picks: claimedPicks,
-      display_name: legacy.display_name,
-      avatar_key: legacy.avatar_key,
+      display_name: row.display_name,
+      avatar_key: row.avatar_key,
+      claim_source: source,
     };
   } catch (err) {
     try { await client.query('ROLLBACK'); } catch (_) { /* swallow */ }
