@@ -138,7 +138,7 @@
     <div class="picks-header__chip" id="picksProfileChipSlot"></div>
   </div>
   <div class="picks-subnav" id="picksSubnav" style="display:none">
-    <button class="picks-subnav__btn active" data-picks-view="upcoming">Upcoming</button>
+    <button class="picks-subnav__btn active" data-picks-view="event">Event</button>
     <button class="picks-subnav__btn" data-picks-view="history">My history</button>
     <button class="picks-subnav__btn" data-picks-view="trends">Trends</button>
     <button class="picks-subnav__btn" data-picks-view="leaderboard">Leaderboard</button>
@@ -149,12 +149,13 @@
       <div class="picks-empty__sub">Create a local profile to start making picks. No email, no password — just a name and an avatar.</div>
       <button class="rec-btn" id="picksCreateProfileBtn">Create profile</button>
     </div>
-    <div class="picks-view" id="picksViewUpcoming" style="display:none">
+    <div class="picks-view" id="picksViewEvent" style="display:none">
       <div class="picks-upcoming-layout">
         <div class="picks-upcoming-main">
           <div class="picks-event-picker">
             <span class="picks-event-picker__label">Event ▸</span>
             <select class="event-dropdown" id="picksEventSelect"></select>
+            <span class="picks-event-state-badge" id="picksEventStateBadge" style="display:none"></span>
             <span class="picks-event-picker__hint" id="picksEventHint"></span>
           </div>
           <div class="picks-fights" id="picksFights">

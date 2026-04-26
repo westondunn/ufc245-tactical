@@ -3255,7 +3255,7 @@ function activatePrimaryTab(target, opts = {}){
   // Entering Picks → re-apply the current subview TC + maybe auto-open create modal
   if (target === 'picks') {
     if (_tcForceSet && typeof PICKS_TC_LABEL !== 'undefined') {
-      _tcForceSet(PICKS_TC_LABEL[_picksState ? _picksState.view : 'upcoming'] || 'YOUR PICKS');
+      _tcForceSet(PICKS_TC_LABEL[_picksState ? _picksState.view : 'event'] || 'YOUR PICKS');
     }
     if (_picksFeatureEnabled && !_currentUser && !_picksAutoPrompted) {
       _picksAutoPrompted = true;
@@ -3689,7 +3689,9 @@ function parseViewHash(){
   const tab = parts[0];
   if (!['dashboard','events','fighters','stats','picks'].includes(tab)) return {};
   const out = { tab };
-  if (tab === 'picks' && ['upcoming','history','trends','leaderboard'].includes(parts[1])) out.picksView = parts[1];
+  if (tab === 'picks' && ['event','history','trends','leaderboard'].includes(parts[1])) out.picksView = parts[1];
+  // Backwards compat: legacy /#picks/upcoming bookmarks now resolve to /#picks/event.
+  if (tab === 'picks' && parts[1] === 'upcoming') out.picksView = 'event';
   return out;
 }
 
@@ -3703,7 +3705,7 @@ function getCurrentViewState(){
   const tab = activeTab && activeTab.dataset.tab || 'dashboard';
   const state = { tab };
   if (tab === 'picks') {
-    state.picksView = _picksState ? _picksState.view : 'upcoming';
+    state.picksView = _picksState ? _picksState.view : 'event';
     if (_picksState && _picksState.eventId) state.picksEventId = _picksState.eventId;
   }
   return state;
@@ -3778,7 +3780,7 @@ function renderProfileChip(){
   if (empty) empty.style.display = 'none';
   if (subnav) subnav.style.display = '';
   // Load the active subnav view for the current user (fire-and-forget)
-  try { activatePicksView(_picksState.view || 'upcoming'); } catch { /* view fns defined below */ }
+  try { activatePicksView(_picksState.view || 'event'); } catch { /* view fns defined below */ }
 }
 
 function openModal(id){
@@ -4074,17 +4076,19 @@ async function initPicksFeature(){
    PICKS VIEWS — Upcoming (pick widgets), History, Leaderboard
 ----------------------------------------------------------- */
 let _picksState = {
-  view: 'upcoming',          // 'upcoming' | 'history' | 'trends' | 'leaderboard'
+  view: 'event',             // 'event' | 'history' | 'trends' | 'leaderboard'
   eventId: null,
+  event: null,               // full event row including .state ('upcoming' | 'live' | 'history')
   eventCard: [],
   userPicks: new Map(),      // fight_id → pick row
   modelByFightId: new Map(), // fight_id → { picked_fighter_id, confidence, version }
   latestModelVersion: null,
+  eventsCache: [],           // last fetched /api/events (used to bucket the dropdown)
   lbScope: 'event'
 };
 {
   const initialPicksState = { ...getStoredViewState(), ...parseViewHash() };
-  if (['upcoming','history','trends','leaderboard'].includes(initialPicksState.picksView)) {
+  if (['event','history','trends','leaderboard'].includes(initialPicksState.picksView)) {
     _picksState.view = initialPicksState.picksView;
   }
   if (Number.isFinite(parseInt(initialPicksState.picksEventId, 10))) {
@@ -4106,7 +4110,11 @@ function setupPicksSubnav(){
   });
 }
 
-const PICKS_TC_LABEL = { upcoming:'PICKS · UPCOMING', history:'PICKS · HISTORY', trends:'PICKS · TRENDS', leaderboard:'PICKS · LEADERBOARD' };
+// TC label for the "Event" subview is dynamic — the body morphs based on the
+// selected event's lifecycle state (upcoming / live / history), and the TC
+// reflects that state.
+const PICKS_TC_LABEL = { event:'PICKS · EVENT', history:'PICKS · HISTORY', trends:'PICKS · TRENDS', leaderboard:'PICKS · LEADERBOARD' };
+const PICKS_EVENT_TC_BY_STATE = { upcoming:'PICKS · UPCOMING', live:'PICKS · LIVE', history:'PICKS · EVENT HISTORY' };
 
 function activatePicksView(view){
   _picksState.view = view;
@@ -4115,14 +4123,14 @@ function activatePicksView(view){
   document.querySelectorAll('.picks-subnav__btn').forEach(b => {
     b.classList.toggle('active', b.dataset.picksView === view);
   });
-  document.getElementById('picksViewUpcoming').style.display    = view === 'upcoming'    ? '' : 'none';
+  document.getElementById('picksViewEvent').style.display       = view === 'event'       ? '' : 'none';
   document.getElementById('picksViewHistory').style.display     = view === 'history'     ? '' : 'none';
   document.getElementById('picksViewTrends').style.display      = view === 'trends'      ? '' : 'none';
   document.getElementById('picksViewLeaderboard').style.display = view === 'leaderboard' ? '' : 'none';
   // Update TC to reflect the subview
   if (_tcForceSet) _tcForceSet(PICKS_TC_LABEL[view] || 'YOUR PICKS');
   if (!_currentUser) return;
-  if (view === 'upcoming')    loadUpcomingView();
+  if (view === 'event')       loadEventView();
   if (view === 'history')     loadHistoryView();
   if (view === 'trends')      loadTrendsView();
   if (view === 'leaderboard') loadLeaderboardView();
@@ -4132,7 +4140,7 @@ function renderProfileChipAndViews(){
   renderProfileChip();
   if (_currentUser) {
     // Hide empty, reveal active view
-    activatePicksView(_picksState.view || 'upcoming');
+    activatePicksView(_picksState.view || 'event');
   }
 }
 
@@ -4142,19 +4150,36 @@ async function populatePicksEventSelect(){
   try {
     const res = await fetch('/api/events');
     const events = await res.json();
-    const sorted = sortEventsForDefaultView(events);
-    sel.innerHTML = sorted
-      .map(e => `<option value="${e.id}">${escHtml(formatEventOptionLabel(e))}</option>`)
-      .join('');
+    _picksState.eventsCache = events;
 
-    const today = todayISODate();
-    const defaultEvent = getNextUpcomingEvent(sorted, today);
+    // Bucket by lifecycle state. Live floats to top so the user lands there
+    // by default during a live event; Upcoming next, History last (newest
+    // first within each bucket — matches sortEventsForDefaultView semantics).
+    const buckets = { live: [], upcoming: [], history: [] };
+    for (const e of events) {
+      const bucket = buckets[e.state] || buckets.history;
+      bucket.push(e);
+    }
+    buckets.upcoming.sort((a, b) => (a.date || '').localeCompare(b.date || ''));   // soonest first
+    buckets.history.sort((a, b) => (b.date || '').localeCompare(a.date || ''));    // most recent first
 
-    const storedEvent = sorted.find(e => e.id === _picksState.eventId);
-    const storedEventIsUsable = storedEvent && (
-      _picksState.view !== 'upcoming' || !storedEvent.date || storedEvent.date >= today
-    );
-    const selectedEvent = storedEventIsUsable ? storedEvent : defaultEvent;
+    const optHtml = e => `<option value="${e.id}">${escHtml(formatEventOptionLabel(e))}</option>`;
+    const groupHtml = (label, list) => list.length
+      ? `<optgroup label="${label}">${list.map(optHtml).join('')}</optgroup>`
+      : '';
+    sel.innerHTML =
+      groupHtml('Live now', buckets.live) +
+      groupHtml('Upcoming', buckets.upcoming) +
+      groupHtml('History', buckets.history);
+
+    // Default selection: live > upcoming (next) > most recent history
+    const defaultEvent =
+      buckets.live[0] ||
+      buckets.upcoming[0] ||
+      buckets.history[0];
+
+    const storedEvent = events.find(e => e.id === _picksState.eventId);
+    const selectedEvent = storedEvent || defaultEvent;
     if (!selectedEvent) return;
 
     sel.value = String(selectedEvent.id);
@@ -4163,14 +4188,24 @@ async function populatePicksEventSelect(){
     sel.addEventListener('change', () => {
       _picksState.eventId = parseInt(sel.value, 10);
       setStoredViewState({ tab:'picks', picksView:_picksState.view, picksEventId:_picksState.eventId });
-      loadUpcomingView();
+      loadEventView();
     });
   } catch (e) {
     sel.innerHTML = '<option>Failed to load events</option>';
   }
 }
 
-async function loadUpcomingView(){
+function updateEventStateBadge(state) {
+  const el = document.getElementById('picksEventStateBadge');
+  if (!el) return;
+  if (!state) { el.style.display = 'none'; return; }
+  const label = state === 'live' ? 'LIVE' : state === 'history' ? 'CONCLUDED' : 'UPCOMING';
+  el.textContent = label;
+  el.className = `picks-event-state-badge picks-event-state-badge--${state}`;
+  el.style.display = '';
+}
+
+async function loadEventView(){
   if (!_currentUser) return;
   await populatePicksEventSelect();
   const eventId = _picksState.eventId;
@@ -4188,9 +4223,15 @@ async function loadUpcomingView(){
     const { event, card } = await cardRes.json();
     const { picks } = await picksRes.json();
     const { fights: compFights } = await compRes.json();
-    const eventStarted = hasPicksEventStarted(event && event.date);
+    // Server-side state wins; fall back to legacy date check if the API ever
+    // ships without it.
+    const state = (event && event.state) || (hasPicksEventStarted(event && event.date) ? 'live' : 'upcoming');
+    const eventStarted = state !== 'upcoming';
     _picksState.event = event || null;
     _picksState.eventStarted = eventStarted;
+
+    updateEventStateBadge(state);
+    if (_tcForceSet) _tcForceSet(PICKS_EVENT_TC_BY_STATE[state] || 'PICKS · EVENT');
 
     // Normalize fighter-id field names — /api/events/:id/card uses red_id/blue_id,
     // other endpoints use red_fighter_id/blue_fighter_id. Widget reads *_fighter_id.
@@ -4206,44 +4247,100 @@ async function loadUpcomingView(){
     _picksState.modelByFightId = new Map((compFights || []).map(c => [c.fight_id, c.model]));
     _picksState.latestModelVersion = getLatestModelVersion(_picksState.modelByFightId);
 
-    // Upcoming view shows only fights without a winner. Concluded fights
-    // appear in "My history" with their points + correctness.
-    const openFights = normalized.filter(f => f.winner_id == null);
-    const hint = document.getElementById('picksEventHint');
-    if (hint) {
-      const total = normalized.length;
-      const open = openFights.length;
-      if (total === 0) {
-        hint.textContent = 'No fights on this card.';
-      } else if (open === 0) {
-        hint.textContent = `All ${total} fights concluded · see History`;
-      } else if (eventStarted) {
-        hint.textContent = `${open} fight${open === 1 ? '' : 's'} locked · event started`;
-      } else if (open === total) {
-        hint.textContent = `${open} upcoming fight${open === 1 ? '' : 's'}`;
-      } else {
-        hint.textContent = `${open} upcoming · ${total - open} concluded (see History)`;
-      }
-    }
-
-    if (openFights.length === 0) {
-      fightsEl.innerHTML = `
-        <div class="picks-placeholder">
-          No open fights on this card — every fight is concluded.<br>
-          Check <strong>My History</strong> for any picks you already made,
-          or pick a different event from the dropdown.
-        </div>`;
+    if (state === 'history') {
+      renderEventHistoryBody(normalized, picks || [], event);
     } else {
-      fightsEl.innerHTML = openFights.map(f => renderPickWidget(f)).join('');
-      attachPickHandlers(fightsEl);
+      renderEventLiveOrUpcomingBody(normalized, state);
     }
-    renderPicksCardSummary(openFights);
   } catch (e) {
     fightsEl.innerHTML = '<div class="picks-placeholder">Failed to load this event\'s card.</div>';
     renderPicksCardSummary([]);
+    updateEventStateBadge(null);
   } finally {
     if (loadingEl) loadingEl.style.display = 'none';
   }
+}
+
+// Backwards compat — older callers (fight-result handlers, pick mutators)
+// still call loadUpcomingView() to refresh the body after writes.
+const loadUpcomingView = loadEventView;
+
+function renderEventLiveOrUpcomingBody(normalized, state){
+  const fightsEl = document.getElementById('picksFights');
+  // Upcoming + Live both render pick widgets; lock state inside the widget
+  // (already handled by the existing lock logic via event_started + per-fight
+  // winner_id) gives Live the locked styling automatically.
+  const openFights = normalized.filter(f => f.winner_id == null);
+  const hint = document.getElementById('picksEventHint');
+  if (hint) {
+    const total = normalized.length;
+    const open = openFights.length;
+    if (total === 0) {
+      hint.textContent = 'No fights on this card.';
+    } else if (state === 'live') {
+      hint.textContent = `${open} of ${total} fight${total === 1 ? '' : 's'} live · picks locked`;
+    } else if (open === 0) {
+      hint.textContent = `All ${total} fights concluded · see History`;
+    } else {
+      hint.textContent = `${open} upcoming fight${open === 1 ? '' : 's'}`;
+    }
+  }
+
+  if (openFights.length === 0) {
+    fightsEl.innerHTML = `
+      <div class="picks-placeholder">
+        No open fights on this card — every fight is concluded.<br>
+        Check <strong>My History</strong> for any picks you already made,
+        or pick a different event from the dropdown.
+      </div>`;
+  } else {
+    fightsEl.innerHTML = openFights.map(f => renderPickWidget(f)).join('');
+    attachPickHandlers(fightsEl);
+  }
+  renderPicksCardSummary(openFights);
+}
+
+function renderEventHistoryBody(normalized, userPicks, event){
+  const fightsEl = document.getElementById('picksFights');
+  const hint = document.getElementById('picksEventHint');
+  const userPickById = new Map(userPicks.map(p => [p.fight_id, p]));
+  const total = normalized.length;
+  const yourPicks = userPicks.filter(p => p.actual_winner_id != null);
+  const correct = yourPicks.filter(p => p.correct === 1 || p.correct === true).length;
+  const accPct = yourPicks.length ? Math.round((correct / yourPicks.length) * 100) : null;
+
+  if (hint) {
+    if (total === 0) hint.textContent = 'No fights on this card.';
+    else if (yourPicks.length === 0) hint.textContent = `${total} fight${total === 1 ? '' : 's'} concluded · you didn't pick this event`;
+    else hint.textContent = `${correct} of ${yourPicks.length} correct · ${accPct}% accuracy`;
+  }
+
+  const stats = `
+    <div class="picks-stats-strip picks-stats-strip--event-history">
+      <div class="picks-stat"><div class="picks-stat__label">Your accuracy</div><div class="picks-stat__value">${accPct == null ? '—' : `${accPct}%`}</div></div>
+      <div class="picks-stat"><div class="picks-stat__label">Picks made</div><div class="picks-stat__value">${yourPicks.length}</div></div>
+      <div class="picks-stat"><div class="picks-stat__label">Correct</div><div class="picks-stat__value">${correct}</div></div>
+      <div class="picks-stat"><div class="picks-stat__label">Card size</div><div class="picks-stat__value">${total}</div></div>
+    </div>`;
+
+  const rows = normalized.map(f => {
+    const pick = userPickById.get(f.id);
+    const winnerName = f.winner_id === f.red_fighter_id ? f.red_name : (f.winner_id === f.blue_fighter_id ? f.blue_name : '—');
+    const youPicked = pick
+      ? (pick.picked_fighter_id === f.red_fighter_id ? f.red_name : f.blue_name)
+      : null;
+    const correctCls = pick && (pick.correct === 1 || pick.correct === true) ? 'picks-event-history__row--correct' :
+      pick && (pick.correct === 0 || pick.correct === false) ? 'picks-event-history__row--wrong' : '';
+    return `
+      <div class="picks-event-history__row ${correctCls}">
+        <div class="picks-event-history__matchup">${escHtml(f.red_name || '—')} <span class="picks-event-history__vs">vs</span> ${escHtml(f.blue_name || '—')}</div>
+        <div class="picks-event-history__winner">Winner: <strong>${escHtml(winnerName)}</strong>${f.method ? ` <span class="picks-event-history__method">· ${escHtml(f.method)}${f.round ? ` R${f.round}` : ''}</span>` : ''}</div>
+        <div class="picks-event-history__yours">Your pick: ${youPicked ? `<strong>${escHtml(youPicked)}</strong>` : '<em>no pick</em>'}</div>
+      </div>`;
+  }).join('');
+
+  fightsEl.innerHTML = stats + `<div class="picks-event-history__rows">${rows}</div>`;
+  renderPicksCardSummary([]);  // no open picks to summarize
 }
 
 function renderPicksCardSummary(openFights){
