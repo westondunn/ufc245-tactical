@@ -6,6 +6,7 @@
 const { Pool } = require('pg');
 const fs = require('fs');
 const path = require('path');
+const { getEventState } = require('../lib/eventState');
 
 let pool = null;
 let seeded = false;
@@ -86,6 +87,9 @@ async function ensureSchema() {
       venue TEXT,
       city TEXT,
       country TEXT,
+      start_time TEXT,
+      end_time TEXT,
+      timezone TEXT,
       ufcstats_hash TEXT
     )
   `);
@@ -235,6 +239,9 @@ async function ensureSchema() {
   await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS explanation_json TEXT');
   await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS predicted_method TEXT');
   await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS predicted_round INTEGER');
+  await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS start_time TEXT');
+  await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS end_time TEXT');
+  await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS timezone TEXT');
   await run('CREATE INDEX IF NOT EXISTS idx_fighters_name ON fighters(name)');
   await run('CREATE INDEX IF NOT EXISTS idx_events_number ON events(number)');
   await run('CREATE INDEX IF NOT EXISTS idx_fights_event ON fights(event_id)');
@@ -475,10 +482,10 @@ async function seedFromFile(seedPath) {
 
     for (const e of seed.events || []) {
       await client.query(
-        `INSERT INTO events (id,number,name,date,venue,city,country,ufcstats_hash)
-         VALUES ($1,$2,$3,$4,$5,$6,$7,$8)
+        `INSERT INTO events (id,number,name,date,venue,city,country,start_time,end_time,timezone,ufcstats_hash)
+         VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
          ON CONFLICT (id) DO NOTHING`,
-        [e.id, e.number || null, e.name, e.date || null, e.venue || e.location || null, e.city || null, e.country || null, e.ufcstats_hash || null]
+        [e.id, e.number || null, e.name, e.date || null, e.venue || e.location || null, e.city || null, e.country || null, e.start_time || null, e.end_time || null, e.timezone || null, e.ufcstats_hash || null]
       );
     }
 
@@ -696,8 +703,20 @@ async function getEventCard(eventId) {
   );
 }
 
-async function getEvent(eventId) { return oneRow('SELECT * FROM events WHERE id = ?', [eventId]); }
-async function getEventByNumber(num) { return oneRow('SELECT * FROM events WHERE number = ?', [num]); }
+function attachState(row, now) {
+  if (!row) return row;
+  row.state = getEventState(row, now);
+  return row;
+}
+
+async function getEvent(eventId) {
+  const row = await oneRow('SELECT * FROM events WHERE id = ?', [eventId]);
+  return attachState(row, Date.now());
+}
+async function getEventByNumber(num) {
+  const row = await oneRow('SELECT * FROM events WHERE number = ?', [num]);
+  return attachState(row, Date.now());
+}
 
 async function getFight(fightId) {
   const fight = await oneRow(
@@ -721,7 +740,11 @@ async function getFight(fightId) {
   return fight;
 }
 
-async function getAllEvents() { return allRows('SELECT * FROM events ORDER BY date DESC'); }
+async function getAllEvents() {
+  const rows = await allRows('SELECT * FROM events ORDER BY date DESC');
+  const now = Date.now();
+  return rows.map(r => attachState(r, now));
+}
 
 function nullableText(value) {
   if (value == null) return null;
@@ -1002,8 +1025,8 @@ async function upsertFighter(f) {
 
 async function upsertEvent(e) {
   await run(
-    `INSERT INTO events (id,number,name,date,venue,city,country,ufcstats_hash)
-     VALUES (?,?,?,?,?,?,?,?)
+    `INSERT INTO events (id,number,name,date,venue,city,country,start_time,end_time,timezone,ufcstats_hash)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT (id) DO UPDATE SET
        number = EXCLUDED.number,
        name = EXCLUDED.name,
@@ -1011,8 +1034,11 @@ async function upsertEvent(e) {
        venue = EXCLUDED.venue,
        city = EXCLUDED.city,
        country = EXCLUDED.country,
+       start_time = COALESCE(EXCLUDED.start_time, events.start_time),
+       end_time = COALESCE(EXCLUDED.end_time, events.end_time),
+       timezone = COALESCE(EXCLUDED.timezone, events.timezone),
        ufcstats_hash = EXCLUDED.ufcstats_hash`,
-    [e.id, e.number || null, e.name, e.date || null, e.venue || null, e.city || null, e.country || null, e.ufcstats_hash || null]
+    [e.id, e.number || null, e.name, e.date || null, e.venue || null, e.city || null, e.country || null, e.start_time || null, e.end_time || null, e.timezone || null, e.ufcstats_hash || null]
   );
 }
 

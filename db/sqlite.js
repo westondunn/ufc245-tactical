@@ -10,6 +10,7 @@
 const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
+const { getEventState } = require('../lib/eventState');
 
 let db = null;
 let dbPath = null;
@@ -37,6 +38,13 @@ const SCHEMA = `
     venue TEXT,
     city TEXT,
     country TEXT,
+    -- Lifecycle timing. start_time/end_time are UTC ISO-8601 strings; timezone
+    -- is an IANA name for the venue (e.g. "America/Las_Vegas") used for
+    -- display. NULL means we don't have time-of-day precision yet — falls
+    -- back to date-only state detection.
+    start_time TEXT,
+    end_time TEXT,
+    timezone TEXT,
     ufcstats_hash TEXT
   );
   CREATE TABLE IF NOT EXISTS fights (
@@ -212,6 +220,7 @@ async function init(options = {}) {
     db = new SQL.Database(buf);
     db.run(SCHEMA); // safe — IF NOT EXISTS
     ensurePredictionExplanationColumn();
+    ensureEventTimingColumns();
     migratePredictionsUniqueness();
     runProfileSchemaV1();
     const c = oneRow('SELECT COUNT(*) as c FROM fighters');
@@ -223,6 +232,7 @@ async function init(options = {}) {
   db = new SQL.Database();
   db.run(SCHEMA);
   ensurePredictionExplanationColumn();
+  ensureEventTimingColumns();
 
   const seedPath = options.seedPath || path.join(__dirname, '..', 'data', 'seed.json');
   if (fs.existsSync(seedPath)) {
@@ -248,10 +258,10 @@ function seedFromFile(seedPath) {
   insFighter.free();
 
   const insEvent = db.prepare(
-    'INSERT OR IGNORE INTO events (id,number,name,date,venue,city,country,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?)'
+    'INSERT OR IGNORE INTO events (id,number,name,date,venue,city,country,start_time,end_time,timezone,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)'
   );
   for (const e of seed.events || []) {
-    insEvent.run([e.id,e.number,e.name,e.date,e.venue||e.location||null,e.city||null,e.country||null,e.ufcstats_hash||null]);
+    insEvent.run([e.id,e.number,e.name,e.date,e.venue||e.location||null,e.city||null,e.country||null,e.start_time||null,e.end_time||null,e.timezone||null,e.ufcstats_hash||null]);
   }
   insEvent.free();
 
@@ -359,6 +369,13 @@ function ensurePredictionExplanationColumn() {
   if (!cols.includes('predicted_round')) {
     run('ALTER TABLE predictions ADD COLUMN predicted_round INTEGER');
   }
+}
+
+function ensureEventTimingColumns() {
+  const cols = allRows('PRAGMA table_info(events)').map(c => c.name);
+  if (!cols.includes('start_time')) run('ALTER TABLE events ADD COLUMN start_time TEXT');
+  if (!cols.includes('end_time')) run('ALTER TABLE events ADD COLUMN end_time TEXT');
+  if (!cols.includes('timezone')) run('ALTER TABLE events ADD COLUMN timezone TEXT');
 }
 
 /**
@@ -504,8 +521,8 @@ function upsertFighter(f) {
 }
 
 function upsertEvent(e) {
-  run('INSERT OR REPLACE INTO events (id,number,name,date,venue,city,country,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?)',
-    [e.id,e.number||null,e.name,e.date||null,e.venue||null,e.city||null,e.country||null,e.ufcstats_hash||null]);
+  run('INSERT OR REPLACE INTO events (id,number,name,date,venue,city,country,start_time,end_time,timezone,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?)',
+    [e.id,e.number||null,e.name,e.date||null,e.venue||null,e.city||null,e.country||null,e.start_time||null,e.end_time||null,e.timezone||null,e.ufcstats_hash||null]);
 }
 
 function upsertFight(f) {
@@ -627,8 +644,20 @@ function getEventCard(eventId) {
     [eventId, eventId]);
 }
 
-function getEvent(eventId) { return oneRow('SELECT * FROM events WHERE id = ?', [eventId]); }
-function getEventByNumber(num) { return oneRow('SELECT * FROM events WHERE number = ?', [num]); }
+function attachState(row, now) {
+  if (!row) return row;
+  row.state = getEventState(row, now);
+  return row;
+}
+
+function getEvent(eventId) {
+  const now = Date.now();
+  return attachState(oneRow('SELECT * FROM events WHERE id = ?', [eventId]), now);
+}
+function getEventByNumber(num) {
+  const now = Date.now();
+  return attachState(oneRow('SELECT * FROM events WHERE number = ?', [num]), now);
+}
 
 function getFight(fightId) {
   const fight = oneRow(
@@ -649,7 +678,10 @@ function getFight(fightId) {
   return fight;
 }
 
-function getAllEvents() { return allRows('SELECT * FROM events ORDER BY date DESC'); }
+function getAllEvents() {
+  const now = Date.now();
+  return allRows('SELECT * FROM events ORDER BY date DESC').map(r => attachState(r, now));
+}
 
 function nullableText(value) {
   if (value == null) return null;
