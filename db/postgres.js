@@ -709,12 +709,20 @@ function attachState(row, now) {
   return row;
 }
 
+// SELECT augmented with open_fights count so getEventState can fast-path
+// reconciled cards into 'history' regardless of the calendar day.
+const EVENT_SELECT_SQL = `
+  SELECT e.*,
+    (SELECT COUNT(*) FROM fights f WHERE f.event_id = e.id AND f.winner_id IS NULL) AS open_fights
+  FROM events e
+`;
+
 async function getEvent(eventId) {
-  const row = await oneRow('SELECT * FROM events WHERE id = ?', [eventId]);
+  const row = await oneRow(EVENT_SELECT_SQL + ' WHERE e.id = ?', [eventId]);
   return attachState(row, Date.now());
 }
 async function getEventByNumber(num) {
-  const row = await oneRow('SELECT * FROM events WHERE number = ?', [num]);
+  const row = await oneRow(EVENT_SELECT_SQL + ' WHERE e.number = ?', [num]);
   return attachState(row, Date.now());
 }
 
@@ -741,7 +749,7 @@ async function getFight(fightId) {
 }
 
 async function getAllEvents() {
-  const rows = await allRows('SELECT * FROM events ORDER BY date DESC');
+  const rows = await allRows(EVENT_SELECT_SQL + ' ORDER BY e.date DESC');
   const now = Date.now();
   return rows.map(r => attachState(r, now));
 }
