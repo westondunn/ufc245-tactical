@@ -286,7 +286,7 @@ test.describe('Picks UI — widget rendering', () => {
 
     // Chip appears + upcoming view is active
     await expect(page.locator('#profileChipBtn')).toBeVisible();
-    await expect(page.locator('#picksViewUpcoming')).toBeVisible();
+    await expect(page.locator('#picksViewEvent')).toBeVisible();
 
     // Default event is the nearest upcoming (or most recent if none). Either
     // a .pick-fight widget or the empty placeholder must render.
@@ -313,10 +313,12 @@ test.describe('Picks UI — widget rendering', () => {
     const ufc245Value = await ufc245Option.getAttribute('value');
     await sel.selectOption(ufc245Value);
 
-    // Expect the empty-state placeholder, NOT any .pick-fight widgets
-    await expect(page.locator('.picks-fights .picks-placeholder')).toBeVisible({ timeout: 8000 });
+    // History-state events render the per-event scoreboard (stats strip +
+    // rows), NOT pick widgets. The state badge flips to CONCLUDED.
+    await expect(page.locator('.picks-event-history__rows')).toBeVisible({ timeout: 8000 });
     await expect(page.locator('.pick-fight')).toHaveCount(0);
-    await expect(page.locator('#picksEventHint')).toContainText(/concluded/i);
+    await expect(page.locator('#picksEventStateBadge')).toContainText(/CONCLUDED/i);
+    await expect(page.locator('#picksEventHint')).toContainText(/concluded|correct/i);
   });
 
   test('subnav switches between views', async ({ page }) => {
@@ -346,7 +348,7 @@ test.describe('Picks UI — widget rendering', () => {
     await expect(page.locator('#picksTrendsBody')).toContainText(/Prediction checks/);
 
     // Back to Upcoming
-    await page.locator('.picks-subnav__btn[data-picks-view="upcoming"]').click();
-    await expect(page.locator('#picksViewUpcoming')).toBeVisible();
+    await page.locator('.picks-subnav__btn[data-picks-view="event"]').click();
+    await expect(page.locator('#picksViewEvent')).toBeVisible();
   });
 });
