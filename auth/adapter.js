@@ -16,6 +16,16 @@
 // auth/index.js's buildAuth() awaits buildUfcAdapter() before constructing
 // the better-auth instance.
 const db = require('../db');
+const nodeCrypto = require('crypto');
+
+// better-auth's ESM utilities call the WebCrypto global as `crypto`.
+// Node 22 provides it in normal script mode; Node 18 test runners may not.
+if (!globalThis.crypto && nodeCrypto.webcrypto) {
+  Object.defineProperty(globalThis, 'crypto', {
+    value: nodeCrypto.webcrypto,
+    configurable: true
+  });
+}
 
 // Better-auth uses camelCase field names. Our DB columns are snake_case.
 const KEY_MAP_IN = {

@@ -562,6 +562,113 @@ async function run() {
   assertEq(statsB.points, 28, 'stats points');
   assertEq(statsB.accuracy_pct, 100, 'stats accuracy_pct = 100');
 
+  // ── Prediction + user trend aggregation ──
+  const trendUser = await db.createUser({ display_name: 'TrendUser', avatar_key: 'a2' });
+  const trendEventAId = (await db.nextId('events')) + 1000;
+  const trendEventBId = trendEventAId + 1;
+  const trendFightBase = (await db.nextId('fights')) + 1000;
+  const trendDates = { from: '2099-01-01', to: '2099-01-02' };
+  await db.upsertEvent({ id: trendEventAId, number: 9001, name: 'Trend Fixture A', date: trendDates.from });
+  await db.upsertEvent({ id: trendEventBId, number: 9002, name: 'Trend Fixture B', date: trendDates.to });
+  const trendFights = [
+    { id: trendFightBase, event_id: trendEventAId, event_number: 9001, card_position: 1 },
+    { id: trendFightBase + 1, event_id: trendEventAId, event_number: 9001, card_position: 2 },
+    { id: trendFightBase + 2, event_id: trendEventBId, event_number: 9002, card_position: 1 },
+    { id: trendFightBase + 3, event_id: trendEventBId, event_number: 9002, card_position: 2 }
+  ];
+  for (const f of trendFights) {
+    await db.upsertFight({
+      ...f,
+      red_fighter_id: mainEvent.red_id,
+      blue_fighter_id: mainEvent.blue_id,
+      red_name: mainEvent.red_name,
+      blue_name: mainEvent.blue_name,
+      weight_class: mainEvent.weight_class || 'Welterweight',
+      is_title: 0,
+      is_main: f.card_position === 1 ? 1 : 0,
+      method: null,
+      method_detail: null,
+      round: null,
+      time: null,
+      winner_id: null,
+      referee: null,
+      has_stats: 0
+    });
+  }
+  await db.upsertPrediction({
+    fight_id: trendFights[0].id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.7,
+    blue_win_prob: 0.3,
+    model_version: 'v.test.trend.1',
+    feature_hash: 'trend-1',
+    predicted_at: '2099-01-01T00:00:00.000Z',
+    event_date: trendDates.from
+  });
+  await db.upsertPrediction({
+    fight_id: trendFights[1].id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.35,
+    blue_win_prob: 0.65,
+    model_version: 'v.test.trend.1',
+    feature_hash: 'trend-2',
+    predicted_at: '2099-01-01T00:01:00.000Z',
+    event_date: trendDates.from
+  });
+  await db.upsertPrediction({
+    fight_id: trendFights[2].id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.4,
+    blue_win_prob: 0.6,
+    model_version: 'v.test.trend.1',
+    feature_hash: 'trend-3',
+    predicted_at: '2099-01-02T00:00:00.000Z',
+    event_date: trendDates.to
+  });
+
+  await db.upsertPick({ user_id: trendUser.id, event_id: trendEventAId, fight_id: trendFights[0].id, picked_fighter_id: mainEvent.red_id, confidence: 50 });
+  await db.upsertPick({ user_id: trendUser.id, event_id: trendEventAId, fight_id: trendFights[1].id, picked_fighter_id: mainEvent.red_id, confidence: 50 });
+  await db.upsertPick({ user_id: trendUser.id, event_id: trendEventBId, fight_id: trendFights[2].id, picked_fighter_id: mainEvent.red_id, confidence: 50 });
+  await db.upsertPick({ user_id: trendUser.id, event_id: trendEventBId, fight_id: trendFights[3].id, picked_fighter_id: mainEvent.red_id, confidence: 70 });
+
+  db.run("UPDATE fights SET winner_id = ?, method = 'Decision - Unanimous', round = 3 WHERE id = ?", [mainEvent.red_id, trendFights[0].id]);
+  db.run("UPDATE fights SET winner_id = ?, method = 'Submission', round = 2 WHERE id = ?", [mainEvent.blue_id, trendFights[1].id]);
+  db.run("UPDATE fights SET winner_id = ?, method = 'KO/TKO', round = 1 WHERE id = ?", [mainEvent.red_id, trendFights[2].id]);
+  db.run("UPDATE fights SET winner_id = NULL, method = 'No Contest', round = NULL WHERE id = ?", [trendFights[3].id]);
+  await db.reconcilePrediction(trendFights[0].id, mainEvent.red_id);
+  await db.reconcilePrediction(trendFights[1].id, mainEvent.blue_id);
+  await db.reconcilePrediction(trendFights[2].id, mainEvent.red_id);
+  await db.reconcilePicksForEvent(trendEventAId);
+  await db.reconcilePicksForEvent(trendEventBId);
+
+  const modelTrend = await db.getPredictionTrends({ event_date_from: trendDates.from, event_date_to: trendDates.to, limit: 10 });
+  assertEq(modelTrend.events.length, 2, 'prediction trends group reconciled predictions by event');
+  assertEq(modelTrend.summary.total, 3, 'prediction trends count reconciled predictions');
+  assertEq(modelTrend.summary.correct_count, 2, 'prediction trends count correct model picks');
+  assertEq(modelTrend.summary.accuracy_pct, 66.7, 'prediction trends cumulative accuracy');
+  assertEq(modelTrend.events[0].accuracy_pct, 100, 'prediction trend event A accuracy');
+  assertEq(modelTrend.events[1].accuracy_pct, 0, 'prediction trend event B accuracy');
+
+  const userTrend = await db.getUserTrends(trendUser.id, { event_date_from: trendDates.from, event_date_to: trendDates.to, limit: 10 });
+  assertEq(userTrend.events.length, 2, 'user trends group picks by event');
+  assertEq(userTrend.summary.total_picks, 4, 'user trends include voided picks in user total');
+  assertEq(userTrend.summary.correct_count, 2, 'user trends count correct picks');
+  assertEq(userTrend.summary.accuracy_pct, 50, 'user trends cumulative accuracy');
+  assertEq(userTrend.summary.points, 25, 'user trends cumulative points');
+  assertEq(userTrend.summary.beat_model_count, 1, 'user trends count beat-model picks');
+  assertEq(userTrend.summary.model_on_user_picks.total, 3, 'model-on-user excludes no-model/void rows');
+  assertEq(userTrend.summary.model_on_user_picks.correct_count, 2, 'model-on-user correct count');
+  assertEq(userTrend.summary.model_on_user_picks.accuracy_pct, 66.7, 'model-on-user accuracy');
+  assertEq(userTrend.events[0].points, 10, 'event A trend points');
+  assertEq(userTrend.events[0].model_on_user_accuracy_pct, 100, 'event A model-on-user accuracy');
+  assertEq(userTrend.events[1].total, 2, 'event B includes correct pick plus void');
+  assertEq(userTrend.events[1].model_on_user_total, 1, 'event B excludes void/no-model pick from model comparison');
+  assertEq(userTrend.events[1].global_model_accuracy_pct, 0, 'event B global model accuracy');
+  await db.deleteUser(trendUser.id);
+
   // ── Edge cases: draws, no method/round, no snapshot, multi-event backfill ──
   // Set up a second event + fight for isolation.
   const drawUser = await db.createUser({ display_name: 'DrawUser' });

@@ -3618,7 +3618,7 @@ function parseViewHash(){
   const tab = parts[0];
   if (!['dashboard','events','fighters','stats','picks'].includes(tab)) return {};
   const out = { tab };
-  if (tab === 'picks' && ['upcoming','history','leaderboard'].includes(parts[1])) out.picksView = parts[1];
+  if (tab === 'picks' && ['upcoming','history','trends','leaderboard'].includes(parts[1])) out.picksView = parts[1];
   return out;
 }
 
@@ -4003,7 +4003,7 @@ async function initPicksFeature(){
    PICKS VIEWS — Upcoming (pick widgets), History, Leaderboard
 ----------------------------------------------------------- */
 let _picksState = {
-  view: 'upcoming',          // 'upcoming' | 'history' | 'leaderboard'
+  view: 'upcoming',          // 'upcoming' | 'history' | 'trends' | 'leaderboard'
   eventId: null,
   eventCard: [],
   userPicks: new Map(),      // fight_id → pick row
@@ -4013,7 +4013,7 @@ let _picksState = {
 };
 {
   const initialPicksState = { ...getStoredViewState(), ...parseViewHash() };
-  if (['upcoming','history','leaderboard'].includes(initialPicksState.picksView)) {
+  if (['upcoming','history','trends','leaderboard'].includes(initialPicksState.picksView)) {
     _picksState.view = initialPicksState.picksView;
   }
   if (Number.isFinite(parseInt(initialPicksState.picksEventId, 10))) {
@@ -4035,7 +4035,7 @@ function setupPicksSubnav(){
   });
 }
 
-const PICKS_TC_LABEL = { upcoming:'PICKS · UPCOMING', history:'PICKS · HISTORY', leaderboard:'PICKS · LEADERBOARD' };
+const PICKS_TC_LABEL = { upcoming:'PICKS · UPCOMING', history:'PICKS · HISTORY', trends:'PICKS · TRENDS', leaderboard:'PICKS · LEADERBOARD' };
 
 function activatePicksView(view){
   _picksState.view = view;
@@ -4046,12 +4046,14 @@ function activatePicksView(view){
   });
   document.getElementById('picksViewUpcoming').style.display    = view === 'upcoming'    ? '' : 'none';
   document.getElementById('picksViewHistory').style.display     = view === 'history'     ? '' : 'none';
+  document.getElementById('picksViewTrends').style.display      = view === 'trends'      ? '' : 'none';
   document.getElementById('picksViewLeaderboard').style.display = view === 'leaderboard' ? '' : 'none';
   // Update TC to reflect the subview
   if (_tcForceSet) _tcForceSet(PICKS_TC_LABEL[view] || 'YOUR PICKS');
   if (!_currentUser) return;
   if (view === 'upcoming')    loadUpcomingView();
   if (view === 'history')     loadHistoryView();
+  if (view === 'trends')      loadTrendsView();
   if (view === 'leaderboard') loadLeaderboardView();
 }
 
@@ -4822,6 +4824,148 @@ function renderHistoryPickRow(p){
       <div class="picks-history-pick__points${pointsCls}">${points} pts</div>
     </div>
   `;
+}
+
+async function loadTrendsView(){
+  if (!_currentUser) return;
+  const body = document.getElementById('picksTrendsBody');
+  if (!body) return;
+  body.innerHTML = '<div class="picks-loading">Loading trends...</div>';
+  try {
+    const res = await fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/trends?limit=25`, {
+      headers: { 'X-User-Id': _currentUser.id }
+    });
+    if (!res.ok) throw new Error('Trend request failed');
+    const data = await res.json();
+    body.innerHTML = renderTrendsView(data);
+  } catch (e) {
+    body.innerHTML = '<div class="picks-placeholder">Failed to load trends.</div>';
+  }
+}
+
+function renderTrendsView(data){
+  const events = Array.isArray(data && data.events) ? data.events : [];
+  const stats = renderTrendStatsStrip(data && data.summary);
+  if (!events.length) {
+    return stats + `
+      <div class="picks-trends-empty">
+        <div class="picks-empty__title">No trend data yet</div>
+        <div class="picks-empty__sub">Once an event with your picks is reconciled, your event-by-event accuracy appears here.</div>
+      </div>`;
+  }
+  return stats + renderTrendChart(events) + renderTrendTable(events);
+}
+
+function renderTrendStatsStrip(summary){
+  const s = summary || {};
+  const model = s.model_on_user_picks || {};
+  const total = s.total_picks || 0;
+  const correct = s.correct_count || 0;
+  const modelTotal = model.total || 0;
+  const modelCorrect = model.correct_count || 0;
+  return `
+    <div class="picks-stats-strip picks-stats-strip--trends">
+      <div class="picks-stat">
+        <div class="picks-stat__label">Points</div>
+        <div class="picks-stat__value picks-stat__value--cyan">${s.points || 0}</div>
+        <div class="picks-stat__sub">across ${total} reconciled pick${total === 1 ? '' : 's'}</div>
+      </div>
+      <div class="picks-stat">
+        <div class="picks-stat__label">Your accuracy</div>
+        <div class="picks-stat__value">${formatTrendPct(s.accuracy_pct)}</div>
+        <div class="picks-stat__sub">${correct} correct / ${total}</div>
+      </div>
+      <div class="picks-stat">
+        <div class="picks-stat__label">Model on mine</div>
+        <div class="picks-stat__value">${formatTrendPct(model.accuracy_pct)}</div>
+        <div class="picks-stat__sub">${modelCorrect} correct / ${modelTotal}</div>
+      </div>
+      <div class="picks-stat">
+        <div class="picks-stat__label">Beat model</div>
+        <div class="picks-stat__value picks-stat__value--green">${s.beat_model_count || 0}</div>
+        <div class="picks-stat__sub">correct picks against the model</div>
+      </div>
+    </div>`;
+}
+
+function formatTrendPct(value){
+  const n = Number(value);
+  return Number.isFinite(n) ? n.toFixed(n % 1 === 0 ? 0 : 1) + '%' : '--';
+}
+
+function trendPoint(events, index, value, width, height, padX, padY){
+  const x = events.length === 1
+    ? width / 2
+    : padX + (index / (events.length - 1)) * (width - padX * 2);
+  const y = height - padY - (Math.max(0, Math.min(100, value)) / 100) * (height - padY * 2);
+  return { x, y };
+}
+
+function renderTrendChart(events){
+  const width = 680;
+  const height = 210;
+  const padX = 44;
+  const padY = 28;
+  const series = [
+    { key: 'cumulative_accuracy_pct', cls: 'user', label: 'You' },
+    { key: 'cumulative_model_on_user_accuracy_pct', cls: 'model-user', label: 'Model on yours' },
+    { key: 'cumulative_global_model_accuracy_pct', cls: 'model-global', label: 'Global model' }
+  ];
+  const lineHtml = series.map(s => {
+    const pts = events.map((event, index) => {
+      const value = Number(event[s.key]);
+      return Number.isFinite(value) ? trendPoint(events, index, value, width, height, padX, padY) : null;
+    }).filter(Boolean);
+    if (!pts.length) return '';
+    const d = pts.map((p, i) => `${i ? 'L' : 'M'}${p.x.toFixed(1)} ${p.y.toFixed(1)}`).join(' ');
+    const dots = pts.map(p => `<circle class="picks-trend-chart__dot picks-trend-chart__dot--${s.cls}" cx="${p.x.toFixed(1)}" cy="${p.y.toFixed(1)}" r="3.5"></circle>`).join('');
+    return `<path class="picks-trend-chart__line picks-trend-chart__line--${s.cls}" d="${d}"></path>${dots}`;
+  }).join('');
+  const last = events[events.length - 1] || {};
+  return `
+    <div class="picks-trend-chart">
+      <div class="picks-trend-chart__head">
+        <div>
+          <div class="picks-trend-chart__eyebrow">Accuracy timeline</div>
+          <div class="picks-trend-chart__title">${escHtml(last.event_label || 'Latest event')}</div>
+        </div>
+        <div class="picks-trend-chart__legend">
+          ${series.map(s => `<span class="picks-trend-chart__legend-item picks-trend-chart__legend-item--${s.cls}">${escHtml(s.label)}</span>`).join('')}
+        </div>
+      </div>
+      <svg class="picks-trend-chart__svg" viewBox="0 0 ${width} ${height}" role="img" aria-label="Cumulative accuracy trend">
+        <line class="picks-trend-chart__grid" x1="${padX}" x2="${width - padX}" y1="${padY}" y2="${padY}"></line>
+        <line class="picks-trend-chart__grid" x1="${padX}" x2="${width - padX}" y1="${height / 2}" y2="${height / 2}"></line>
+        <line class="picks-trend-chart__grid" x1="${padX}" x2="${width - padX}" y1="${height - padY}" y2="${height - padY}"></line>
+        <text class="picks-trend-chart__axis" x="8" y="${padY + 4}">100%</text>
+        <text class="picks-trend-chart__axis" x="14" y="${height / 2 + 4}">50%</text>
+        <text class="picks-trend-chart__axis" x="20" y="${height - padY + 4}">0%</text>
+        ${lineHtml}
+      </svg>
+    </div>`;
+}
+
+function renderTrendTable(events){
+  return `
+    <div class="picks-trend-table-wrap">
+      <table class="picks-trend-table">
+        <thead>
+          <tr><th>Date</th><th>Event</th><th>You</th><th>Points</th><th>Model on yours</th><th>Global model</th><th>Cumulative</th></tr>
+        </thead>
+        <tbody>
+          ${events.map(event => `
+            <tr>
+              <td>${escHtml(event.event_date || '--')}</td>
+              <td>${escHtml(event.event_label || 'Event')}</td>
+              <td>${event.correct_count}/${event.total} <span>${formatTrendPct(event.accuracy_pct)}</span></td>
+              <td class="num">${event.points || 0}</td>
+              <td>${event.model_on_user_correct_count}/${event.model_on_user_total} <span>${formatTrendPct(event.model_on_user_accuracy_pct)}</span></td>
+              <td>${event.global_model_correct_count}/${event.global_model_total} <span>${formatTrendPct(event.global_model_accuracy_pct)}</span></td>
+              <td>${formatTrendPct(event.cumulative_accuracy_pct)} <span>${event.cumulative_points || 0} pts</span></td>
+            </tr>`).join('')}
+        </tbody>
+      </table>
+    </div>`;
 }
 
 async function loadLeaderboardView(){

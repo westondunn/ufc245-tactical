@@ -463,6 +463,15 @@ app.get('/api/predictions/accuracy', apiHandler(async (_req, res) => {
   res.json(await db.getPredictionAccuracy());
 }));
 
+// Public: event-by-event model accuracy trend
+app.get('/api/predictions/trends', apiHandler(async (req, res) => {
+  const opts = {};
+  if (req.query.from) opts.event_date_from = String(req.query.from).slice(0, 10);
+  if (req.query.to) opts.event_date_to = String(req.query.to).slice(0, 10);
+  if (req.query.limit) opts.limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+  res.json(await db.getPredictionTrends(opts));
+}));
+
 // Protected: ingest predictions from microservice
 app.post('/api/predictions/ingest', requirePredictionKey, apiHandler(async (req, res) => {
   const predictions = req.body.predictions;
@@ -635,6 +644,22 @@ app.get('/api/users/:id/stats', requirePicksFlag, apiHandler(async (req, res) =>
   res.json({
     user: { id: user.id, display_name: user.display_name, avatar_key: user.avatar_key },
     stats: await db.getUserStats(req.params.id)
+  });
+}));
+
+// Self-only event-by-event user trend vs model trend
+app.get('/api/users/:id/trends', requirePicksFlag, requireUser, apiHandler(async (req, res) => {
+  if (req.params.id !== req.user.id) return res.status(403).json({ error: 'forbidden' });
+  const user = await db.getUser(req.params.id);
+  if (!user) return res.status(404).json({ error: 'user_not_found' });
+  const opts = {};
+  if (req.query.from) opts.event_date_from = String(req.query.from).slice(0, 10);
+  if (req.query.to) opts.event_date_to = String(req.query.to).slice(0, 10);
+  if (req.query.limit) opts.limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+  res.setHeader('Cache-Control', 'private, no-store');
+  res.json({
+    user: { id: user.id, display_name: user.display_name, avatar_key: user.avatar_key },
+    ...(await db.getUserTrends(req.params.id, opts))
   });
 }));
 

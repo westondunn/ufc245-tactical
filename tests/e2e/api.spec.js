@@ -385,6 +385,16 @@ test.describe('Predictions API', () => {
     expect(body).toHaveProperty('accuracy_pct');
   });
 
+  test('GET /api/predictions/trends returns trend shape', async ({ request }) => {
+    const res = await request.get('/api/predictions/trends?limit=5');
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty('summary');
+    expect(body.summary).toHaveProperty('event_count');
+    expect(body.summary).toHaveProperty('accuracy_pct');
+    expect(Array.isArray(body.events)).toBe(true);
+  });
+
   test('POST /api/predictions/ingest without key returns 401', async ({ request }) => {
     const res = await request.post('/api/predictions/ingest', {
       data: { predictions: [] }

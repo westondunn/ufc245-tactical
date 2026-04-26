@@ -1381,6 +1381,211 @@ async function getUserStats(userId) {
   };
 }
 
+function trendPct(correct, total) {
+  return total ? Math.round((correct / total) * 1000) / 10 : null;
+}
+
+function trendLimit(rawLimit) {
+  const n = parseInt(rawLimit, 10);
+  if (!Number.isFinite(n) || n <= 0) return 25;
+  return Math.min(n, 100);
+}
+
+function eventLabel(row) {
+  const prefix = row.event_number ? 'UFC ' + row.event_number : 'Event';
+  return row.event_name ? prefix + ' · ' + row.event_name : prefix;
+}
+
+function buildPredictionTrendResponse(rows, limit) {
+  const visible = rows.slice(-trendLimit(limit));
+  let cumulativeTotal = 0;
+  let cumulativeCorrect = 0;
+  const events = visible.map(row => {
+    const total = Number(row.total) || 0;
+    const correct = Number(row.correct_count) || 0;
+    cumulativeTotal += total;
+    cumulativeCorrect += correct;
+    return {
+      event_id: row.event_id == null ? null : Number(row.event_id),
+      event_number: row.event_number == null ? null : Number(row.event_number),
+      event_name: row.event_name || null,
+      event_label: eventLabel(row),
+      event_date: row.event_date || null,
+      total,
+      correct_count: correct,
+      accuracy_pct: trendPct(correct, total),
+      cumulative_total: cumulativeTotal,
+      cumulative_correct_count: cumulativeCorrect,
+      cumulative_accuracy_pct: trendPct(cumulativeCorrect, cumulativeTotal)
+    };
+  });
+  return {
+    summary: {
+      event_count: events.length,
+      total: cumulativeTotal,
+      correct_count: cumulativeCorrect,
+      accuracy_pct: trendPct(cumulativeCorrect, cumulativeTotal)
+    },
+    events
+  };
+}
+
+async function getPredictionTrends(opts = {}) {
+  const params = [];
+  let sql = `
+    SELECT
+      COALESCE(ev.id, f.event_id) AS event_id,
+      ev.number AS event_number,
+      ev.name AS event_name,
+      COALESCE(ev.date, p.event_date) AS event_date,
+      COUNT(*)::int AS total,
+      COALESCE(SUM(CASE WHEN p.correct = 1 THEN 1 ELSE 0 END),0)::int AS correct_count
+    FROM predictions p
+    LEFT JOIN fights f ON f.id = p.fight_id
+    LEFT JOIN events ev ON ev.id = f.event_id
+    WHERE p.reconciled_at IS NOT NULL`;
+  if (opts.event_date_from) { sql += ' AND COALESCE(ev.date, p.event_date) >= ?'; params.push(opts.event_date_from); }
+  if (opts.event_date_to) { sql += ' AND COALESCE(ev.date, p.event_date) <= ?'; params.push(opts.event_date_to); }
+  sql += `
+    GROUP BY COALESCE(ev.id, f.event_id), ev.number, ev.name, COALESCE(ev.date, p.event_date)
+    ORDER BY event_date ASC, event_id ASC`;
+  return buildPredictionTrendResponse(await allRows(sql, params), opts.limit);
+}
+
+async function getGlobalPredictionTrendForEvents(eventIds) {
+  if (!eventIds.length) return new Map();
+  const placeholders = eventIds.map(() => '?').join(',');
+  const rows = await allRows(
+    `SELECT
+       f.event_id AS event_id,
+       COUNT(*)::int AS total,
+       COALESCE(SUM(CASE WHEN p.correct = 1 THEN 1 ELSE 0 END),0)::int AS correct_count
+     FROM predictions p
+     JOIN fights f ON f.id = p.fight_id
+     WHERE p.reconciled_at IS NOT NULL
+       AND f.event_id IN (${placeholders})
+     GROUP BY f.event_id`,
+    eventIds
+  );
+  return new Map(rows.map(row => [Number(row.event_id), {
+    total: Number(row.total) || 0,
+    correct_count: Number(row.correct_count) || 0
+  }]));
+}
+
+async function getUserTrends(userId, opts = {}) {
+  if (!userId) return null;
+  const params = [userId];
+  let sql = `
+    SELECT
+      p.event_id AS event_id,
+      ev.number AS event_number,
+      ev.name AS event_name,
+      ev.date AS event_date,
+      COUNT(*)::int AS total,
+      COALESCE(SUM(CASE WHEN p.correct = 1 THEN 1 ELSE 0 END),0)::int AS correct_count,
+      COALESCE(SUM(p.points),0)::int AS points,
+      COALESCE(SUM(CASE WHEN p.correct = 1 AND s.user_agreed_with_model = 0 THEN 1 ELSE 0 END),0)::int AS beat_model_count,
+      COALESCE(SUM(CASE WHEN s.model_picked_fighter_id IS NOT NULL AND p.actual_winner_id IS NOT NULL THEN 1 ELSE 0 END),0)::int AS model_on_user_total,
+      COALESCE(SUM(CASE WHEN s.model_picked_fighter_id IS NOT NULL AND p.actual_winner_id IS NOT NULL AND s.model_picked_fighter_id = p.actual_winner_id THEN 1 ELSE 0 END),0)::int AS model_on_user_correct_count
+    FROM user_picks p
+    LEFT JOIN events ev ON ev.id = p.event_id
+    LEFT JOIN pick_model_snapshots s ON s.user_pick_id = p.id
+    WHERE p.user_id = ?
+      AND p.correct IS NOT NULL`;
+  if (opts.event_date_from) { sql += ' AND ev.date >= ?'; params.push(opts.event_date_from); }
+  if (opts.event_date_to) { sql += ' AND ev.date <= ?'; params.push(opts.event_date_to); }
+  sql += `
+    GROUP BY p.event_id, ev.number, ev.name, ev.date
+    ORDER BY ev.date ASC, p.event_id ASC`;
+
+  const visible = (await allRows(sql, params)).slice(-trendLimit(opts.limit));
+  const globalByEvent = await getGlobalPredictionTrendForEvents(
+    visible.map(row => Number(row.event_id)).filter(Number.isFinite)
+  );
+
+  let cumulativeTotal = 0;
+  let cumulativeCorrect = 0;
+  let cumulativePoints = 0;
+  let cumulativeBeatModel = 0;
+  let cumulativeModelTotal = 0;
+  let cumulativeModelCorrect = 0;
+  let cumulativeGlobalTotal = 0;
+  let cumulativeGlobalCorrect = 0;
+
+  const events = visible.map(row => {
+    const eventId = Number(row.event_id);
+    const total = Number(row.total) || 0;
+    const correct = Number(row.correct_count) || 0;
+    const points = Number(row.points) || 0;
+    const beatModel = Number(row.beat_model_count) || 0;
+    const modelTotal = Number(row.model_on_user_total) || 0;
+    const modelCorrect = Number(row.model_on_user_correct_count) || 0;
+    const global = globalByEvent.get(eventId) || { total: 0, correct_count: 0 };
+
+    cumulativeTotal += total;
+    cumulativeCorrect += correct;
+    cumulativePoints += points;
+    cumulativeBeatModel += beatModel;
+    cumulativeModelTotal += modelTotal;
+    cumulativeModelCorrect += modelCorrect;
+    cumulativeGlobalTotal += global.total;
+    cumulativeGlobalCorrect += global.correct_count;
+
+    return {
+      event_id: eventId,
+      event_number: row.event_number == null ? null : Number(row.event_number),
+      event_name: row.event_name || null,
+      event_label: eventLabel(row),
+      event_date: row.event_date || null,
+      total,
+      correct_count: correct,
+      accuracy_pct: trendPct(correct, total),
+      points,
+      beat_model_count: beatModel,
+      model_on_user_total: modelTotal,
+      model_on_user_correct_count: modelCorrect,
+      model_on_user_accuracy_pct: trendPct(modelCorrect, modelTotal),
+      global_model_total: global.total,
+      global_model_correct_count: global.correct_count,
+      global_model_accuracy_pct: trendPct(global.correct_count, global.total),
+      cumulative_total: cumulativeTotal,
+      cumulative_correct_count: cumulativeCorrect,
+      cumulative_accuracy_pct: trendPct(cumulativeCorrect, cumulativeTotal),
+      cumulative_points: cumulativePoints,
+      cumulative_beat_model_count: cumulativeBeatModel,
+      cumulative_model_on_user_total: cumulativeModelTotal,
+      cumulative_model_on_user_correct_count: cumulativeModelCorrect,
+      cumulative_model_on_user_accuracy_pct: trendPct(cumulativeModelCorrect, cumulativeModelTotal),
+      cumulative_global_model_total: cumulativeGlobalTotal,
+      cumulative_global_model_correct_count: cumulativeGlobalCorrect,
+      cumulative_global_model_accuracy_pct: trendPct(cumulativeGlobalCorrect, cumulativeGlobalTotal)
+    };
+  });
+
+  return {
+    summary: {
+      event_count: events.length,
+      total_picks: cumulativeTotal,
+      correct_count: cumulativeCorrect,
+      accuracy_pct: trendPct(cumulativeCorrect, cumulativeTotal),
+      points: cumulativePoints,
+      beat_model_count: cumulativeBeatModel,
+      model_on_user_picks: {
+        total: cumulativeModelTotal,
+        correct_count: cumulativeModelCorrect,
+        accuracy_pct: trendPct(cumulativeModelCorrect, cumulativeModelTotal)
+      },
+      global_model: {
+        total: cumulativeGlobalTotal,
+        correct_count: cumulativeGlobalCorrect,
+        accuracy_pct: trendPct(cumulativeGlobalCorrect, cumulativeGlobalTotal)
+      }
+    },
+    events
+  };
+}
+
 /**
  * Per-fight user-pick vs model aggregation for an event.
  * Returns an array with one entry per fight on the card.
@@ -1450,10 +1655,10 @@ module.exports = {
   getCareerStats, getHeadToHead, getFighterRecord,
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats,
-  upsertPrediction, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy,
+  upsertPrediction, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy, getPredictionTrends,
   createUser, getUser, updateUser, deleteUser, claimGuestProfile,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
   lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,
-  getLeaderboard, getUserStats, getEventPickComparison,
+  getLeaderboard, getUserStats, getUserTrends, getEventPickComparison,
   nextId, run, allRows, oneRow
 };

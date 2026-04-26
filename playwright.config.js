@@ -18,6 +18,8 @@ module.exports = defineConfig({
     command: 'node server.js',
     env: {
       PORT: '3737',
+      NODE_ENV: 'test',
+      BETTER_AUTH_SECRET: 'test-better-auth-secret',
       ENABLE_PICKS: 'true',
       ADMIN_KEY: 'test-admin-key',
       PREDICTION_SERVICE_KEY: 'test-prediction-key',

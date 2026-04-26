@@ -173,6 +173,28 @@ test.describe('Picks API — leaderboard + comparison', () => {
     expect(fight).toHaveProperty('users');
     expect(fight.users).toHaveProperty('total');
   });
+
+  test('GET /api/users/:id/trends is self-only and returns trend shape', async ({ request }) => {
+    const a = (await (await request.post('/api/users', { data: { display_name: 'Trend A' } })).json()).user;
+    const b = (await (await request.post('/api/users', { data: { display_name: 'Trend B' } })).json()).user;
+
+    const own = await request.get(`/api/users/${a.id}/trends`, {
+      headers: { 'x-user-id': a.id }
+    });
+    expect(own.status()).toBe(200);
+    expect(own.headers()['cache-control']).toContain('no-store');
+    const body = await own.json();
+    expect(body.user.id).toBe(a.id);
+    expect(body).toHaveProperty('summary');
+    expect(body.summary).toHaveProperty('total_picks');
+    expect(body.summary).toHaveProperty('model_on_user_picks');
+    expect(Array.isArray(body.events)).toBe(true);
+
+    const cross = await request.get(`/api/users/${a.id}/trends`, {
+      headers: { 'x-user-id': b.id }
+    });
+    expect(cross.status()).toBe(403);
+  });
 });
 
 test.describe('Picks API — admin', () => {
@@ -314,6 +336,12 @@ test.describe('Picks UI — widget rendering', () => {
     // History
     await page.locator('.picks-subnav__btn[data-picks-view="history"]').click();
     await expect(page.locator('#picksViewHistory')).toBeVisible();
+
+    // Trends
+    await page.locator('.picks-subnav__btn[data-picks-view="trends"]').click();
+    await expect(page.locator('#picksViewTrends')).toBeVisible();
+    await expect(page).toHaveURL(/#picks\/trends$/);
+    await expect(page.locator('#picksTrendsBody')).toContainText(/No trend data yet|Points/);
 
     // Back to Upcoming
     await page.locator('.picks-subnav__btn[data-picks-view="upcoming"]').click();
