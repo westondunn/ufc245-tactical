@@ -1121,8 +1121,13 @@ async function bootstrap() {
 
   await db.init();
   console.log('[db] initialized');
-  await warmCache();
   startCronTasks();
+
+  // Warm the cache in the background. The server can answer requests
+  // (and pass /healthz) immediately; cache misses fall through to the DB
+  // until warming completes. Keeps boot time bounded for CI/Railway
+  // healthchecks regardless of how long the 776-event warm pass takes.
+  warmCache().catch(err => console.error('[cache] warm failed:', err));
 
   const server = app.listen(PORT, () => {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
