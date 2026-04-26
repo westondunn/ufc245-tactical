@@ -562,6 +562,8 @@ body::after{
   cursor:pointer;transition:border-color .15s;
 }
 .fighter-card:hover{border-color:var(--muted)}
+.fighter-card__head{display:flex;align-items:center;gap:10px;min-width:0}
+.fighter-card__head-text{min-width:0;flex:1}
 .fighter-card__name{font-family:var(--f-disp);font-size:14px;font-weight:700;color:var(--fg)}
 .fighter-card__nick{font-family:var(--f-mono);font-size:9px;color:var(--muted);margin-top:2px}
 .fighter-card__meta{font-family:var(--f-mono);font-size:10px;color:var(--fg-dim);margin-top:6px}
@@ -2273,8 +2275,8 @@ footer{
 .pick-fight__corner{
   min-width:0;display:grid;align-items:center;gap:10px;
 }
-.pick-fight__corner--red{grid-template-columns:minmax(0,1fr) 46px;text-align:right}
-.pick-fight__corner--blue{grid-template-columns:46px minmax(0,1fr)}
+.pick-fight__corner--red{grid-template-columns:minmax(0,1fr) auto;text-align:right}
+.pick-fight__corner--blue{grid-template-columns:auto minmax(0,1fr)}
 .pick-fight__corner-copy{min-width:0}
 .pick-fight__avatar{
   width:46px;height:46px;border-radius:50%;
@@ -2292,6 +2294,57 @@ footer{
   color:var(--blue-soft);
   background:radial-gradient(circle at 35% 30%,rgba(45,180,255,.22),rgba(45,180,255,.05) 58%,rgba(255,255,255,.03));
 }
+
+/* ─── Fighter profile detail hero ─── */
+.fighter-profile-hero{
+  display:flex;align-items:center;gap:20px;margin-bottom:18px;
+  padding:16px;background:var(--bg-card-soft);
+  border:1px solid var(--border-soft);border-radius:4px;
+}
+.fighter-profile-hero__text{min-width:0;flex:1}
+.fighter-profile-hero__name{margin:0;font-family:var(--f-disp);font-size:24px;color:var(--fg)}
+.fighter-profile-hero__nick{color:var(--muted);font-size:14px;font-weight:400}
+.fighter-profile-hero__meta{font-family:var(--f-mono);font-size:11px;color:var(--fg-dim);margin-top:6px}
+@media(max-width:600px){
+  .fighter-profile-hero{flex-direction:column;text-align:center;align-items:center}
+}
+
+/* ─── Fighter avatar — img with initials fallback + size variants ─── */
+.fighter-avatar{
+  position:relative;display:inline-flex;align-items:center;justify-content:center;
+  border-radius:50%;overflow:hidden;flex-shrink:0;
+  background:linear-gradient(135deg,var(--bg-card-soft),var(--bg-card));
+  border:1px solid var(--border-soft);
+  font-family:var(--f-disp);font-weight:700;letter-spacing:.04em;
+  color:var(--fg-dim);
+  vertical-align:middle;
+}
+.fighter-avatar img{
+  position:absolute;inset:0;width:100%;height:100%;object-fit:cover;
+  object-position:center 18%;
+}
+.fighter-avatar--body img{object-position:center 8%}
+.fighter-avatar__initials{
+  position:relative;z-index:0;
+}
+.fighter-avatar img + .fighter-avatar__initials,
+.fighter-avatar:has(img) .fighter-avatar__initials{display:none}
+/* Sizes: xs 20 · sm 28 · md 40 · lg 80 · xl 160 */
+.fighter-avatar--xs{width:20px;height:20px;font-size:8px}
+.fighter-avatar--sm{width:28px;height:28px;font-size:10px}
+.fighter-avatar--md{width:40px;height:40px;font-size:13px}
+.fighter-avatar--lg{width:80px;height:80px;font-size:24px;border-width:2px}
+.fighter-avatar--xl{width:160px;height:160px;font-size:48px;border-width:2px}
+.fighter-avatar--red{
+  border-color:rgba(255,45,63,.45);
+  box-shadow:inset 0 0 0 1px rgba(255,45,63,.18);
+}
+.fighter-avatar--red .fighter-avatar__initials{color:var(--red-soft)}
+.fighter-avatar--blue{
+  border-color:rgba(45,180,255,.45);
+  box-shadow:inset 0 0 0 1px rgba(45,180,255,.18);
+}
+.fighter-avatar--blue .fighter-avatar__initials{color:var(--blue-soft)}
 
 /* ─── Picks · Event subview state badge + per-event history rows ─── */
 .picks-event-state-badge{
@@ -2330,7 +2383,10 @@ footer{
 }
 .picks-event-history__row--correct{border-left:3px solid var(--green)}
 .picks-event-history__row--wrong{border-left:3px solid var(--red-soft);opacity:.85}
-.picks-event-history__matchup{font-family:var(--f-disp);font-size:13px;color:var(--fg)}
+.picks-event-history__matchup{
+  font-family:var(--f-disp);font-size:13px;color:var(--fg);
+  display:flex;align-items:center;gap:8px;flex-wrap:wrap;
+}
 .picks-event-history__vs{color:var(--muted-dim);font-size:11px;margin:0 6px}
 .picks-event-history__winner{font-family:var(--f-mono);font-size:11px;color:var(--fg-dim)}
 .picks-event-history__method{color:var(--muted-dim)}

@@ -74,6 +74,8 @@ async function ensureSchema() {
       td_acc DOUBLE PRECISION,
       td_def DOUBLE PRECISION,
       sub_avg DOUBLE PRECISION,
+      headshot_url TEXT,
+      body_url TEXT,
       ufcstats_hash TEXT
     )
   `);
@@ -242,6 +244,8 @@ async function ensureSchema() {
   await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS start_time TEXT');
   await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS end_time TEXT');
   await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS timezone TEXT');
+  await run('ALTER TABLE fighters ADD COLUMN IF NOT EXISTS headshot_url TEXT');
+  await run('ALTER TABLE fighters ADD COLUMN IF NOT EXISTS body_url TEXT');
   await run('CREATE INDEX IF NOT EXISTS idx_fighters_name ON fighters(name)');
   await run('CREATE INDEX IF NOT EXISTS idx_events_number ON events(number)');
   await run('CREATE INDEX IF NOT EXISTS idx_fights_event ON fights(event_id)');
@@ -580,7 +584,36 @@ async function init(options = {}) {
 
   await migratePredictionsUniqueness();
   await runProfileSchemaV1();
+  await backfillFighterImagesFromJson();
   return pool;
+}
+
+// Reads data/fighter_images.json (output of scripts/build-fighter-images.js)
+// and applies the URLs onto fighters. Idempotent — only updates rows where
+// the URL would change. Cheap on subsequent boots.
+async function backfillFighterImagesFromJson() {
+  const imgPath = path.join(__dirname, '..', 'data', 'fighter_images.json');
+  if (!fs.existsSync(imgPath)) return { applied: 0 };
+  let map;
+  try { map = JSON.parse(fs.readFileSync(imgPath, 'utf8')); }
+  catch (e) { console.warn('[db] fighter_images.json parse failed:', e.message); return { applied: 0 }; }
+  let applied = 0;
+  for (const [id, urls] of Object.entries(map)) {
+    const fighterId = parseInt(id, 10);
+    if (!Number.isFinite(fighterId)) continue;
+    const head = urls && urls.headshot_url ? String(urls.headshot_url) : null;
+    const body = urls && urls.body_url ? String(urls.body_url) : null;
+    const rc = await run(
+      `UPDATE fighters SET headshot_url = ?, body_url = ?
+       WHERE id = ?
+         AND (COALESCE(headshot_url,'') IS DISTINCT FROM COALESCE(?,'')
+           OR COALESCE(body_url,'') IS DISTINCT FROM COALESCE(?,''))`,
+      [head, body, fighterId, head, body]
+    );
+    if (typeof rc === 'number') applied += rc;
+  }
+  if (applied > 0) console.log(`[db] backfilled ${applied} fighter images`);
+  return { applied };
 }
 
 async function save() {
@@ -611,7 +644,7 @@ async function getDbStats() {
 
 async function searchFighters(queryText) {
   return allRows(
-    'SELECT id, name, nickname, weight_class, nationality, stance, height_cm, reach_cm FROM fighters WHERE name ILIKE ? OR nickname ILIKE ? ORDER BY name LIMIT 20',
+    'SELECT id, name, nickname, weight_class, nationality, stance, height_cm, reach_cm, headshot_url, body_url FROM fighters WHERE name ILIKE ? OR nickname ILIKE ? ORDER BY name LIMIT 20',
     ['%' + queryText + '%', '%' + queryText + '%']
   );
 }
@@ -672,6 +705,7 @@ async function getEventCard(eventId) {
      )
      SELECT f.id, f.weight_class, f.is_title, f.is_main, f.card_position, f.method, f.method_detail, f.round, f.time, f.winner_id, f.referee,
        fr.id as red_id, fr.name as red_name, fr.nickname as red_nickname,
+       fr.headshot_url as red_headshot_url, fr.body_url as red_body_url,
        COALESCE(rr.wins, 0) as red_record_wins,
        COALESCE(rr.total - rr.wins - rr.draws, 0) as red_record_losses,
        COALESCE(rr.draws, 0) as red_record_draws,
@@ -679,6 +713,7 @@ async function getEventCard(eventId) {
        COALESCE(rp.prior_total, 0) as red_prior_ufc_fights,
        CASE WHEN se.card_date IS NOT NULL AND COALESCE(rp.prior_total, 0) = 0 THEN 1 ELSE 0 END as red_is_ufc_debut,
        fb.id as blue_id, fb.name as blue_name, fb.nickname as blue_nickname,
+       fb.headshot_url as blue_headshot_url, fb.body_url as blue_body_url,
        COALESCE(br.wins, 0) as blue_record_wins,
        COALESCE(br.total - br.wins - br.draws, 0) as blue_record_losses,
        COALESCE(br.draws, 0) as blue_record_draws,
@@ -728,8 +763,8 @@ async function getEventByNumber(num) {
 
 async function getFight(fightId) {
   const fight = await oneRow(
-    `SELECT f.*, fr.name as red_name, fr.nickname as red_nickname, fr.height_cm as red_height, fr.reach_cm as red_reach, fr.stance as red_stance, fr.nationality as red_nationality,
-       fb.name as blue_name, fb.nickname as blue_nickname, fb.height_cm as blue_height, fb.reach_cm as blue_reach, fb.stance as blue_stance, fb.nationality as blue_nationality,
+    `SELECT f.*, fr.name as red_name, fr.nickname as red_nickname, fr.height_cm as red_height, fr.reach_cm as red_reach, fr.stance as red_stance, fr.nationality as red_nationality, fr.headshot_url as red_headshot_url, fr.body_url as red_body_url,
+       fb.name as blue_name, fb.nickname as blue_nickname, fb.height_cm as blue_height, fb.reach_cm as blue_reach, fb.stance as blue_stance, fb.nationality as blue_nationality, fb.headshot_url as blue_headshot_url, fb.body_url as blue_body_url,
        e.number as event_number, e.name as event_name, e.date as event_date, e.venue, e.city,
        oo.status as official_status, oo.winner_id as official_winner_id, oo.method as official_method,
        oo.method_detail as official_method_detail, oo.round as official_round, oo.time as official_time,

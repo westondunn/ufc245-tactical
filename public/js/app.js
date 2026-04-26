@@ -65,6 +65,37 @@ function syncUnitsToggleUI(){
     opt.classList.toggle('units-toggle__opt--active', target === _unitsPref);
   });
 }
+/* -----------------------------------------------------------
+   FIGHTER AVATAR — circular img with initials fallback.
+   Sizes: xs (20) · sm (28) · md (40) · lg (80) · xl (160).
+   `fighter` accepts any object with `name` + optional `headshot_url`
+   / `body_url`. Pass `corner: 'red' | 'blue'` to tint the border.
+   `body` flips the source to body_url for hero displays.
+----------------------------------------------------------- */
+function fighterInitialsFromName(name){
+  const parts = String(name || '').trim().split(/\s+/);
+  if (parts.length === 0 || !parts[0]) return '?';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+function fighterAvatar(fighter, opts = {}){
+  const size = opts.size || 'md';
+  const corner = opts.corner || '';
+  const useBody = opts.body === true;
+  const url = useBody
+    ? (fighter && (fighter.body_url || fighter.headshot_url))
+    : (fighter && (fighter.headshot_url || fighter.body_url));
+  const initials = fighterInitialsFromName(fighter && fighter.name);
+  const cls = `fighter-avatar fighter-avatar--${size}${corner ? ` fighter-avatar--${corner}` : ''}${useBody ? ' fighter-avatar--body' : ''}`;
+  // onerror falls back to initials by hiding the broken img — the initials
+  // letter sits underneath. data URIs / data-fallback markup keep the swap
+  // a single DOM hit, no extra requests.
+  const img = url
+    ? `<img src="${escHtml(url)}" alt="" loading="lazy" onerror="this.remove()">`
+    : '';
+  return `<span class="${cls}" aria-hidden="true"><span class="fighter-avatar__initials">${escHtml(initials)}</span>${img}</span>`;
+}
+
 function rerenderActiveViewForUnits(){
   // Re-run the loader for whatever tab is active so measurement strings refresh
   // without a full reload. Cheap because the DB queries are cached server-side.
@@ -3644,8 +3675,13 @@ function renderFighterDir(fighters){
       (f.nickname ? '"' + escHtml(f.nickname) + '"' : '\u00A0') +
       '</div>';
     return '<div class="fighter-card" onclick="showFighterProfile(' + f.id + ')">' +
-      '<div class="fighter-card__name">' + escHtml(f.name) + '</div>' +
-      nickHtml +
+      '<div class="fighter-card__head">' +
+        fighterAvatar(f, { size: 'sm' }) +
+        '<div class="fighter-card__head-text">' +
+          '<div class="fighter-card__name">' + escHtml(f.name) + '</div>' +
+          nickHtml +
+        '</div>' +
+      '</div>' +
       metaHtml +
     '</div>';
   }).join('');
@@ -3660,10 +3696,15 @@ async function showFighterProfile(fid){
     const prof = await profRes.json();
     const events = await evRes.json();
     const f = prof.fighter; const s = prof.stats || {}; const r = prof.record || {};
-    let html = '<h2>' + escHtml(f.name) + (f.nickname ? ' <span style="color:var(--muted);font-size:14px">"' + escHtml(f.nickname) + '"</span>' : '') + '</h2>' +
-      '<div style="font-family:var(--f-mono);font-size:11px;color:var(--fg-dim);margin-bottom:16px">' +
-        (f.weight_class||'') + ' · ' + (f.height_cm ? formatHeight(f.height_cm) : '?') + ' · ' + (f.reach_cm ? formatReach(f.reach_cm) + ' reach' : '?') + ' · ' + (f.stance||'?') +
-        ' · Record: ' + (r.wins||0) + 'W-' + (r.losses||0) + 'L' + (r.draws ? '-' + r.draws + 'D' : '') +
+    let html = '<div class="fighter-profile-hero">' +
+        fighterAvatar(f, { size: 'xl', body: true }) +
+        '<div class="fighter-profile-hero__text">' +
+          '<h2 class="fighter-profile-hero__name">' + escHtml(f.name) + (f.nickname ? ' <span class="fighter-profile-hero__nick">"' + escHtml(f.nickname) + '"</span>' : '') + '</h2>' +
+          '<div class="fighter-profile-hero__meta">' +
+            (f.weight_class||'') + ' · ' + (f.height_cm ? formatHeight(f.height_cm) : '?') + ' · ' + (f.reach_cm ? formatReach(f.reach_cm) + ' reach' : '?') + ' · ' + (f.stance||'?') +
+            ' · Record: ' + (r.wins||0) + 'W-' + (r.losses||0) + 'L' + (r.draws ? '-' + r.draws + 'D' : '') +
+          '</div>' +
+        '</div>' +
       '</div>';
     if (events.length) {
       html += '<div style="font-family:var(--f-mono);font-size:10px;color:var(--cyan);letter-spacing:.15em;margin-bottom:8px">FIGHT HISTORY (' + events.length + ' events)</div>';
@@ -4400,7 +4441,11 @@ function renderEventHistoryBody(normalized, userPicks, event){
       pick && (pick.correct === 0 || pick.correct === false) ? 'picks-event-history__row--wrong' : '';
     return `
       <div class="picks-event-history__row ${correctCls}">
-        <div class="picks-event-history__matchup">${escHtml(f.red_name || '—')} <span class="picks-event-history__vs">vs</span> ${escHtml(f.blue_name || '—')}</div>
+        <div class="picks-event-history__matchup">
+          ${fighterAvatar({ name: f.red_name, headshot_url: f.red_headshot_url, body_url: f.red_body_url }, { size: 'sm', corner: 'red' })}
+          ${escHtml(f.red_name || '—')} <span class="picks-event-history__vs">vs</span> ${escHtml(f.blue_name || '—')}
+          ${fighterAvatar({ name: f.blue_name, headshot_url: f.blue_headshot_url, body_url: f.blue_body_url }, { size: 'sm', corner: 'blue' })}
+        </div>
         <div class="picks-event-history__winner">Winner: <strong>${escHtml(winnerName)}</strong>${f.method ? ` <span class="picks-event-history__method">· ${escHtml(f.method)}${f.round ? ` R${f.round}` : ''}</span>` : ''}</div>
         <div class="picks-event-history__yours">Your pick: ${youPicked ? `<strong>${escHtml(youPicked)}</strong>` : '<em>no pick</em>'}</div>
       </div>`;
@@ -4717,11 +4762,11 @@ function renderPickWidget(fight){
             </div>
             <div class="pick-fight__meta">${escHtml(redMeta)}</div>
           </div>
-          <div class="pick-fight__avatar pick-fight__avatar--red" aria-hidden="true">${escHtml(fighterInitials(fight.red_name))}</div>
+          ${fighterAvatar({ name: fight.red_name, headshot_url: fight.red_headshot_url, body_url: fight.red_body_url }, { size: 'md', corner: 'red' })}
         </div>
         <div class="pick-fight__vs">VS</div>
         <div class="pick-fight__corner pick-fight__corner--blue">
-          <div class="pick-fight__avatar pick-fight__avatar--blue" aria-hidden="true">${escHtml(fighterInitials(fight.blue_name))}</div>
+          ${fighterAvatar({ name: fight.blue_name, headshot_url: fight.blue_headshot_url, body_url: fight.blue_body_url }, { size: 'md', corner: 'blue' })}
           <div class="pick-fight__corner-copy">
             <div class="pick-fight__tag">Blue corner</div>
             <div class="pick-fight__name-row">
