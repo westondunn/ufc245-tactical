@@ -697,6 +697,61 @@ async function run() {
   assertEq(startedRows[0].is_locked, 1, 'getPicksForUser marks started-event picks locked');
   assertEq(startedRows[0].lock_reason, 'event_started', 'getPicksForUser includes event_started lock reason');
 
+  // Precise lifecycle timing: a same-day event stays open until start_time.
+  const preciseUser = await db.createUser({ display_name: 'PreciseStart' });
+  const preciseEventId = (await db.nextId('events')) + 3100;
+  const preciseFightId = (await db.nextId('fights')) + 3100;
+  const preciseToday = new Date().toISOString().slice(0, 10);
+  const preciseFutureStart = new Date(Date.now() + 60 * 60 * 1000).toISOString();
+  const preciseFutureEnd = new Date(Date.now() + 5 * 60 * 60 * 1000).toISOString();
+  const precisePastStart = new Date(Date.now() - 60 * 60 * 1000).toISOString();
+  await db.upsertEvent({
+    id: preciseEventId,
+    number: 9904,
+    name: 'Precise Start Lock Fixture',
+    date: preciseToday,
+    start_time: preciseFutureStart,
+    end_time: preciseFutureEnd
+  });
+  await db.upsertFight({
+    id: preciseFightId,
+    event_id: preciseEventId,
+    event_number: 9904,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_name: mainEvent.red_name,
+    blue_name: mainEvent.blue_name,
+    weight_class: mainEvent.weight_class || 'Welterweight',
+    is_title: 0,
+    is_main: 1,
+    card_position: 1,
+    method: null,
+    method_detail: null,
+    round: null,
+    time: null,
+    winner_id: null,
+    referee: null,
+    has_stats: 0,
+    ufcstats_hash: null
+  });
+  const preciseOpenLock = db.getPickLockState(preciseUser.id, preciseFightId);
+  assertEq(preciseOpenLock.locked, false, 'future start_time keeps same-day event unlocked');
+  const precisePick = await db.upsertPick({
+    user_id: preciseUser.id,
+    event_id: preciseEventId,
+    fight_id: preciseFightId,
+    picked_fighter_id: mainEvent.red_id,
+    confidence: 70
+  });
+  assertTruthy(precisePick.pick, 'same-day future-start event accepts picks');
+  db.run('UPDATE events SET start_time = ?, end_time = ? WHERE id = ?', [precisePastStart, preciseFutureEnd, preciseEventId]);
+  const preciseStartedLock = db.getPickLockState(preciseUser.id, preciseFightId);
+  assertEq(preciseStartedLock.locked, true, 'precise start_time locks picks once reached');
+  assertEq(preciseStartedLock.reason, 'event_started', 'precise start_time lock reason is event_started');
+  const preciseRows = await db.getPicksForUser(preciseUser.id, { event_id: preciseEventId });
+  assertEq(preciseRows[0].is_locked, 1, 'getPicksForUser uses precise start_time lock');
+  assertEq(preciseRows[0].event_started, 1, 'getPicksForUser marks precise started event');
+
   // ── Reconcile + scoring integration ──
   // Restore winner_id so reconcile finds actual winner (Usman = red)
   db.run('UPDATE fights SET winner_id = ? WHERE id = ?', [originalWinner || mainEvent.red_id, mainEvent.id]);

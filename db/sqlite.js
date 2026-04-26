@@ -10,7 +10,7 @@
 const initSqlJs = require('sql.js');
 const fs = require('fs');
 const path = require('path');
-const { getEventState } = require('../lib/eventState');
+const { getEventState, hasEventStarted } = require('../lib/eventState');
 
 let db = null;
 let dbPath = null;
@@ -1032,14 +1032,16 @@ function predictionPredictedRound(p) {
 function getPredictionLockState(input = {}) {
   const fightId = input.fight_id;
   const row = fightId ? oneRow(
-    `SELECT f.id AS fight_id, f.winner_id, e.date AS event_date
+    `SELECT f.id AS fight_id, f.winner_id,
+            e.date AS event_date, e.start_time AS event_start_time,
+            e.end_time AS event_end_time, e.timezone AS event_timezone
      FROM fights f
      LEFT JOIN events e ON e.id = f.event_id
      WHERE f.id = ?`,
     [fightId]
   ) : null;
-  const eventDate = row && row.event_date ? row.event_date : (input.event_date || null);
-  const started = eventHasStarted(eventDate);
+  const eventTiming = eventTimingFromRow(row, input);
+  const started = hasEventStarted(eventTiming);
   const locked = (row && row.winner_id != null) || started;
   const reason = row && row.winner_id != null ? 'fight_over' : (started ? 'event_started' : null);
   return {
@@ -1047,7 +1049,7 @@ function getPredictionLockState(input = {}) {
     locked: !!locked,
     reason,
     fight_id: row && row.fight_id != null ? Number(row.fight_id) : (fightId || null),
-    event_date: eventDate
+    event_date: eventTiming.date
   };
 }
 
@@ -1301,19 +1303,35 @@ function claimGuestProfile(guestId, newUserId) {
 
 /* ── PICK LOCK STATE ── */
 
-function todayISODate() {
-  return new Date().toISOString().slice(0, 10);
+function eventTimingFromRow(row = {}, fallback = {}) {
+  row = row || {};
+  fallback = fallback || {};
+  return {
+    date: row.event_date || row.date || fallback.event_date || fallback.date || null,
+    start_time: row.event_start_time || row.start_time || fallback.event_start_time || fallback.start_time || null,
+    end_time: row.event_end_time || row.end_time || fallback.event_end_time || fallback.end_time || null,
+    timezone: row.event_timezone || row.timezone || fallback.event_timezone || fallback.timezone || null
+  };
 }
 
-function eventHasStarted(eventDate, today = todayISODate()) {
-  if (!eventDate) return false;
-  const date = String(eventDate).slice(0, 10);
-  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today;
+function annotatePickLockLifecycle(row) {
+  const eventStarted = hasEventStarted(eventTimingFromRow(row));
+  row.event_started = eventStarted ? 1 : 0;
+  row.is_locked = row.locked_at != null || row.winner_id != null || eventStarted ? 1 : 0;
+  row.lock_reason = row.locked_at
+    ? 'event_locked'
+    : (row.winner_id != null ? 'fight_over' : (eventStarted ? 'event_started' : null));
+  delete row.event_start_time;
+  delete row.event_end_time;
+  delete row.event_timezone;
+  return row;
 }
 
 function getPickLockState(userId, fightId) {
   const row = oneRow(
-    `SELECT p.id AS pick_id, p.locked_at, f.winner_id, e.date AS event_date
+    `SELECT p.id AS pick_id, p.locked_at, f.winner_id,
+            e.date AS event_date, e.start_time AS event_start_time,
+            e.end_time AS event_end_time, e.timezone AS event_timezone
      FROM fights f
      LEFT JOIN events e ON e.id = f.event_id
      LEFT JOIN user_picks p ON p.fight_id = f.id AND p.user_id = ?
@@ -1321,7 +1339,7 @@ function getPickLockState(userId, fightId) {
     [userId, fightId]
   );
   if (!row) return { exists: false, locked: false, reason: null };
-  const started = eventHasStarted(row.event_date);
+  const started = hasEventStarted(eventTimingFromRow(row));
   const locked = !!row.locked_at || row.winner_id != null || started;
   const reason = row.locked_at ? 'event_locked' : (row.winner_id != null ? 'fight_over' : (started ? 'event_started' : null));
   return { exists: !!row.pick_id, locked, reason, existing_pick_id: row.pick_id || null, event_date: row.event_date || null };
@@ -1408,22 +1426,14 @@ function deletePick(userId, pickId) {
 }
 
 function getPicksForUser(userId, opts = {}) {
-  const today = todayISODate();
-  const params = [today, today, today, userId];
+  const params = [userId];
   let sql = `
     SELECT
       p.*,
       f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name, f.winner_id, f.method, f.round AS fight_round,
       f.is_main, f.weight_class,
       ev.number AS event_number, ev.name AS event_name, ev.date AS event_date,
-      CASE WHEN p.locked_at IS NOT NULL OR f.winner_id IS NOT NULL OR (ev.date IS NOT NULL AND ev.date <= ?) THEN 1 ELSE 0 END AS is_locked,
-      CASE
-        WHEN p.locked_at IS NOT NULL THEN 'event_locked'
-        WHEN f.winner_id IS NOT NULL THEN 'fight_over'
-        WHEN ev.date IS NOT NULL AND ev.date <= ? THEN 'event_started'
-        ELSE NULL
-      END AS lock_reason,
-      CASE WHEN ev.date IS NOT NULL AND ev.date <= ? THEN 1 ELSE 0 END AS event_started,
+      ev.start_time AS event_start_time, ev.end_time AS event_end_time, ev.timezone AS event_timezone,
       fp.name AS picked_fighter_name,
       s.model_version AS model_version,
       s.model_picked_fighter_id AS model_picked_fighter_id,
@@ -1439,7 +1449,7 @@ function getPicksForUser(userId, opts = {}) {
   if (opts.reconciled === true)  sql += ' AND p.correct IS NOT NULL';
   if (opts.reconciled === false) sql += ' AND p.correct IS NULL';
   sql += ' ORDER BY ev.date DESC, p.event_id DESC, p.fight_id ASC';
-  return allRows(sql, params);
+  return allRows(sql, params).map(annotatePickLockLifecycle);
 }
 
 function lockPicksForEvent(eventId) {

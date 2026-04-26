@@ -4450,12 +4450,16 @@ function renderEventHistoryBody(normalized, userPicks, event){
   const hint = document.getElementById('picksEventHint');
   const userPickById = new Map(userPicks.map(p => [p.fight_id, p]));
   const total = normalized.length;
+  const resolved = normalized.filter(f => f.winner_id != null).length;
+  const pending = Math.max(total - resolved, 0);
   const yourPicks = userPicks.filter(p => p.actual_winner_id != null);
   const correct = yourPicks.filter(p => p.correct === 1 || p.correct === true).length;
   const accPct = yourPicks.length ? Math.round((correct / yourPicks.length) * 100) : null;
 
   if (hint) {
     if (total === 0) hint.textContent = 'No fights on this card.';
+    else if (pending > 0 && resolved === 0) hint.textContent = `${total} fight${total === 1 ? '' : 's'} ended · awaiting official results`;
+    else if (pending > 0) hint.textContent = `${resolved} of ${total} results official · ${pending} pending`;
     else if (yourPicks.length === 0) hint.textContent = `${total} fight${total === 1 ? '' : 's'} concluded · you didn't pick this event`;
     else hint.textContent = `${correct} of ${yourPicks.length} correct · ${accPct}% accuracy`;
   }
@@ -4465,12 +4469,15 @@ function renderEventHistoryBody(normalized, userPicks, event){
       <div class="picks-stat"><div class="picks-stat__label">Your accuracy</div><div class="picks-stat__value">${accPct == null ? '—' : `${accPct}%`}</div></div>
       <div class="picks-stat"><div class="picks-stat__label">Picks made</div><div class="picks-stat__value">${yourPicks.length}</div></div>
       <div class="picks-stat"><div class="picks-stat__label">Correct</div><div class="picks-stat__value">${correct}</div></div>
-      <div class="picks-stat"><div class="picks-stat__label">Card size</div><div class="picks-stat__value">${total}</div></div>
+      <div class="picks-stat"><div class="picks-stat__label">Results official</div><div class="picks-stat__value">${resolved}/${total}</div></div>
     </div>`;
 
   const rows = normalized.map(f => {
     const pick = userPickById.get(f.id);
-    const winnerName = f.winner_id === f.red_fighter_id ? f.red_name : (f.winner_id === f.blue_fighter_id ? f.blue_name : '—');
+    const winnerName = f.winner_id === f.red_fighter_id ? f.red_name : (f.winner_id === f.blue_fighter_id ? f.blue_name : null);
+    const resultMeta = winnerName
+      ? `Winner: <strong>${escHtml(winnerName)}</strong>${f.method ? ` <span class="picks-event-history__method">· ${escHtml(f.method)}${f.round ? ` R${f.round}` : ''}</span>` : ''}`
+      : 'Result pending';
     const youPicked = pick
       ? (pick.picked_fighter_id === f.red_fighter_id ? f.red_name : f.blue_name)
       : null;
@@ -4483,7 +4490,7 @@ function renderEventHistoryBody(normalized, userPicks, event){
           ${escHtml(f.red_name || '—')} <span class="picks-event-history__vs">vs</span> ${escHtml(f.blue_name || '—')}
           ${fighterAvatar({ name: f.blue_name, headshot_url: f.blue_headshot_url, body_url: f.blue_body_url }, { size: 'sm', corner: 'blue' })}
         </div>
-        <div class="picks-event-history__winner">Winner: <strong>${escHtml(winnerName)}</strong>${f.method ? ` <span class="picks-event-history__method">· ${escHtml(f.method)}${f.round ? ` R${f.round}` : ''}</span>` : ''}</div>
+        <div class="picks-event-history__winner">${resultMeta}</div>
         <div class="picks-event-history__yours">Your pick: ${youPicked ? `<strong>${escHtml(youPicked)}</strong>` : '<em>no pick</em>'}</div>
       </div>`;
   }).join('');

@@ -215,10 +215,9 @@ app.get('/api/fighters/:id/events', apiHandler(async (req, res) => {
 
 // All events
 app.get('/api/events', apiHandler(async (req, res) => {
-  const key = 'events:all';
-  let result = cache.get(key);
-  if (!result) { result = cache.set(key, await db.getAllEvents()); }
-  res.json(result);
+  // Event lifecycle state is time-sensitive; fetch fresh rows so live cards
+  // fall into History as soon as their end window passes.
+  res.json(await db.getAllEvents());
 }));
 
 // Event detail + full card
@@ -981,9 +980,6 @@ const LEADER_STATS = ['knockdowns','sig_strikes','sig_accuracy','takedowns','td_
 
 async function warmCache() {
   const t0 = Date.now();
-
-  // Events list
-  cache.set('events:all', await db.getAllEvents());
 
   // Fighters list (default limit)
   cache.set('fighters:all:500', await db.getAllFighters(500));
