@@ -2871,12 +2871,16 @@ footer{
 }
 .picks-history-pick.is-correct{border-left-color:var(--green)}
 .picks-history-pick.is-wrong{border-left-color:var(--red)}
+.picks-history-pick.is-pending{border-left-color:var(--cyan);opacity:.78}
 .picks-history-pick__status{
   font-size:14px;text-align:center;
 }
 .picks-history-pick__status.is-correct{color:var(--green)}
 .picks-history-pick__status.is-wrong{color:var(--red)}
 .picks-history-pick__status.is-void{color:var(--muted-dim)}
+.picks-history-pick__status.is-pending{color:var(--cyan)}
+.picks-history-pick__points--pending{color:var(--muted-dim);font-weight:400}
+.picks-history-event__pending{color:var(--cyan);font-family:var(--f-mono);font-size:10px;font-weight:400}
 .picks-history-pick__body{min-width:0}
 .picks-history-pick__matchup{color:var(--fg-dim);line-height:1.5}
 .picks-history-pick__matchup strong{color:var(--fg)}

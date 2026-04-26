@@ -5136,7 +5136,9 @@ async function loadHistoryView(){
   body.innerHTML = '<div class="picks-loading">Loading history…</div>';
   try {
     const [picksRes, statsRes] = await Promise.all([
-      fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?reconciled=1`),
+      // Show every pick the user has made — pending, correct, wrong. The
+      // stats strip still only counts reconciled picks (server-side).
+      fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks`),
       fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/stats`)
     ]);
     const { picks } = await picksRes.json();
@@ -5146,7 +5148,7 @@ async function loadHistoryView(){
 
     if (!picks || picks.length === 0) {
       body.innerHTML = stripHtml +
-        '<div class="picks-placeholder">No reconciled picks yet. Make picks on upcoming events — your history appears here once results are in.</div>';
+        '<div class="picks-placeholder">No picks yet. Make picks on upcoming events — they\'ll appear here.</div>';
       return;
     }
 
@@ -5201,19 +5203,35 @@ function renderPicksStatsStrip(stats){
   `;
 }
 
+// A pick is "pending" when its fight has no actual_winner_id yet — the
+// reconciliation pipeline hasn't scored it. Show pending picks in History
+// alongside reconciled ones so the user has a complete record.
+function pickHistoryStatus(p){
+  if (p.actual_winner_id == null && p.correct == null) return 'pending';
+  if (p.correct === 1) return 'correct';
+  if (p.correct === 0 && p.actual_winner_id == null) return 'voided';
+  if (p.correct === 0) return 'wrong';
+  return 'pending';
+}
+
 function renderHistoryEventGroup(g){
   const e = g.event;
   const picks = g.picks;
+  const reconciled = picks.filter(p => pickHistoryStatus(p) !== 'pending');
+  const pending = picks.length - reconciled.length;
   const totalPts = picks.reduce((s, p) => s + (p.points || 0), 0);
   const correctN = picks.filter(p => p.correct === 1).length;
   const title = `UFC ${e.event_number || '—'} · ${escHtml(e.event_name || '')}`;
   const sub = e.event_date ? escHtml(e.event_date) : '';
+  const score = pending === picks.length
+    ? `<span class="picks-history-event__pending">${pending} pending</span>`
+    : `<strong>${totalPts} pts</strong> · ${correctN}/${reconciled.length}` + (pending ? ` <span class="picks-history-event__pending">· ${pending} pending</span>` : '');
   return `
     <div class="picks-history-event">
       <div class="picks-history-event__head">
         <div class="picks-history-event__title">${title}</div>
         <div class="picks-history-event__sub">${sub}</div>
-        <div class="picks-history-event__score"><strong>${totalPts} pts</strong> · ${correctN}/${picks.length}</div>
+        <div class="picks-history-event__score">${score}</div>
       </div>
       ${picks.map(p => renderHistoryPickRow(p)).join('')}
     </div>
@@ -5221,12 +5239,15 @@ function renderHistoryEventGroup(g){
 }
 
 function renderHistoryPickRow(p){
-  const correct = p.correct === 1;
-  const wrong = p.correct === 0;
-  const voided = p.correct === 0 && p.actual_winner_id == null;
-  const statusIcon = voided ? '·' : (correct ? '✓' : '✗');
-  const statusCls = voided ? 'is-void' : (correct ? 'is-correct' : 'is-wrong');
-  const rowCls = correct ? 'is-correct' : (wrong ? 'is-wrong' : '');
+  const status = pickHistoryStatus(p);
+  const STATUS_META = {
+    correct: { icon: '✓', cls: 'is-correct', label: 'Correct' },
+    wrong:   { icon: '✗', cls: 'is-wrong',   label: 'Wrong' },
+    voided:  { icon: '·', cls: 'is-void',    label: 'Voided' },
+    pending: { icon: '⋯', cls: 'is-pending', label: 'Pending' },
+  };
+  const meta = STATUS_META[status];
+  const rowCls = status === 'pending' ? 'is-pending' : (status === 'correct' ? 'is-correct' : status === 'wrong' ? 'is-wrong' : '');
 
   const pickedName = p.picked_fighter_name
     || (p.picked_fighter_id === p.red_fighter_id ? p.red_name : p.blue_name);
@@ -5236,25 +5257,28 @@ function renderHistoryPickRow(p){
   const badges = [];
   if (p.method_correct === 1) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--method">+ method</span>');
   if (p.round_correct === 1)  badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--round">+ round</span>');
-  if (correct && p.user_agreed_with_model === 0) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--upset">beat model</span>');
+  if (status === 'correct' && p.user_agreed_with_model === 0) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--upset">beat model</span>');
   if (p.user_agreed_with_model === 1) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--agreed">w/ model</span>');
 
   const matchup = `<strong>${escHtml(pickedName)}</strong> · ${escHtml(p.red_name)} vs ${escHtml(p.blue_name)}`;
-  const meta = voided
+  const metaLine = status === 'voided'
     ? `Draw / NC · no points awarded`
-    : `${winnerName ? 'Winner: ' + escHtml(winnerName) : 'No winner'}${p.method ? ' · ' + escHtml(p.method) : ''}${p.fight_round ? ' · R' + p.fight_round : ''} · Your conf ${p.confidence || 0}%`;
+    : status === 'pending'
+      ? `${escHtml(p.red_name)} vs ${escHtml(p.blue_name)} · Your conf ${p.confidence || 0}% · awaiting result`
+      : `${winnerName ? 'Winner: ' + escHtml(winnerName) : 'No winner'}${p.method ? ' · ' + escHtml(p.method) : ''}${p.fight_round ? ' · R' + p.fight_round : ''} · Your conf ${p.confidence || 0}%`;
 
   const points = p.points || 0;
   const pointsCls = points === 0 ? ' picks-history-pick__points--zero' : '';
+  const pointsCell = status === 'pending' ? '<span class="picks-history-pick__points--pending">—</span>' : `${points} pts`;
 
   return `
     <div class="picks-history-pick ${rowCls}">
-      <div class="picks-history-pick__status ${statusCls}">${statusIcon}</div>
+      <div class="picks-history-pick__status ${meta.cls}" title="${meta.label}">${meta.icon}</div>
       <div class="picks-history-pick__body">
         <div class="picks-history-pick__matchup">${matchup}</div>
-        <div class="picks-history-pick__meta">${meta}${badges.length ? ' · ' + badges.join(' ') : ''}</div>
+        <div class="picks-history-pick__meta">${metaLine}${badges.length ? ' · ' + badges.join(' ') : ''}</div>
       </div>
-      <div class="picks-history-pick__points${pointsCls}">${points} pts</div>
+      <div class="picks-history-pick__points${pointsCls}">${pointsCell}</div>
     </div>
   `;
 }
