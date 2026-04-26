@@ -130,6 +130,27 @@ async function run() {
   assertTruthy(ufc245, 'getEventByNumber(245) returns an event');
   const card = db.getEventCard(ufc245.id);
   assertGt(card.length, 2, 'UFC 245 card has 2+ fights');
+  assert('red_record_wins' in card[0] && 'blue_record_wins' in card[0], 'event card exposes fighter record badge fields');
+  assert('red_is_ufc_debut' in card[0] && 'blue_is_ufc_debut' in card[0], 'event card exposes UFC debut fields');
+  assert('red_prior_ufc_fights' in card[0] && 'blue_prior_ufc_fights' in card[0], 'event card exposes prior UFC fight counts');
+  assertEq(
+    Number(card[0].red_record_wins) + Number(card[0].red_record_losses) + Number(card[0].red_record_draws),
+    Number(card[0].red_record_total),
+    'red event-card record fields sum to total'
+  );
+  assertEq(
+    Number(card[0].blue_record_wins) + Number(card[0].blue_record_losses) + Number(card[0].blue_record_draws),
+    Number(card[0].blue_record_total),
+    'blue event-card record fields sum to total'
+  );
+  const ufc245Debut = card.find(f => Number(f.red_is_ufc_debut) === 1 || Number(f.blue_is_ufc_debut) === 1);
+  assertTruthy(ufc245Debut, 'UFC 245 card identifies at least one UFC debut fighter');
+  if (Number(ufc245Debut.red_is_ufc_debut) === 1) {
+    assertEq(Number(ufc245Debut.red_prior_ufc_fights), 0, 'red UFC debut has zero prior UFC fights');
+  }
+  if (Number(ufc245Debut.blue_is_ufc_debut) === 1) {
+    assertEq(Number(ufc245Debut.blue_prior_ufc_fights), 0, 'blue UFC debut has zero prior UFC fights');
+  }
 
   // Fight detail
   const mainEvent = card.find(f => f.is_main);
@@ -262,6 +283,8 @@ async function run() {
       summary: 'Usman pressure and reach drive the pick.',
       factors: [{ label: 'Reach', favors: 'red', impact: 0.7, value: 10 }]
     },
+    predicted_method: 'KO/TKO',
+    predicted_round: 5,
     predicted_at: '2026-01-01T01:00:00.000Z',
     event_date: ufc245.date
   });
@@ -270,6 +293,8 @@ async function run() {
   assertEq(upsertRows.length, 1, 'prediction ingest upserts same fight_id + model_version');
   assertEq(upsertRows[0].red_win_prob, 0.55, 'prediction upsert keeps latest values');
   assert(upsertRows[0].explanation_json.includes('pressure and reach'), 'prediction upsert stores explanation JSON');
+  assertEq(upsertRows[0].predicted_method, 'KO/TKO', 'prediction upsert stores predicted method metadata');
+  assertEq(upsertRows[0].predicted_round, 5, 'prediction upsert stores predicted round metadata');
   const comparison = db.getEventPickComparison(ufc245.id);
   const explainedFight = comparison.find(f => f.fight_id === upsertFightId);
   assertTruthy(explainedFight.model.explanation, 'model comparison includes parsed prediction explanation');
@@ -332,10 +357,103 @@ async function run() {
   assertTruthy(reconcileResult, 'reconcilePrediction returns a reconciled row');
   assertEq(reconcileResult.model_version, 'v.test.reconcile.b', 'reconcile uses latest unresolved prediction deterministically');
   assertEq(reconcileResult.correct, 0, 'reconcile correctness matches selected prediction');
+  assertGt(reconcileResult.reconciled_count, 1, 'reconcilePrediction scores each stored model for the fight');
+  const reconciledModelRows = db.getPredictions({ fight_id: reconcileFightId })
+    .filter(r => ['v.test.reconcile.a', 'v.test.reconcile.b'].includes(r.model_version));
+  assertEq(reconciledModelRows.find(r => r.model_version === 'v.test.reconcile.a').correct, 1, 'older model version is also scored');
+  assertEq(reconciledModelRows.find(r => r.model_version === 'v.test.reconcile.b').correct, 0, 'newer model version is scored');
+
+  // Model predictions lock when the event has started or the fight is final.
+  const predLockEventId = (await db.nextId('events')) + 2300;
+  const predLockFightId = (await db.nextId('fights')) + 2300;
+  await db.upsertEvent({ id: predLockEventId, number: 9903, name: 'Prediction Lock Fixture', date: '2099-03-01' });
+  await db.upsertFight({
+    id: predLockFightId,
+    event_id: predLockEventId,
+    event_number: 9903,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_name: mainEvent.red_name,
+    blue_name: mainEvent.blue_name,
+    weight_class: mainEvent.weight_class || 'Welterweight',
+    is_title: 0,
+    is_main: 1,
+    card_position: 1,
+    winner_id: null,
+    method: null,
+    method_detail: null,
+    round: null,
+    time: null,
+    referee: null,
+    has_stats: 0,
+    ufcstats_hash: null
+  });
+  const predOpenLock = await db.getPredictionLockState({ fight_id: predLockFightId });
+  assertEq(predOpenLock.locked, false, 'prediction lock allows future events');
+  db.run('UPDATE events SET date = ? WHERE id = ?', ['2000-01-01', predLockEventId]);
+  const predStartedLock = await db.getPredictionLockState({ fight_id: predLockFightId });
+  assertEq(predStartedLock.locked, true, 'prediction lock applies once event date has arrived');
+  assertEq(predStartedLock.reason, 'event_started', 'prediction lock reports event_started');
+  db.run('UPDATE fights SET winner_id = ? WHERE id = ?', [mainEvent.red_id, predLockFightId]);
+  const predFightOverLock = await db.getPredictionLockState({ fight_id: predLockFightId });
+  assertEq(predFightOverLock.reason, 'fight_over', 'prediction lock prefers fight_over for concluded fights');
 
   // search case insensitivity
   const lowerSearch = db.searchFighters('mcgregor');
   assertGt(lowerSearch.length, 0, 'searchFighters is case-insensitive');
+
+  // ── Official outcome capture ──
+  const officialEventId = (await db.nextId('events')) + 2000;
+  const officialFightId = (await db.nextId('fights')) + 2000;
+  await db.upsertEvent({ id: officialEventId, number: 9901, name: 'Official Outcome Fixture', date: '2099-02-01' });
+  await db.upsertFight({
+    id: officialFightId,
+    event_id: officialEventId,
+    event_number: 9901,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_name: mainEvent.red_name,
+    blue_name: mainEvent.blue_name,
+    weight_class: 'Welterweight',
+    is_title: 0,
+    is_main: 1,
+    card_position: 1,
+    method: null,
+    method_detail: null,
+    round: null,
+    time: null,
+    winner_id: null,
+    referee: null,
+    has_stats: 0
+  });
+  const liveOutcome = await db.upsertOfficialOutcome({
+    fight_id: officialFightId,
+    status: 'in_progress',
+    round: 2,
+    time: '3:12',
+    source: 'test-job',
+    raw: { clock: 'R2 3:12' }
+  });
+  assertEq(liveOutcome.status, 'in_progress', 'official outcome stores in-progress status');
+  assertEq(liveOutcome.round, 2, 'official outcome stores live round');
+  assertEq((await db.getFight(officialFightId)).winner_id, null, 'in-progress official outcome does not mark fight final');
+  const finalOutcome = await db.upsertOfficialOutcome({
+    fight_id: officialFightId,
+    status: 'official',
+    winner_id: mainEvent.red_id,
+    method: 'KO/TKO',
+    method_detail: 'Punches',
+    round: 2,
+    time: '4:01',
+    source: 'test-job'
+  });
+  assertEq(finalOutcome.winner_id, mainEvent.red_id, 'official outcome stores final winner');
+  const finalizedFight = await db.getFight(officialFightId);
+  assertEq(finalizedFight.winner_id, mainEvent.red_id, 'final official outcome updates fight winner');
+  assertEq(finalizedFight.method, 'KO/TKO', 'final official outcome updates fight method');
+  const eventOutcomes = await db.getOfficialOutcomesForEvent(officialEventId);
+  assertEq(eventOutcomes.length, 1, 'official outcomes query by event');
+  assertEq(eventOutcomes[0].winner_name, mainEvent.red_name, 'official outcome joins winner name');
 
   // ── Scoring (pure) ──
   console.log('\nScoring:');
@@ -439,6 +557,7 @@ async function run() {
   // Temporarily null out winner_id so we can upsert picks without 'pick_locked'
   const originalWinner = db.oneRow('SELECT winner_id FROM fights WHERE id = ?', [mainEvent.id]).winner_id;
   db.run('UPDATE fights SET winner_id = NULL WHERE id = ?', [mainEvent.id]);
+  db.run('UPDATE events SET date = ? WHERE id = ?', ['2099-12-31', ufc245.id]);
 
   const pickResult = await db.upsertPick({
     user_id: userA.id,
@@ -520,6 +639,63 @@ async function run() {
   // Delete after lock fails
   const delLocked = await db.deletePick(userA.id, pickResult.pick.id);
   assertEq(delLocked.deleted, false, 'deletePick after lock returns deleted=false');
+
+  // Event-start lock: no admin lock needed once the event date arrives.
+  const eventStartUser = await db.createUser({ display_name: 'StartedEvent' });
+  const startedEventId = (await db.nextId('events')) + 3000;
+  const startedFightId = (await db.nextId('fights')) + 3000;
+  await db.upsertEvent({ id: startedEventId, number: 9902, name: 'Started Lock Fixture', date: '2099-03-01' });
+  await db.upsertFight({
+    id: startedFightId,
+    event_id: startedEventId,
+    event_number: 9902,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_name: mainEvent.red_name,
+    blue_name: mainEvent.blue_name,
+    weight_class: mainEvent.weight_class || 'Welterweight',
+    is_title: 0,
+    is_main: 1,
+    card_position: 1,
+    method: null,
+    method_detail: null,
+    round: null,
+    time: null,
+    winner_id: null,
+    referee: null,
+    has_stats: 0,
+    ufcstats_hash: null
+  });
+  const startedPick = await db.upsertPick({
+    user_id: eventStartUser.id,
+    event_id: startedEventId,
+    fight_id: startedFightId,
+    picked_fighter_id: mainEvent.red_id,
+    confidence: 65
+  });
+  db.run('UPDATE events SET date = ? WHERE id = ?', ['2000-01-01', startedEventId]);
+  const startedLock = db.getPickLockState(eventStartUser.id, startedFightId);
+  assertEq(startedLock.locked, true, 'event-start lock applies when event date has arrived');
+  assertEq(startedLock.reason, 'event_started', 'event-start lock reason is event_started');
+  let eventStartedThrew = false;
+  try {
+    await db.upsertPick({
+      user_id: eventStartUser.id,
+      event_id: startedEventId,
+      fight_id: startedFightId,
+      picked_fighter_id: mainEvent.blue_id,
+      confidence: 80
+    });
+  } catch (e) {
+    eventStartedThrew = e.code === 'pick_locked' && e.reason === 'event_started';
+  }
+  assert(eventStartedThrew, 'upsertPick after event start throws pick_locked with event_started reason');
+  const startedDelete = await db.deletePick(eventStartUser.id, startedPick.pick.id);
+  assertEq(startedDelete.deleted, false, 'deletePick after event start returns deleted=false');
+  assertEq(startedDelete.reason, 'event_started', 'deletePick after event start returns event_started reason');
+  const startedRows = await db.getPicksForUser(eventStartUser.id, { event_id: startedEventId });
+  assertEq(startedRows[0].is_locked, 1, 'getPicksForUser marks started-event picks locked');
+  assertEq(startedRows[0].lock_reason, 'event_started', 'getPicksForUser includes event_started lock reason');
 
   // ── Reconcile + scoring integration ──
   // Restore winner_id so reconcile finds actual winner (Usman = red)
@@ -603,6 +779,8 @@ async function run() {
     blue_win_prob: 0.3,
     model_version: 'v.test.trend.1',
     feature_hash: 'trend-1',
+    predicted_method: 'Decision',
+    predicted_round: 3,
     predicted_at: '2099-01-01T00:00:00.000Z',
     event_date: trendDates.from
   });
@@ -614,6 +792,8 @@ async function run() {
     blue_win_prob: 0.65,
     model_version: 'v.test.trend.1',
     feature_hash: 'trend-2',
+    predicted_method: 'Submission',
+    predicted_round: 1,
     predicted_at: '2099-01-01T00:01:00.000Z',
     event_date: trendDates.from
   });
@@ -625,6 +805,8 @@ async function run() {
     blue_win_prob: 0.6,
     model_version: 'v.test.trend.1',
     feature_hash: 'trend-3',
+    predicted_method: 'KO/TKO',
+    predicted_round: 1,
     predicted_at: '2099-01-02T00:00:00.000Z',
     event_date: trendDates.to
   });
@@ -633,6 +815,40 @@ async function run() {
   await db.upsertPick({ user_id: trendUser.id, event_id: trendEventAId, fight_id: trendFights[1].id, picked_fighter_id: mainEvent.red_id, confidence: 50 });
   await db.upsertPick({ user_id: trendUser.id, event_id: trendEventBId, fight_id: trendFights[2].id, picked_fighter_id: mainEvent.red_id, confidence: 50 });
   await db.upsertPick({ user_id: trendUser.id, event_id: trendEventBId, fight_id: trendFights[3].id, picked_fighter_id: mainEvent.red_id, confidence: 70 });
+
+  await db.upsertPrediction({
+    fight_id: trendFights[0].id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.45,
+    blue_win_prob: 0.55,
+    model_version: 'v.test.trend.alt',
+    feature_hash: 'trend-alt-1',
+    predicted_at: '2099-01-01T01:00:00.000Z',
+    event_date: trendDates.from
+  });
+  await db.upsertPrediction({
+    fight_id: trendFights[1].id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.55,
+    blue_win_prob: 0.45,
+    model_version: 'v.test.trend.alt',
+    feature_hash: 'trend-alt-2',
+    predicted_at: '2099-01-01T01:01:00.000Z',
+    event_date: trendDates.from
+  });
+  await db.upsertPrediction({
+    fight_id: trendFights[2].id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.8,
+    blue_win_prob: 0.2,
+    model_version: 'v.test.trend.alt',
+    feature_hash: 'trend-alt-3',
+    predicted_at: '2099-01-02T01:00:00.000Z',
+    event_date: trendDates.to
+  });
 
   db.run("UPDATE fights SET winner_id = ?, method = 'Decision - Unanimous', round = 3 WHERE id = ?", [mainEvent.red_id, trendFights[0].id]);
   db.run("UPDATE fights SET winner_id = ?, method = 'Submission', round = 2 WHERE id = ?", [mainEvent.blue_id, trendFights[1].id]);
@@ -646,11 +862,37 @@ async function run() {
 
   const modelTrend = await db.getPredictionTrends({ event_date_from: trendDates.from, event_date_to: trendDates.to, limit: 10 });
   assertEq(modelTrend.events.length, 2, 'prediction trends group reconciled predictions by event');
-  assertEq(modelTrend.summary.total, 3, 'prediction trends count reconciled predictions');
-  assertEq(modelTrend.summary.correct_count, 2, 'prediction trends count correct model picks');
-  assertEq(modelTrend.summary.accuracy_pct, 66.7, 'prediction trends cumulative accuracy');
-  assertEq(modelTrend.events[0].accuracy_pct, 100, 'prediction trend event A accuracy');
-  assertEq(modelTrend.events[1].accuracy_pct, 0, 'prediction trend event B accuracy');
+  assertEq(modelTrend.summary.total, 6, 'prediction trends count every reconciled model prediction');
+  assertEq(modelTrend.summary.correct_count, 3, 'prediction trends count correct model picks');
+  assertEq(modelTrend.summary.accuracy_pct, 50, 'prediction trends cumulative accuracy');
+  assertEq(modelTrend.events[0].accuracy_pct, 50, 'prediction trend event A accuracy');
+  assertEq(modelTrend.events[1].accuracy_pct, 50, 'prediction trend event B accuracy');
+
+  const modelLeaderboard = await db.getModelLeaderboard({ event_date_from: trendDates.from, event_date_to: trendDates.to, limit: 10 });
+  assertEq(modelLeaderboard.leaderboard.length, 2, 'model leaderboard groups by model version');
+  assertEq(modelLeaderboard.leaderboard[0].model_version, 'v.test.trend.1', 'higher-scoring model ranks first');
+  assertEq(modelLeaderboard.leaderboard[0].record, '2-1', 'model leaderboard exposes record');
+  assertEq(modelLeaderboard.leaderboard[0].score, 27, 'model score uses correct-pick confidence points');
+  assertEq(modelLeaderboard.leaderboard[1].model_version, 'v.test.trend.alt', 'lower-scoring model ranks second');
+  assertEq(modelLeaderboard.leaderboard[1].score, 16, 'alternate model score uses its correct prediction confidence');
+
+  const outcomeDetails = await db.getPredictionOutcomeDetails({
+    event_date_from: trendDates.from,
+    event_date_to: trendDates.to,
+    model_version: 'v.test.trend.1',
+    limit: 10
+  });
+  assertEq(outcomeDetails.summary.total, 3, 'prediction outcome details include scored model rows');
+  assertEq(outcomeDetails.summary.correct_count, 2, 'prediction outcome details summarize winner accuracy');
+  assertEq(outcomeDetails.summary.method_total, 3, 'prediction outcome details score predicted methods when present');
+  assertEq(outcomeDetails.summary.method_correct_count, 3, 'prediction outcome details compare method buckets');
+  assertEq(outcomeDetails.summary.round_correct_count, 2, 'prediction outcome details compare predicted round');
+  const detailFight = outcomeDetails.predictions.find(r => r.fight_id === trendFights[1].id);
+  assertEq(detailFight.predicted_fighter_id, mainEvent.blue_id, 'prediction outcome details expose predicted fighter');
+  assertEq(detailFight.actual_winner_id, mainEvent.blue_id, 'prediction outcome details expose actual winner');
+  assertEq(detailFight.predicted_method, 'Submission', 'prediction outcome details expose predicted method');
+  assertEq(detailFight.actual_method, 'Submission', 'prediction outcome details expose real method');
+  assertEq(detailFight.round_correct, 0, 'prediction outcome details score round misses');
 
   const userTrend = await db.getUserTrends(trendUser.id, { event_date_from: trendDates.from, event_date_to: trendDates.to, limit: 10 });
   assertEq(userTrend.events.length, 2, 'user trends group picks by event');
@@ -666,7 +908,7 @@ async function run() {
   assertEq(userTrend.events[0].model_on_user_accuracy_pct, 100, 'event A model-on-user accuracy');
   assertEq(userTrend.events[1].total, 2, 'event B includes correct pick plus void');
   assertEq(userTrend.events[1].model_on_user_total, 1, 'event B excludes void/no-model pick from model comparison');
-  assertEq(userTrend.events[1].global_model_accuracy_pct, 0, 'event B global model accuracy');
+  assertEq(userTrend.events[1].global_model_accuracy_pct, 50, 'event B global model accuracy includes every scored model');
   await db.deleteUser(trendUser.id);
 
   // ── Edge cases: draws, no method/round, no snapshot, multi-event backfill ──

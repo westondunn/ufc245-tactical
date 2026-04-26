@@ -1,6 +1,22 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
+async function resolveFutureOpenFight(request) {
+  const events = await (await request.get('/api/events')).json();
+  const today = new Date().toISOString().slice(0, 10);
+  const futureEvents = events
+    .filter(e => e.date && e.date > today)
+    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
+  for (const event of futureEvents) {
+    const cardRes = await request.get(`/api/events/${event.id}/card`);
+    if (!cardRes.ok()) continue;
+    const { card } = await cardRes.json();
+    const fight = (card || []).find(f => f.id && f.red_id && f.blue_id && f.winner_id == null);
+    if (fight) return { event, fight };
+  }
+  throw new Error('No future open fight fixture found');
+}
+
 // Use Playwright's request context (no browser needed for API tests)
 test.describe('API Endpoints', () => {
 
@@ -47,6 +63,16 @@ test.describe('API Endpoints', () => {
     expect(card[0]).toHaveProperty('blue_name');
     expect(card[0]).toHaveProperty('method');
     expect(card[0]).toHaveProperty('winner_id');
+    expect(card[0]).toHaveProperty('red_record_wins');
+    expect(card[0]).toHaveProperty('red_record_losses');
+    expect(card[0]).toHaveProperty('red_record_draws');
+    expect(card[0]).toHaveProperty('red_prior_ufc_fights');
+    expect(card[0]).toHaveProperty('red_is_ufc_debut');
+    expect(card[0]).toHaveProperty('blue_record_wins');
+    expect(card[0]).toHaveProperty('blue_record_losses');
+    expect(card[0]).toHaveProperty('blue_record_draws');
+    expect(card[0]).toHaveProperty('blue_prior_ufc_fights');
+    expect(card[0]).toHaveProperty('blue_is_ufc_debut');
   });
 
   test('GET /api/events/:id/card returns 400 for non-numeric ID', async ({ request }) => {
@@ -395,6 +421,70 @@ test.describe('Predictions API', () => {
     expect(Array.isArray(body.events)).toBe(true);
   });
 
+  test('GET /api/predictions/models/leaderboard returns model scores', async ({ request }) => {
+    const res = await request.get('/api/predictions/models/leaderboard?limit=5');
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty('summary');
+    expect(body.summary).toHaveProperty('model_count');
+    expect(body.summary).toHaveProperty('score');
+    expect(Array.isArray(body.leaderboard)).toBe(true);
+    for (const row of body.leaderboard) {
+      expect(row).toHaveProperty('model_version');
+      expect(row).toHaveProperty('record');
+      expect(row).toHaveProperty('accuracy_pct');
+      expect(row).toHaveProperty('score');
+    }
+  });
+
+  test('GET /api/predictions/outcomes returns prediction outcome shape', async ({ request }) => {
+    const res = await request.get('/api/predictions/outcomes?limit=5');
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty('summary');
+    expect(body.summary).toHaveProperty('total');
+    expect(body.summary).toHaveProperty('method_accuracy_pct');
+    expect(body.summary).toHaveProperty('round_accuracy_pct');
+    expect(Array.isArray(body.predictions)).toBe(true);
+  });
+
+  test('POST /api/events/:id/official-outcomes captures job snapshots', async ({ request }) => {
+    const evRes = await request.get('/api/events/number/245');
+    const { event, card } = await evRes.json();
+    const main = card[0];
+
+    const unauthorized = await request.post(`/api/events/${event.id}/official-outcomes`, {
+      data: { outcomes: [] }
+    });
+    expect(unauthorized.status()).toBe(401);
+
+    const res = await request.post(`/api/events/${event.id}/official-outcomes`, {
+      headers: { 'x-prediction-key': PREDICTION_KEY },
+      data: {
+        outcomes: [{
+          fight_id: main.id,
+          status: 'official',
+          winner_id: main.red_id,
+          method: 'KO/TKO',
+          method_detail: 'Punches',
+          round: 5,
+          time: '4:10',
+          source: 'e2e'
+        }]
+      }
+    });
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body.captured).toBe(1);
+    expect(body.outcomes[0].status).toBe('official');
+    expect(body.outcomes[0].winner_id).toBe(main.red_id);
+
+    const read = await request.get(`/api/events/${event.id}/official-outcomes`);
+    expect(read.ok()).toBe(true);
+    const readBody = await read.json();
+    expect(readBody.outcomes.some(o => o.fight_id === main.id && o.source === 'e2e')).toBe(true);
+  });
+
   test('POST /api/predictions/ingest without key returns 401', async ({ request }) => {
     const res = await request.post('/api/predictions/ingest', {
       data: { predictions: [] }
@@ -421,16 +511,19 @@ test.describe('Predictions API', () => {
   });
 
   test('POST /api/predictions/ingest upserts by (fight_id, model_version)', async ({ request }) => {
+    const { event, fight } = await resolveFutureOpenFight(request);
     const pred = {
-      fight_id: 186,
-      red_fighter_id: 31,
-      blue_fighter_id: 32,
+      fight_id: fight.id,
+      red_fighter_id: fight.red_id,
+      blue_fighter_id: fight.blue_id,
       red_win_prob: 0.58,
       blue_win_prob: 0.42,
       model_version: 'e2e.test.ingest',
       feature_hash: 'x',
+      predicted_method: 'Decision',
+      predicted_round: 3,
       predicted_at: '2026-02-01T00:00:00.000Z',
-      event_date: '2019-12-14'
+      event_date: event.date
     };
     // First write
     const r1 = await request.post('/api/predictions/ingest', {
@@ -446,10 +539,40 @@ test.describe('Predictions API', () => {
     });
     expect(r2.ok()).toBe(true);
     // Verify via GET — should only see one row for this model_version
-    const list = await (await request.get('/api/predictions?fight_id=186')).json();
+    const list = await (await request.get(`/api/predictions?fight_id=${fight.id}`)).json();
     const ours = list.filter(p => p.model_version === 'e2e.test.ingest');
     expect(ours.length).toBe(1);
     expect(ours[0].red_win_prob).toBeCloseTo(0.61, 2);
+    expect(ours[0].predicted_method).toBe('Decision');
+    expect(ours[0].predicted_round).toBe(3);
+  });
+
+  test('POST /api/predictions/ingest skips locked started events', async ({ request }) => {
+    const modelVersion = `e2e.test.ingest.locked.${Date.now()}`;
+    const pred = {
+      fight_id: 186,
+      red_fighter_id: 31,
+      blue_fighter_id: 32,
+      red_win_prob: 0.58,
+      blue_win_prob: 0.42,
+      model_version: modelVersion,
+      feature_hash: 'locked',
+      predicted_at: '2026-02-01T00:00:00.000Z',
+      event_date: '2019-12-14'
+    };
+    const res = await request.post('/api/predictions/ingest', {
+      headers: { 'x-prediction-key': PREDICTION_KEY },
+      data: { predictions: [pred] }
+    });
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body.ingested).toBe(0);
+    expect(body.skipped_locked).toBe(1);
+    expect(body.locked_indices).toContain(0);
+    expect(body.skipped[0].reason).toMatch(/fight_over|event_started/);
+
+    const list = await (await request.get('/api/predictions?fight_id=186')).json();
+    expect(list.some(p => p.model_version === modelVersion)).toBe(false);
   });
 
   test('POST /api/predictions/reconcile without key returns 401', async ({ request }) => {
@@ -460,25 +583,29 @@ test.describe('Predictions API', () => {
   });
 
   test('POST /api/predictions/reconcile with key sets actual_winner_id', async ({ request }) => {
-    // Ingest a prediction for a fight with known winner (UFC 245 main, Usman red=31 won)
+    const { event, fight } = await resolveFutureOpenFight(request);
     const pred = {
-      fight_id: 186,
-      red_fighter_id: 31,
-      blue_fighter_id: 32,
+      fight_id: fight.id,
+      red_fighter_id: fight.red_id,
+      blue_fighter_id: fight.blue_id,
       red_win_prob: 0.9,
       blue_win_prob: 0.1,
       model_version: 'e2e.test.reconcile',
       feature_hash: 'r',
+      predicted_method: 'KO/TKO',
+      predicted_round: 5,
       predicted_at: '2026-02-01T01:00:00.000Z',
-      event_date: '2019-12-14'
+      event_date: event.date
     };
-    await request.post('/api/predictions/ingest', {
+    const ingest = await request.post('/api/predictions/ingest', {
       headers: { 'x-prediction-key': PREDICTION_KEY },
       data: { predictions: [pred] }
     });
+    expect(ingest.ok()).toBe(true);
+    expect((await ingest.json()).ingested).toBe(1);
     const res = await request.post('/api/predictions/reconcile', {
       headers: { 'x-prediction-key': PREDICTION_KEY },
-      data: { results: [{ fight_id: 186, actual_winner_id: 31 }] }
+      data: { results: [{ fight_id: fight.id, actual_winner_id: fight.red_id, method: 'KO/TKO', round: 5, time: '4:10' }] }
     });
     expect(res.ok()).toBe(true);
     const body = await res.json();
@@ -486,5 +613,12 @@ test.describe('Predictions API', () => {
     // Accuracy endpoint should now have at least 1 reconciled row
     const acc = await (await request.get('/api/predictions/accuracy')).json();
     expect(acc.total).toBeGreaterThanOrEqual(1);
+    const outcomes = await (await request.get('/api/predictions/outcomes?model_version=e2e.test.reconcile&limit=5')).json();
+    expect(outcomes.predictions.length).toBeGreaterThanOrEqual(1);
+    expect(outcomes.predictions[0]).toHaveProperty('predicted_fighter_name');
+    expect(outcomes.predictions[0].predicted_method).toBe('KO/TKO');
+    expect(outcomes.predictions[0].actual_method).toBe('KO/TKO');
+    expect(outcomes.predictions[0].method_correct).toBe(1);
+    expect(outcomes.predictions[0].round_correct).toBe(1);
   });
 });

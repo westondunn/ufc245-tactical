@@ -10,6 +10,7 @@ Cron jobs:
 """
 import os
 import logging
+import re
 from datetime import datetime, timedelta
 
 import httpx
@@ -58,6 +59,105 @@ def _post_json(path: str, body: dict) -> dict | None:
         return None
 
 
+def _voidish_method(method: str | None) -> bool:
+    return "draw" in str(method or "").lower() or "no contest" in str(method or "").lower() or str(method or "").upper() == "NC"
+
+
+def _outcome_status(bout: dict, event_date) -> str:
+    if bout.get("official_status"):
+        return str(bout["official_status"])
+    if bout.get("winner_id"):
+        return "official"
+    if _voidish_method(bout.get("method")):
+        return "void"
+    today = datetime.utcnow().date()
+    if event_date == today:
+        return "in_progress"
+    return "pending"
+
+
+def _build_official_outcome(event: dict, bout: dict, event_date, captured_at: str, source: str) -> dict:
+    return {
+        "fight_id": bout.get("id"),
+        "status": _outcome_status(bout, event_date),
+        "winner_id": bout.get("winner_id"),
+        "method": bout.get("method"),
+        "method_detail": bout.get("method_detail"),
+        "round": bout.get("round"),
+        "time": bout.get("time"),
+        "source": source,
+        "captured_at": captured_at,
+        "raw": {
+            "event_id": event.get("id"),
+            "event_date": event.get("date"),
+            "red_name": bout.get("red_name"),
+            "blue_name": bout.get("blue_name"),
+            "official_status": bout.get("official_status"),
+        },
+    }
+
+
+def _sync_official_outcomes(event_id: int, outcomes: list[dict]) -> int:
+    if not outcomes:
+        return 0
+    resp = _post_json(f"/api/events/{event_id}/official-outcomes", {"outcomes": outcomes})
+    if not resp:
+        return 0
+    return int(resp.get("captured", 0))
+
+
+def _round_int(value) -> int | None:
+    if value is None or value == "":
+        return None
+    match = re.search(r"\d+", str(value))
+    return int(match.group(0)) if match else None
+
+
+def _prediction_metadata(explanation: dict | None) -> tuple[str | None, int | None]:
+    if not isinstance(explanation, dict):
+        return None, None
+    containers = [
+        explanation,
+        explanation.get("prediction") if isinstance(explanation.get("prediction"), dict) else None,
+        explanation.get("predicted") if isinstance(explanation.get("predicted"), dict) else None,
+        explanation.get("outcome") if isinstance(explanation.get("outcome"), dict) else None,
+    ]
+    method = None
+    round_pick = None
+    for item in containers:
+        if not item:
+            continue
+        method = method or item.get("predicted_method") or item.get("method_prediction") or item.get("method")
+        round_pick = round_pick or item.get("predicted_round") or item.get("round_prediction") or item.get("round")
+    method = str(method).strip() if method is not None else None
+    return method or None, _round_int(round_pick)
+
+
+def _ids_from_indices(local_ids: list[int], indices) -> list[int]:
+    if not isinstance(indices, list):
+        return []
+    ids = []
+    for index in indices:
+        if isinstance(index, bool) or not isinstance(index, int):
+            continue
+        if 0 <= index < len(local_ids):
+            ids.append(local_ids[index])
+    return ids
+
+
+def _sync_ack(result: dict, local_ids: list[int]) -> tuple[int, int, list[int]]:
+    accepted_indices = result.get("accepted_indices")
+    locked_indices = result.get("locked_indices")
+    if isinstance(accepted_indices, list) or isinstance(locked_indices, list):
+        accepted_ids = _ids_from_indices(local_ids, accepted_indices)
+        locked_ids = _ids_from_indices(local_ids, locked_indices)
+        mark_ids = list(dict.fromkeys(accepted_ids + locked_ids))
+        return len(accepted_ids), len(locked_ids), mark_ids
+
+    ingested = int(result.get("ingested", len(local_ids)))
+    return ingested, 0, local_ids[:ingested]
+
+
 def _career_stats_path(fighter_id: int, as_of: str | None = None) -> str:
     if as_of:
         return f"/api/fighters/{fighter_id}/career-stats?as_of={as_of}"
@@ -75,16 +175,19 @@ def _sync_predictions(predictions: list[dict], local_ids: list[int], label: str)
         if not result:
             logger.warning(f"Prediction sync batch failed ({label}, offset={start})")
             continue
-        ingested = int(result.get("ingested", len(batch)))
+        ingested, locked, mark_ids = _sync_ack(result, batch_ids)
+        if mark_ids:
+            mark_synced(mark_ids)
         if ingested > 0:
-            mark_synced(batch_ids[:ingested])
             synced += ingested
             logger.info(f"Synced {ingested} predictions ({label}, offset={start})")
+        if locked > 0:
+            logger.info(f"Skipped {locked} locked predictions ({label}, offset={start})")
     return synced
 
 
 def _predict_window(days: int | None, label: str) -> dict:
-    """Predict and sync fights from today through the requested day window."""
+    """Predict and sync future fights through the requested day window."""
     logger.info(f"=== {label} start ===")
     init_db()
 
@@ -118,7 +221,7 @@ def _predict_window(days: int | None, label: str) -> dict:
             ev_date = datetime.strptime(ev["date"], "%Y-%m-%d").date()
         except ValueError:
             continue
-        if ev_date < today:
+        if ev_date <= today:
             continue
         if cutoff is not None and ev_date > cutoff:
             continue
@@ -148,6 +251,7 @@ def _predict_window(days: int | None, label: str) -> dict:
                 red_name=bout.get("red_name") or "Red",
                 blue_name=bout.get("blue_name") or "Blue",
             )
+            predicted_method, predicted_round = _prediction_metadata(explanation)
 
             local_id = log_prediction(
                 fight_id=bout["id"],
@@ -159,6 +263,8 @@ def _predict_window(days: int | None, label: str) -> dict:
                 feature_hash=fhash,
                 event_date=ev["date"],
                 explanation=explanation,
+                predicted_method=predicted_method,
+                predicted_round=predicted_round,
             )
             local_prediction_ids.append(local_id)
             predictions.append({
@@ -172,6 +278,8 @@ def _predict_window(days: int | None, label: str) -> dict:
                 "predicted_at": datetime.utcnow().isoformat(),
                 "event_date": ev["date"],
                 "explanation": explanation,
+                "predicted_method": predicted_method,
+                "predicted_round": predicted_round,
             })
 
     synced = _sync_predictions(predictions, local_prediction_ids, label)
@@ -213,6 +321,8 @@ def sync_unsynced(limit: int = 500) -> int:
             "predicted_at": row["predicted_at"],
             "event_date": row["event_date"],
             "explanation_json": row.get("explanation_json"),
+            "predicted_method": row.get("predicted_method"),
+            "predicted_round": row.get("predicted_round"),
         } for row in batch_rows]
 
         result = _post_json("/api/predictions/ingest", {"predictions": predictions})
@@ -220,10 +330,14 @@ def sync_unsynced(limit: int = 500) -> int:
             logger.warning(f"Backlog sync batch failed (offset={start})")
             continue
 
-        ingested = int(result.get("ingested", len(batch_rows)))
+        batch_ids = [row["id"] for row in batch_rows]
+        ingested, locked, mark_ids = _sync_ack(result, batch_ids)
+        if mark_ids:
+            mark_synced(mark_ids)
         if ingested > 0:
-            mark_synced([row["id"] for row in batch_rows[:ingested]])
             synced += ingested
+        if locked > 0:
+            logger.info(f"Skipped {locked} locked queued predictions (offset={start})")
 
     logger.info(f"Synced {synced} queued predictions")
     return synced
@@ -236,7 +350,11 @@ def daily_predict():
 
 def refresh_near():
     """Re-predict fights in the next 48 hours (stats may have updated)."""
-    return _predict_window(days=2, label="refresh_near")
+    result = _predict_window(days=2, label="refresh_near")
+    result["official_outcomes"] = capture_official_outcomes(days_back=0, days_forward=2, source="refresh_near")
+    if result["status"] == "ok" and result["official_outcomes"]["status"] == "partial":
+        result["status"] = "partial"
+    return result
 
 
 def prune_past_predictions():
@@ -258,15 +376,67 @@ def prune_past_predictions():
     }
 
 
+def capture_official_outcomes(days_back: int = 1, days_forward: int = 2, source: str = "prediction_service") -> dict:
+    """Snapshot official/in-progress fight outcomes from the main app card feed."""
+    logger.info("=== capture_official_outcomes start ===")
+    today = datetime.utcnow().date()
+    start_date = today - timedelta(days=days_back)
+    end_date = today + timedelta(days=days_forward)
+    captured_at = datetime.utcnow().isoformat()
+
+    events = _get_json("/api/events") or []
+    events_checked = 0
+    outcomes_seen = 0
+    outcomes_captured = 0
+
+    for ev in events:
+        if not ev.get("date"):
+            continue
+        try:
+            ev_date = datetime.strptime(ev["date"], "%Y-%m-%d").date()
+        except ValueError:
+            continue
+        if ev_date < start_date or ev_date > end_date:
+            continue
+
+        card = _get_json(f"/api/events/{ev['id']}/card")
+        if not card or "card" not in card:
+            continue
+
+        events_checked += 1
+        outcomes = [
+            _build_official_outcome(ev, bout, ev_date, captured_at, source)
+            for bout in card["card"]
+            if bout.get("id")
+        ]
+        outcomes_seen += len(outcomes)
+        outcomes_captured += _sync_official_outcomes(ev["id"], outcomes)
+
+    status = "ok" if outcomes_captured == outcomes_seen else "partial"
+    if outcomes_seen == 0:
+        status = "ok"
+    logger.info(f"=== capture_official_outcomes done ({outcomes_captured}/{outcomes_seen}) ===")
+    return {
+        "status": status,
+        "job": "capture_official_outcomes",
+        "events_checked": events_checked,
+        "outcomes_seen": outcomes_seen,
+        "outcomes_captured": outcomes_captured,
+    }
+
+
 def daily_reconcile():
     """Reconcile predictions against actual results from last 7 days."""
     logger.info("=== daily_reconcile start ===")
 
     today = datetime.utcnow().date()
     week_ago = today - timedelta(days=7)
+    captured_at = datetime.utcnow().isoformat()
 
     events = _get_json("/api/events") or []
     results = []
+    official_seen = 0
+    official_captured = 0
 
     for ev in events:
         if not ev.get("date"):
@@ -282,12 +452,23 @@ def daily_reconcile():
         if not card or "card" not in card:
             continue
 
+        outcomes = []
         for bout in card["card"]:
+            if bout.get("id"):
+                outcomes.append(_build_official_outcome(ev, bout, ev_date, captured_at, "daily_reconcile"))
             if bout.get("winner_id"):
                 results.append({
                     "fight_id": bout["id"],
-                    "actual_winner_id": bout["winner_id"]
+                    "actual_winner_id": bout["winner_id"],
+                    "method": bout.get("method"),
+                    "method_detail": bout.get("method_detail"),
+                    "round": bout.get("round"),
+                    "time": bout.get("time"),
+                    "status": "official",
+                    "source": "daily_reconcile",
                 })
+        official_seen += len(outcomes)
+        official_captured += _sync_official_outcomes(ev["id"], outcomes)
 
     reconciled = 0
     if results:
@@ -302,6 +483,8 @@ def daily_reconcile():
         "job": "daily_reconcile",
         "results_checked": len(results),
         "reconciled": reconciled,
+        "official_outcomes_seen": official_seen,
+        "official_outcomes_captured": official_captured,
     }
 
 

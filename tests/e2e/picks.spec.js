@@ -342,6 +342,8 @@ test.describe('Picks UI — widget rendering', () => {
     await expect(page.locator('#picksViewTrends')).toBeVisible();
     await expect(page).toHaveURL(/#picks\/trends$/);
     await expect(page.locator('#picksTrendsBody')).toContainText(/No trend data yet|Points/);
+    await expect(page.locator('#picksTrendsBody')).toContainText(/Model ranking/);
+    await expect(page.locator('#picksTrendsBody')).toContainText(/Prediction checks/);
 
     // Back to Upcoming
     await page.locator('.picks-subnav__btn[data-picks-view="upcoming"]').click();

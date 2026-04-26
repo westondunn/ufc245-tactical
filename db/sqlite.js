@@ -124,6 +124,8 @@ const SCHEMA = `
     model_version TEXT NOT NULL,
     feature_hash TEXT,
     explanation_json TEXT,
+    predicted_method TEXT,
+    predicted_round INTEGER,
     predicted_at TEXT NOT NULL,
     event_date TEXT,
     is_stale INTEGER DEFAULT 0,
@@ -133,6 +135,21 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_predictions_fight ON predictions(fight_id);
   CREATE INDEX IF NOT EXISTS idx_predictions_event_date ON predictions(event_date);
+  CREATE TABLE IF NOT EXISTS official_fight_outcomes (
+    fight_id INTEGER PRIMARY KEY REFERENCES fights(id),
+    event_id INTEGER REFERENCES events(id),
+    status TEXT NOT NULL DEFAULT 'pending',
+    winner_id INTEGER REFERENCES fighters(id),
+    method TEXT,
+    method_detail TEXT,
+    round INTEGER,
+    time TEXT,
+    source TEXT,
+    source_url TEXT,
+    captured_at TEXT NOT NULL,
+    raw_json TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_official_outcomes_event ON official_fight_outcomes(event_id);
   CREATE TABLE IF NOT EXISTS db_meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -336,6 +353,12 @@ function ensurePredictionExplanationColumn() {
   if (!cols.includes('explanation_json')) {
     run('ALTER TABLE predictions ADD COLUMN explanation_json TEXT');
   }
+  if (!cols.includes('predicted_method')) {
+    run('ALTER TABLE predictions ADD COLUMN predicted_method TEXT');
+  }
+  if (!cols.includes('predicted_round')) {
+    run('ALTER TABLE predictions ADD COLUMN predicted_round INTEGER');
+  }
 }
 
 /**
@@ -506,6 +529,7 @@ function getDbStats() {
     events: (oneRow('SELECT COUNT(*) as c FROM events') || {}).c || 0,
     fights: (oneRow('SELECT COUNT(*) as c FROM fights') || {}).c || 0,
     fight_stats: (oneRow('SELECT COUNT(*) as c FROM fight_stats') || {}).c || 0,
+    official_outcomes: (oneRow('SELECT COUNT(*) as c FROM official_fight_outcomes') || {}).c || 0,
     persistent: !!dbPath,
     dbPath: dbPath || ':memory:',
     last_scrape: (oneRow("SELECT value FROM db_meta WHERE key = 'last_scrape'") || {}).value || null
@@ -530,8 +554,77 @@ function getFighterEvents(fighterId) {
 
 function getEventCard(eventId) {
   return allRows(
-    'SELECT f.id, f.weight_class, f.is_title, f.is_main, f.card_position, f.method, f.method_detail, f.round, f.time, f.winner_id, f.referee, fr.id as red_id, fr.name as red_name, fr.nickname as red_nickname, fb.id as blue_id, fb.name as blue_name, fb.nickname as blue_nickname FROM fights f JOIN fighters fr ON f.red_fighter_id = fr.id JOIN fighters fb ON f.blue_fighter_id = fb.id WHERE f.event_id = ? ORDER BY f.card_position ASC',
-    [eventId]);
+    `WITH selected_event AS (
+       SELECT date AS card_date FROM events WHERE id = ?
+     ),
+     career_fights AS (
+       SELECT f.red_fighter_id AS fighter_id, f.winner_id, f.method, e.date AS event_date
+       FROM fights f
+       LEFT JOIN events e ON e.id = f.event_id
+       UNION ALL
+       SELECT f.blue_fighter_id AS fighter_id, f.winner_id, f.method, e.date AS event_date
+       FROM fights f
+       LEFT JOIN events e ON e.id = f.event_id
+     ),
+     fighter_records AS (
+       SELECT fighter_id,
+              COUNT(*) AS total,
+              SUM(CASE WHEN winner_id = fighter_id THEN 1 ELSE 0 END) AS wins,
+              SUM(CASE WHEN (winner_id IS NULL OR winner_id = 0)
+                         AND (method LIKE '%Draw%' OR method LIKE '%No Contest%')
+                       THEN 1 ELSE 0 END) AS draws
+       FROM career_fights
+       CROSS JOIN selected_event
+       WHERE fighter_id IS NOT NULL
+         AND ((winner_id IS NOT NULL AND winner_id != 0)
+              OR method LIKE '%Draw%'
+              OR method LIKE '%No Contest%')
+         AND (selected_event.card_date IS NULL
+              OR career_fights.event_date IS NULL
+              OR career_fights.event_date < selected_event.card_date)
+       GROUP BY fighter_id
+     ),
+     fighter_prior_fights AS (
+       SELECT fighter_id,
+              COUNT(*) AS prior_total
+       FROM career_fights
+       CROSS JOIN selected_event
+       WHERE fighter_id IS NOT NULL
+         AND selected_event.card_date IS NOT NULL
+         AND career_fights.event_date IS NOT NULL
+         AND career_fights.event_date < selected_event.card_date
+       GROUP BY fighter_id
+     )
+     SELECT f.id, f.weight_class, f.is_title, f.is_main, f.card_position, f.method, f.method_detail, f.round, f.time, f.winner_id, f.referee,
+       fr.id as red_id, fr.name as red_name, fr.nickname as red_nickname,
+       COALESCE(rr.wins, 0) as red_record_wins,
+       COALESCE(rr.total - rr.wins - rr.draws, 0) as red_record_losses,
+       COALESCE(rr.draws, 0) as red_record_draws,
+       COALESCE(rr.total, 0) as red_record_total,
+       COALESCE(rp.prior_total, 0) as red_prior_ufc_fights,
+       CASE WHEN se.card_date IS NOT NULL AND COALESCE(rp.prior_total, 0) = 0 THEN 1 ELSE 0 END as red_is_ufc_debut,
+       fb.id as blue_id, fb.name as blue_name, fb.nickname as blue_nickname,
+       COALESCE(br.wins, 0) as blue_record_wins,
+       COALESCE(br.total - br.wins - br.draws, 0) as blue_record_losses,
+       COALESCE(br.draws, 0) as blue_record_draws,
+       COALESCE(br.total, 0) as blue_record_total,
+       COALESCE(bp.prior_total, 0) as blue_prior_ufc_fights,
+       CASE WHEN se.card_date IS NOT NULL AND COALESCE(bp.prior_total, 0) = 0 THEN 1 ELSE 0 END as blue_is_ufc_debut,
+       oo.status as official_status, oo.winner_id as official_winner_id, oo.method as official_method,
+       oo.method_detail as official_method_detail, oo.round as official_round, oo.time as official_time,
+       oo.source as official_source, oo.source_url as official_source_url, oo.captured_at as official_captured_at
+     FROM fights f
+     CROSS JOIN selected_event se
+     JOIN fighters fr ON f.red_fighter_id = fr.id
+     JOIN fighters fb ON f.blue_fighter_id = fb.id
+     LEFT JOIN fighter_records rr ON rr.fighter_id = fr.id
+     LEFT JOIN fighter_records br ON br.fighter_id = fb.id
+     LEFT JOIN fighter_prior_fights rp ON rp.fighter_id = fr.id
+     LEFT JOIN fighter_prior_fights bp ON bp.fighter_id = fb.id
+     LEFT JOIN official_fight_outcomes oo ON oo.fight_id = f.id
+     WHERE f.event_id = ?
+     ORDER BY f.card_position ASC`,
+    [eventId, eventId]);
 }
 
 function getEvent(eventId) { return oneRow('SELECT * FROM events WHERE id = ?', [eventId]); }
@@ -539,13 +632,147 @@ function getEventByNumber(num) { return oneRow('SELECT * FROM events WHERE numbe
 
 function getFight(fightId) {
   const fight = oneRow(
-    'SELECT f.*, fr.name as red_name, fr.nickname as red_nickname, fr.height_cm as red_height, fr.reach_cm as red_reach, fr.stance as red_stance, fr.nationality as red_nationality, fb.name as blue_name, fb.nickname as blue_nickname, fb.height_cm as blue_height, fb.reach_cm as blue_reach, fb.stance as blue_stance, fb.nationality as blue_nationality, e.number as event_number, e.name as event_name, e.date as event_date, e.venue, e.city FROM fights f JOIN fighters fr ON f.red_fighter_id = fr.id JOIN fighters fb ON f.blue_fighter_id = fb.id JOIN events e ON f.event_id = e.id WHERE f.id = ?',
+    `SELECT f.*, fr.name as red_name, fr.nickname as red_nickname, fr.height_cm as red_height, fr.reach_cm as red_reach, fr.stance as red_stance, fr.nationality as red_nationality,
+       fb.name as blue_name, fb.nickname as blue_nickname, fb.height_cm as blue_height, fb.reach_cm as blue_reach, fb.stance as blue_stance, fb.nationality as blue_nationality,
+       e.number as event_number, e.name as event_name, e.date as event_date, e.venue, e.city,
+       oo.status as official_status, oo.winner_id as official_winner_id, oo.method as official_method,
+       oo.method_detail as official_method_detail, oo.round as official_round, oo.time as official_time,
+       oo.source as official_source, oo.source_url as official_source_url, oo.captured_at as official_captured_at
+     FROM fights f
+     JOIN fighters fr ON f.red_fighter_id = fr.id
+     JOIN fighters fb ON f.blue_fighter_id = fb.id
+     JOIN events e ON f.event_id = e.id
+     LEFT JOIN official_fight_outcomes oo ON oo.fight_id = f.id
+     WHERE f.id = ?`,
     [fightId]);
   if (fight) { fight.stats = allRows('SELECT * FROM fight_stats WHERE fight_id = ?', [fightId]); }
   return fight;
 }
 
 function getAllEvents() { return allRows('SELECT * FROM events ORDER BY date DESC'); }
+
+function nullableText(value) {
+  if (value == null) return null;
+  const s = String(value).trim();
+  return s || null;
+}
+
+function nullableInt(value) {
+  if (value == null || value === '') return null;
+  const n = parseInt(value, 10);
+  return Number.isFinite(n) ? n : null;
+}
+
+function outcomeRawJson(input) {
+  const raw = input.raw_json != null ? input.raw_json : (input.raw != null ? input.raw : input);
+  if (raw == null) return null;
+  if (typeof raw === 'string') return raw;
+  try { return JSON.stringify(raw); }
+  catch { return null; }
+}
+
+function normalizeOfficialStatus(status, winnerId, method) {
+  const s = nullableText(status);
+  if (s) {
+    const key = s.toLowerCase().replace(/[\s-]+/g, '_');
+    if (['final', 'finalized', 'complete', 'completed'].includes(key)) return 'official';
+    if (['draw', 'no_contest', 'nc'].includes(key)) return 'void';
+    return key;
+  }
+  if (winnerId != null) return 'official';
+  if (/draw|no contest|\bnc\b/i.test(String(method || ''))) return 'void';
+  return 'pending';
+}
+
+function isTerminalOfficialOutcome(status, winnerId, method) {
+  return winnerId != null ||
+    ['official', 'void'].includes(status) ||
+    /draw|no contest|\bnc\b/i.test(String(method || ''));
+}
+
+function getOfficialOutcome(fightId) {
+  return oneRow(
+    `SELECT oo.*, fr.name AS winner_name
+     FROM official_fight_outcomes oo
+     LEFT JOIN fighters fr ON fr.id = oo.winner_id
+     WHERE oo.fight_id = ?`,
+    [fightId]
+  );
+}
+
+function getOfficialOutcomesForEvent(eventId) {
+  return allRows(
+    `SELECT oo.*, f.red_name, f.blue_name, fr.name AS winner_name
+     FROM official_fight_outcomes oo
+     JOIN fights f ON f.id = oo.fight_id
+     LEFT JOIN fighters fr ON fr.id = oo.winner_id
+     WHERE oo.event_id = ?
+     ORDER BY f.card_position ASC, oo.fight_id ASC`,
+    [eventId]
+  );
+}
+
+function upsertOfficialOutcome(input = {}) {
+  const fightId = nullableInt(input.fight_id);
+  if (!fightId) return null;
+  const fight = oneRow(
+    'SELECT id, event_id, red_fighter_id, blue_fighter_id FROM fights WHERE id = ?',
+    [fightId]
+  );
+  if (!fight) return null;
+
+  const winnerId = nullableInt(input.winner_id != null ? input.winner_id : input.actual_winner_id);
+  if (winnerId != null && winnerId !== fight.red_fighter_id && winnerId !== fight.blue_fighter_id) {
+    const err = new Error('invalid_winner_id');
+    err.code = 'invalid_winner_id';
+    err.status = 400;
+    throw err;
+  }
+
+  const method = nullableText(input.method);
+  const methodDetail = nullableText(input.method_detail);
+  const round = nullableInt(input.round);
+  const time = nullableText(input.time);
+  const status = normalizeOfficialStatus(input.status, winnerId, method);
+  const capturedAt = nullableText(input.captured_at) || new Date().toISOString();
+  const source = nullableText(input.source) || 'job';
+  const sourceUrl = nullableText(input.source_url);
+  const rawJson = outcomeRawJson(input);
+
+  run(
+    `INSERT INTO official_fight_outcomes
+       (fight_id, event_id, status, winner_id, method, method_detail, round, time, source, source_url, captured_at, raw_json)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(fight_id) DO UPDATE SET
+       event_id = excluded.event_id,
+       status = excluded.status,
+       winner_id = excluded.winner_id,
+       method = excluded.method,
+       method_detail = excluded.method_detail,
+       round = excluded.round,
+       time = excluded.time,
+       source = excluded.source,
+       source_url = excluded.source_url,
+       captured_at = excluded.captured_at,
+       raw_json = excluded.raw_json`,
+    [fightId, fight.event_id, status, winnerId, method, methodDetail, round, time, source, sourceUrl, capturedAt, rawJson]
+  );
+
+  if (isTerminalOfficialOutcome(status, winnerId, method)) {
+    run(
+      `UPDATE fights
+       SET winner_id = ?,
+           method = COALESCE(?, method),
+           method_detail = COALESCE(?, method_detail),
+           round = COALESCE(?, round),
+           time = COALESCE(?, time)
+       WHERE id = ?`,
+      [winnerId, method, methodDetail, round, time, fightId]
+    );
+  }
+
+  return getOfficialOutcome(fightId);
+}
 
 function getCareerStats(fighterId, asOf = null) {
   const params = [fighterId];
@@ -654,15 +881,74 @@ function getAllFighters(limit = 500) { return allRows('SELECT * FROM fighters OR
 
 /* ── PREDICTIONS ── */
 
+function firstDefined(...values) {
+  for (const value of values) {
+    if (value !== undefined && value !== null && value !== '') return value;
+  }
+  return null;
+}
+
+function predictionPredictedMethod(p) {
+  const value = firstDefined(
+    p.predicted_method,
+    p.method_prediction,
+    p.method_pick,
+    p.predicted && p.predicted.method,
+    p.prediction && p.prediction.method
+  );
+  if (value == null) return null;
+  const text = String(value).trim();
+  return text || null;
+}
+
+function predictionPredictedRound(p) {
+  const value = firstDefined(
+    p.predicted_round,
+    p.round_prediction,
+    p.round_pick,
+    p.predicted && p.predicted.round,
+    p.prediction && p.prediction.round
+  );
+  if (value == null) return null;
+  const match = String(value).match(/\d+/);
+  const n = match ? parseInt(match[0], 10) : NaN;
+  return Number.isFinite(n) && n > 0 ? n : null;
+}
+
+function getPredictionLockState(input = {}) {
+  const fightId = input.fight_id;
+  const row = fightId ? oneRow(
+    `SELECT f.id AS fight_id, f.winner_id, e.date AS event_date
+     FROM fights f
+     LEFT JOIN events e ON e.id = f.event_id
+     WHERE f.id = ?`,
+    [fightId]
+  ) : null;
+  const eventDate = row && row.event_date ? row.event_date : (input.event_date || null);
+  const started = eventHasStarted(eventDate);
+  const locked = (row && row.winner_id != null) || started;
+  const reason = row && row.winner_id != null ? 'fight_over' : (started ? 'event_started' : null);
+  return {
+    exists: !!row,
+    locked: !!locked,
+    reason,
+    fight_id: row && row.fight_id != null ? Number(row.fight_id) : (fightId || null),
+    event_date: eventDate
+  };
+}
+
 function upsertPrediction(p) {
   const explanationJson = p.explanation_json != null
     ? p.explanation_json
     : (p.explanation != null ? JSON.stringify(p.explanation) : null);
+  const predictedMethod = predictionPredictedMethod(p);
+  const predictedRound = predictionPredictedRound(p);
   run(
     `INSERT INTO predictions
      (fight_id, red_fighter_id, blue_fighter_id, red_win_prob, blue_win_prob,
-      model_version, feature_hash, explanation_json, predicted_at, event_date, is_stale)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?)
+      model_version, feature_hash, explanation_json, predicted_method, predicted_round,
+      predicted_at, event_date, is_stale)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(fight_id, model_version) DO UPDATE SET
        red_fighter_id = excluded.red_fighter_id,
        blue_fighter_id = excluded.blue_fighter_id,
@@ -670,11 +956,14 @@ function upsertPrediction(p) {
        blue_win_prob = excluded.blue_win_prob,
        feature_hash = excluded.feature_hash,
        explanation_json = excluded.explanation_json,
+       predicted_method = excluded.predicted_method,
+       predicted_round = excluded.predicted_round,
        predicted_at = excluded.predicted_at,
        event_date = excluded.event_date,
        is_stale = excluded.is_stale`,
 	    [p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
-	     p.model_version, p.feature_hash || null, explanationJson, p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
+	     p.model_version, p.feature_hash || null, explanationJson, predictedMethod, predictedRound,
+       p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
 	  );
   if (!p.is_stale) {
     run(
@@ -734,23 +1023,37 @@ function prunePastPredictions({ before, include_concluded = true } = {}) {
   return { pruned: ids.length, before: cutoff };
 }
 
+function predictionCorrect(pred, actualWinnerId) {
+  return (actualWinnerId === pred.red_fighter_id && pred.red_win_prob > 0.5) ||
+         (actualWinnerId === pred.blue_fighter_id && pred.blue_win_prob > 0.5) ? 1 : 0;
+}
+
 function reconcilePrediction(fightId, actualWinnerId) {
-  let pred = oneRow(
-    'SELECT * FROM predictions WHERE fight_id = ? AND actual_winner_id IS NULL ORDER BY predicted_at DESC, id DESC LIMIT 1',
+  const preds = allRows(
+    'SELECT * FROM predictions WHERE fight_id = ? ORDER BY predicted_at DESC, id DESC',
     [fightId]
   );
-  if (!pred) {
-    pred = oneRow(
-      'SELECT * FROM predictions WHERE fight_id = ? ORDER BY predicted_at DESC, id DESC LIMIT 1',
-      [fightId]
+  if (!preds.length) return null;
+  const now = new Date().toISOString();
+  const results = preds.map(pred => {
+    const correct = predictionCorrect(pred, actualWinnerId);
+    const reconciledAt = pred.reconciled_at || now;
+    run(
+      'UPDATE predictions SET actual_winner_id = ?, reconciled_at = ?, correct = ? WHERE id = ?',
+      [actualWinnerId, reconciledAt, correct, pred.id]
     );
-  }
-  if (!pred) return null;
-  const correct = (actualWinnerId === pred.red_fighter_id && pred.red_win_prob > 0.5) ||
-                  (actualWinnerId === pred.blue_fighter_id && pred.blue_win_prob > 0.5) ? 1 : 0;
-  run('UPDATE predictions SET actual_winner_id = ?, reconciled_at = ?, correct = ? WHERE id = ?',
-    [actualWinnerId, new Date().toISOString(), correct, pred.id]);
-  return { ...pred, actual_winner_id: actualWinnerId, correct };
+    return { ...pred, actual_winner_id: actualWinnerId, reconciled_at: reconciledAt, correct };
+  });
+  return {
+    ...results[0],
+    reconciled_count: results.length,
+    model_results: results.map(r => ({
+      id: r.id,
+      model_version: r.model_version,
+      actual_winner_id: r.actual_winner_id,
+      correct: r.correct
+    }))
+  };
 }
 
 function getPredictionAccuracy() {
@@ -884,18 +1187,30 @@ function claimGuestProfile(guestId, newUserId) {
 
 /* ── PICK LOCK STATE ── */
 
+function todayISODate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function eventHasStarted(eventDate, today = todayISODate()) {
+  if (!eventDate) return false;
+  const date = String(eventDate).slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= today;
+}
+
 function getPickLockState(userId, fightId) {
   const row = oneRow(
-    `SELECT p.id AS pick_id, p.locked_at, f.winner_id
+    `SELECT p.id AS pick_id, p.locked_at, f.winner_id, e.date AS event_date
      FROM fights f
+     LEFT JOIN events e ON e.id = f.event_id
      LEFT JOIN user_picks p ON p.fight_id = f.id AND p.user_id = ?
      WHERE f.id = ?`,
     [userId, fightId]
   );
   if (!row) return { exists: false, locked: false, reason: null };
-  const locked = !!row.locked_at || row.winner_id != null;
-  const reason = row.locked_at ? 'event_locked' : (row.winner_id != null ? 'fight_over' : null);
-  return { exists: !!row.pick_id, locked, reason, existing_pick_id: row.pick_id || null };
+  const started = eventHasStarted(row.event_date);
+  const locked = !!row.locked_at || row.winner_id != null || started;
+  const reason = row.locked_at ? 'event_locked' : (row.winner_id != null ? 'fight_over' : (started ? 'event_started' : null));
+  return { exists: !!row.pick_id, locked, reason, existing_pick_id: row.pick_id || null, event_date: row.event_date || null };
 }
 
 /* ── USER PICKS ── */
@@ -979,13 +1294,22 @@ function deletePick(userId, pickId) {
 }
 
 function getPicksForUser(userId, opts = {}) {
-  const params = [userId];
+  const today = todayISODate();
+  const params = [today, today, today, userId];
   let sql = `
     SELECT
       p.*,
       f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name, f.winner_id, f.method, f.round AS fight_round,
       f.is_main, f.weight_class,
       ev.number AS event_number, ev.name AS event_name, ev.date AS event_date,
+      CASE WHEN p.locked_at IS NOT NULL OR f.winner_id IS NOT NULL OR (ev.date IS NOT NULL AND ev.date <= ?) THEN 1 ELSE 0 END AS is_locked,
+      CASE
+        WHEN p.locked_at IS NOT NULL THEN 'event_locked'
+        WHEN f.winner_id IS NOT NULL THEN 'fight_over'
+        WHEN ev.date IS NOT NULL AND ev.date <= ? THEN 'event_started'
+        ELSE NULL
+      END AS lock_reason,
+      CASE WHEN ev.date IS NOT NULL AND ev.date <= ? THEN 1 ELSE 0 END AS event_started,
       fp.name AS picked_fighter_name,
       s.model_version AS model_version,
       s.model_picked_fighter_id AS model_picked_fighter_id,
@@ -1222,6 +1546,199 @@ function getPredictionTrends(opts = {}) {
   return buildPredictionTrendResponse(allRows(sql, params), opts.limit);
 }
 
+function getModelLeaderboard(opts = {}) {
+  const params = [];
+  let sql = `
+    SELECT
+      p.model_version,
+      COUNT(*) AS total,
+      SUM(CASE WHEN p.correct = 1 THEN 1 ELSE 0 END) AS correct_count,
+      ROUND(CAST(SUM(CASE WHEN p.correct = 1 THEN 1 ELSE 0 END) AS REAL) / NULLIF(COUNT(*), 0) * 100, 1) AS accuracy_pct,
+      COALESCE(SUM(CASE WHEN p.correct = 1
+        THEN CAST(ROUND(10 * ((CASE WHEN p.red_win_prob >= p.blue_win_prob THEN p.red_win_prob ELSE p.blue_win_prob END) * 100.0 / 50.0)) AS INTEGER)
+        ELSE 0 END), 0) AS score,
+      ROUND(AVG((CASE WHEN p.red_win_prob >= p.blue_win_prob THEN p.red_win_prob ELSE p.blue_win_prob END) * 100.0), 1) AS avg_confidence_pct,
+      MAX(p.predicted_at) AS last_predicted_at,
+      MAX(COALESCE(ev.date, p.event_date)) AS last_event_date
+    FROM predictions p
+    LEFT JOIN fights f ON f.id = p.fight_id
+    LEFT JOIN events ev ON ev.id = f.event_id
+    WHERE p.reconciled_at IS NOT NULL`;
+  if (opts.event_date_from) { sql += ' AND COALESCE(ev.date, p.event_date) >= ?'; params.push(opts.event_date_from); }
+  if (opts.event_date_to) { sql += ' AND COALESCE(ev.date, p.event_date) <= ?'; params.push(opts.event_date_to); }
+  sql += `
+    GROUP BY p.model_version
+    ORDER BY score DESC, accuracy_pct DESC, correct_count DESC, total DESC, p.model_version ASC
+    LIMIT ?`;
+  params.push(trendLimit(opts.limit));
+
+  const leaderboard = allRows(sql, params).map((row, index) => {
+    const total = Number(row.total) || 0;
+    const correct = Number(row.correct_count) || 0;
+    const score = Number(row.score) || 0;
+    return {
+      rank: index + 1,
+      model_version: row.model_version,
+      total,
+      correct_count: correct,
+      incorrect_count: Math.max(total - correct, 0),
+      record: `${correct}-${Math.max(total - correct, 0)}`,
+      accuracy_pct: row.accuracy_pct == null ? null : Number(row.accuracy_pct),
+      score,
+      points: score,
+      avg_confidence_pct: row.avg_confidence_pct == null ? null : Number(row.avg_confidence_pct),
+      last_predicted_at: row.last_predicted_at || null,
+      last_event_date: row.last_event_date || null
+    };
+  });
+  const totalPredictions = leaderboard.reduce((sum, row) => sum + row.total, 0);
+  const totalCorrect = leaderboard.reduce((sum, row) => sum + row.correct_count, 0);
+  return {
+    summary: {
+      model_count: leaderboard.length,
+      total_predictions: totalPredictions,
+      correct_count: totalCorrect,
+      accuracy_pct: trendPct(totalCorrect, totalPredictions),
+      score: leaderboard.reduce((sum, row) => sum + row.score, 0)
+    },
+    leaderboard
+  };
+}
+
+function outcomeMethodBucket(value) {
+  const text = String(value || '').trim().toLowerCase();
+  if (!text) return null;
+  if (text.includes('ko') || text.includes('tko')) return 'ko/tko';
+  if (text.includes('submission') || text === 'sub' || text.includes(' sub')) return 'submission';
+  if (text.includes('decision')) return 'decision';
+  if (text.includes('draw')) return 'draw';
+  if (text.includes('no contest') || text === 'nc') return 'no_contest';
+  return text.replace(/[^a-z0-9]+/g, ' ').trim();
+}
+
+function buildPredictionOutcomeResponse(rows) {
+  const predictions = rows.map(row => {
+    const redProb = Number(row.red_win_prob) || 0;
+    const blueProb = Number(row.blue_win_prob) || 0;
+    const predictedSide = redProb >= blueProb ? 'red' : 'blue';
+    const predictedProb = predictedSide === 'red' ? redProb : blueProb;
+    const predictedFighterId = predictedSide === 'red' ? row.red_fighter_id : row.blue_fighter_id;
+    const predictedFighterName = predictedSide === 'red' ? row.red_name : row.blue_name;
+    const actualWinnerId = row.actual_winner_id == null ? null : Number(row.actual_winner_id);
+    const actualSide = actualWinnerId === Number(row.red_fighter_id) ? 'red'
+      : (actualWinnerId === Number(row.blue_fighter_id) ? 'blue' : null);
+    const predictedRound = row.predicted_round == null ? null : Number(row.predicted_round);
+    const actualRound = row.actual_round == null ? null : Number(row.actual_round);
+    const methodBucket = outcomeMethodBucket(row.predicted_method);
+    const actualMethodBucket = outcomeMethodBucket(row.actual_method);
+    const methodCorrect = methodBucket && actualMethodBucket ? (methodBucket === actualMethodBucket ? 1 : 0) : null;
+    const roundCorrect = predictedRound && actualRound ? (predictedRound === actualRound ? 1 : 0) : null;
+    return {
+      prediction_id: row.prediction_id == null ? null : Number(row.prediction_id),
+      fight_id: row.fight_id == null ? null : Number(row.fight_id),
+      event_id: row.event_id == null ? null : Number(row.event_id),
+      event_number: row.event_number == null ? null : Number(row.event_number),
+      event_name: row.event_name || null,
+      event_label: eventLabel(row),
+      event_date: row.event_date || null,
+      model_version: row.model_version || null,
+      predicted_at: row.predicted_at || null,
+      fight_label: `${row.red_name || 'Red'} vs ${row.blue_name || 'Blue'}`,
+      red_fighter_id: row.red_fighter_id == null ? null : Number(row.red_fighter_id),
+      blue_fighter_id: row.blue_fighter_id == null ? null : Number(row.blue_fighter_id),
+      red_name: row.red_name || null,
+      blue_name: row.blue_name || null,
+      predicted_fighter_id: predictedFighterId == null ? null : Number(predictedFighterId),
+      predicted_fighter_name: predictedFighterName || null,
+      predicted_side: predictedSide,
+      predicted_confidence_pct: Math.round(predictedProb * 1000) / 10,
+      predicted_method: row.predicted_method || null,
+      predicted_round: predictedRound || null,
+      actual_winner_id: actualWinnerId,
+      actual_winner_name: row.actual_winner_name || null,
+      actual_side: actualSide,
+      actual_method: row.actual_method || null,
+      actual_method_detail: row.actual_method_detail || null,
+      actual_round: actualRound || null,
+      actual_time: row.actual_time || null,
+      official_status: row.official_status || null,
+      official_captured_at: row.official_captured_at || null,
+      official_source: row.official_source || null,
+      correct: row.correct == null ? null : Number(row.correct),
+      method_correct: methodCorrect,
+      round_correct: roundCorrect
+    };
+  });
+  const total = predictions.length;
+  const correct = predictions.reduce((sum, row) => sum + (row.correct === 1 ? 1 : 0), 0);
+  const methodRows = predictions.filter(row => row.method_correct !== null);
+  const roundRows = predictions.filter(row => row.round_correct !== null);
+  return {
+    summary: {
+      total,
+      correct_count: correct,
+      accuracy_pct: trendPct(correct, total),
+      method_total: methodRows.length,
+      method_correct_count: methodRows.reduce((sum, row) => sum + (row.method_correct === 1 ? 1 : 0), 0),
+      method_accuracy_pct: trendPct(methodRows.reduce((sum, row) => sum + (row.method_correct === 1 ? 1 : 0), 0), methodRows.length),
+      round_total: roundRows.length,
+      round_correct_count: roundRows.reduce((sum, row) => sum + (row.round_correct === 1 ? 1 : 0), 0),
+      round_accuracy_pct: trendPct(roundRows.reduce((sum, row) => sum + (row.round_correct === 1 ? 1 : 0), 0), roundRows.length)
+    },
+    predictions
+  };
+}
+
+function getPredictionOutcomeDetails(opts = {}) {
+  const params = [];
+  let sql = `
+    SELECT
+      p.id AS prediction_id,
+      p.fight_id,
+      COALESCE(ev.id, f.event_id) AS event_id,
+      ev.number AS event_number,
+      ev.name AS event_name,
+      COALESCE(ev.date, p.event_date) AS event_date,
+      p.model_version,
+      p.predicted_at,
+      p.red_fighter_id,
+      p.blue_fighter_id,
+      fr.name AS red_name,
+      fb.name AS blue_name,
+      p.red_win_prob,
+      p.blue_win_prob,
+      p.predicted_method,
+      p.predicted_round,
+      COALESCE(oo.winner_id, p.actual_winner_id, f.winner_id) AS actual_winner_id,
+      aw.name AS actual_winner_name,
+      COALESCE(oo.method, f.method) AS actual_method,
+      COALESCE(oo.method_detail, f.method_detail) AS actual_method_detail,
+      COALESCE(oo.round, f.round) AS actual_round,
+      COALESCE(oo.time, f.time) AS actual_time,
+      COALESCE(oo.status, CASE WHEN p.actual_winner_id IS NOT NULL THEN 'official' ELSE NULL END) AS official_status,
+      oo.captured_at AS official_captured_at,
+      oo.source AS official_source,
+      p.correct
+    FROM predictions p
+    LEFT JOIN fights f ON f.id = p.fight_id
+    LEFT JOIN events ev ON ev.id = f.event_id
+    LEFT JOIN fighters fr ON fr.id = p.red_fighter_id
+    LEFT JOIN fighters fb ON fb.id = p.blue_fighter_id
+    LEFT JOIN official_fight_outcomes oo ON oo.fight_id = p.fight_id
+    LEFT JOIN fighters aw ON aw.id = COALESCE(oo.winner_id, p.actual_winner_id, f.winner_id)
+    WHERE p.reconciled_at IS NOT NULL`;
+  if (opts.event_date_from) { sql += ' AND COALESCE(ev.date, p.event_date) >= ?'; params.push(opts.event_date_from); }
+  if (opts.event_date_to) { sql += ' AND COALESCE(ev.date, p.event_date) <= ?'; params.push(opts.event_date_to); }
+  if (opts.model_version) { sql += ' AND p.model_version = ?'; params.push(opts.model_version); }
+  if (opts.event_id) { sql += ' AND COALESCE(ev.id, f.event_id) = ?'; params.push(opts.event_id); }
+  if (opts.fight_id) { sql += ' AND p.fight_id = ?'; params.push(opts.fight_id); }
+  sql += `
+    ORDER BY COALESCE(ev.date, p.event_date) DESC, p.predicted_at DESC, p.id DESC
+    LIMIT ?`;
+  params.push(trendLimit(opts.limit));
+  return buildPredictionOutcomeResponse(allRows(sql, params));
+}
+
 function getGlobalPredictionTrendForEvents(eventIds) {
   if (!eventIds.length) return new Map();
   const placeholders = eventIds.map(() => '?').join(',');
@@ -1419,9 +1936,10 @@ module.exports = {
   searchFighters, getFighter, getFighterEvents,
   getEventCard, getEvent, getEventByNumber, getFight, getAllEvents,
   getCareerStats, getHeadToHead, getFighterRecord,
+  upsertOfficialOutcome, getOfficialOutcome, getOfficialOutcomesForEvent,
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats,
-  upsertPrediction, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy, getPredictionTrends,
+  upsertPrediction, getPredictionLockState, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy, getPredictionTrends, getModelLeaderboard, getPredictionOutcomeDetails,
   createUser, getUser, updateUser, deleteUser, claimGuestProfile,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
   lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,

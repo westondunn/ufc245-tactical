@@ -15,6 +15,34 @@ async function waitForChips(page) {
   return strip;
 }
 
+function todayISODate() {
+  return new Date().toISOString().slice(0, 10);
+}
+
+function sortedForDefault(events) {
+  const today = todayISODate();
+  const dateOf = e => /^\d{4}-\d{2}-\d{2}$/.test(String(e.date || '').slice(0, 10))
+    ? String(e.date).slice(0, 10)
+    : '';
+  return events.slice().sort((a, b) => {
+    const ad = dateOf(a);
+    const bd = dateOf(b);
+    const au = ad && ad >= today;
+    const bu = bd && bd >= today;
+    if (au !== bu) return au ? -1 : 1;
+    if (au && bu) return ad.localeCompare(bd) || String(a.name || '').localeCompare(String(b.name || ''));
+    if (ad && bd) return bd.localeCompare(ad) || String(a.name || '').localeCompare(String(b.name || ''));
+    if (ad) return -1;
+    if (bd) return 1;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+}
+
+async function resolveDefaultEvent(request) {
+  const events = await (await request.get('/api/events')).json();
+  return sortedForDefault(events)[0];
+}
+
 // ============================================================
 // PAGE LOAD
 // ============================================================
@@ -42,9 +70,14 @@ test.describe('Page Load', () => {
     await expect(page.locator('#tab-dashboard')).toBeVisible();
   });
 
-  test('hero shows UFC 245 on load', async ({ page }) => {
+  test('hero shows the next upcoming event on load', async ({ page, request }) => {
+    const expected = await resolveDefaultEvent(request);
     await page.goto('/');
-    await expect(page.locator('#heroEvent')).toContainText('UFC 245', { timeout: 5000 });
+    await waitForChips(page);
+    await expect(page.locator('#heroEvent')).toContainText(
+      expected.number ? `UFC ${expected.number}` : expected.name,
+      { timeout: 5000 }
+    );
   });
 
   test('no console errors on load', async ({ page }) => {
@@ -76,11 +109,12 @@ test.describe('Event Dropdown', () => {
     expect(texts.some(t => t.includes('UFC 300'))).toBe(true);
   });
 
-  test('UFC 245 is selected by default', async ({ page }) => {
+  test('next upcoming event is selected by default', async ({ page, request }) => {
+    const expected = await resolveDefaultEvent(request);
     await page.goto('/');
     await waitForDropdown(page);
     const val = await page.locator('#eventDropdown').inputValue();
-    expect(val).not.toBe('');
+    expect(val).toBe(String(expected.id));
   });
 
   test('fight strip loads chips for default event', async ({ page }) => {
@@ -158,7 +192,13 @@ test.describe('Event Dropdown', () => {
 test.describe('Fight Selection', () => {
   test('clicking UFC 245 main event loads full recreation', async ({ page }) => {
     await page.goto('/');
-    await waitForChips(page);
+    const dropdown = await waitForDropdown(page);
+    const ufc245 = await dropdown.locator('option').evaluateAll(opts =>
+      opts.find(o => o.textContent.includes('UFC 245'))?.value
+    );
+    expect(ufc245).toBeTruthy();
+    await dropdown.selectOption(ufc245);
+    await expect(page.locator('#eventFightStrip .fight-chip')).not.toHaveCount(0, { timeout: 5000 });
     await page.locator('#eventFightStrip .fight-chip').first().click();
 
     await expect(page.locator('#heroRedName')).toContainText('Usman', { timeout: 3000 });

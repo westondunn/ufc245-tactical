@@ -472,18 +472,69 @@ app.get('/api/predictions/trends', apiHandler(async (req, res) => {
   res.json(await db.getPredictionTrends(opts));
 }));
 
+// Public: ranked model records after fights are reconciled
+app.get('/api/predictions/models/leaderboard', apiHandler(async (req, res) => {
+  const opts = {};
+  if (req.query.from) opts.event_date_from = String(req.query.from).slice(0, 10);
+  if (req.query.to) opts.event_date_to = String(req.query.to).slice(0, 10);
+  if (req.query.limit) opts.limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+  res.json(await db.getModelLeaderboard(opts));
+}));
+
+// Public: recent model prediction calls compared with official fight outcomes
+app.get('/api/predictions/outcomes', apiHandler(async (req, res) => {
+  const opts = {};
+  if (req.query.from) opts.event_date_from = String(req.query.from).slice(0, 10);
+  if (req.query.to) opts.event_date_to = String(req.query.to).slice(0, 10);
+  if (req.query.limit) opts.limit = Math.min(parseInt(req.query.limit, 10) || 25, 100);
+  if (req.query.model_version) opts.model_version = String(req.query.model_version).slice(0, 120);
+  if (req.query.event_id) opts.event_id = parseInt(req.query.event_id, 10);
+  if (req.query.fight_id) opts.fight_id = parseInt(req.query.fight_id, 10);
+  res.json(await db.getPredictionOutcomeDetails(opts));
+}));
+
 // Protected: ingest predictions from microservice
 app.post('/api/predictions/ingest', requirePredictionKey, apiHandler(async (req, res) => {
   const predictions = req.body.predictions;
   if (!Array.isArray(predictions)) return res.status(400).json({ error: 'predictions array required' });
   let ingested = 0;
-  for (const p of predictions) {
-    if (!p.fight_id || p.red_win_prob == null || p.blue_win_prob == null || !p.model_version || !p.predicted_at) continue;
+  let skippedInvalid = 0;
+  let skippedLocked = 0;
+  const acceptedIndices = [];
+  const lockedIndices = [];
+  const skipped = [];
+  for (let index = 0; index < predictions.length; index++) {
+    const p = predictions[index];
+    if (!p.fight_id || p.red_win_prob == null || p.blue_win_prob == null || !p.model_version || !p.predicted_at) {
+      skippedInvalid++;
+      continue;
+    }
+    const lock = await db.getPredictionLockState(p);
+    if (lock && lock.locked) {
+      skippedLocked++;
+      lockedIndices.push(index);
+      skipped.push({
+        index,
+        fight_id: p.fight_id,
+        reason: lock.reason || 'locked',
+        event_date: lock.event_date || p.event_date || null
+      });
+      continue;
+    }
     await db.upsertPrediction(p);
+    acceptedIndices.push(index);
     ingested++;
   }
   if (ingested > 0) await db.save();
-  res.json({ status: 'ok', ingested });
+  res.json({
+    status: 'ok',
+    ingested,
+    skipped_invalid: skippedInvalid,
+    skipped_locked: skippedLocked,
+    skipped,
+    accepted_indices: acceptedIndices,
+    locked_indices: lockedIndices
+  });
 }));
 
 // Protected: reconcile predictions with actual results
@@ -491,13 +542,35 @@ app.post('/api/predictions/reconcile', requirePredictionKey, apiHandler(async (r
   const results = req.body.results;
   if (!Array.isArray(results)) return res.status(400).json({ error: 'results array required' });
   const reconciled = [];
+  let officialCaptured = 0;
+  let reconciledPredictions = 0;
   for (const r of results) {
     if (!r.fight_id || !r.actual_winner_id) continue;
+    const official = await db.upsertOfficialOutcome({
+      fight_id: r.fight_id,
+      winner_id: r.actual_winner_id,
+      method: r.method,
+      method_detail: r.method_detail,
+      round: r.round,
+      time: r.time,
+      status: r.status || 'official',
+      source: r.source || 'prediction_reconcile',
+      source_url: r.source_url,
+      captured_at: r.captured_at,
+      raw: r
+    });
+    if (official) officialCaptured++;
     const result = await db.reconcilePrediction(r.fight_id, r.actual_winner_id);
-    if (result) reconciled.push(result);
+    if (result) {
+      reconciled.push(result);
+      reconciledPredictions += result.reconciled_count || 1;
+    }
   }
-  if (reconciled.length > 0) await db.save();
-  res.json({ status: 'ok', reconciled: reconciled.length, results: reconciled });
+  if (reconciled.length > 0 || officialCaptured > 0) {
+    await db.save();
+    if (officialCaptured > 0) cache.invalidateAll();
+  }
+  res.json({ status: 'ok', reconciled: reconciledPredictions, fights: reconciled.length, official_captured: officialCaptured, results: reconciled });
 }));
 
 // Protected: remove passed/concluded fights from active prediction reads.
@@ -509,6 +582,58 @@ app.post('/api/predictions/prune', requirePredictionKey, apiHandler(async (req, 
   const result = await db.prunePastPredictions({ before, include_concluded });
   if (result.pruned > 0) await db.save();
   res.json({ status: 'ok', ...result, include_concluded });
+}));
+
+// Public read: latest official/in-progress outcome snapshots captured by jobs
+app.get('/api/events/:id/official-outcomes', apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
+  const event = await db.getEvent(eventId);
+  if (!event) return res.status(404).json({ error: 'event_not_found' });
+  res.json({ event_id: eventId, outcomes: await db.getOfficialOutcomesForEvent(eventId) });
+}));
+
+// Protected write: prediction/official-data jobs can snapshot live or final outcomes.
+// Final snapshots also update fights.winner_id/method/round/time, which lets the
+// existing reconciliation jobs score model predictions and user picks.
+app.post('/api/events/:id/official-outcomes', requirePredictionKey, apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
+  const event = await db.getEvent(eventId);
+  if (!event) return res.status(404).json({ error: 'event_not_found' });
+  const outcomes = Array.isArray(req.body.outcomes) ? req.body.outcomes : null;
+  if (!outcomes) return res.status(400).json({ error: 'outcomes array required' });
+
+  const fightIds = new Set((await db.getEventCard(eventId)).map(f => Number(f.id)));
+  const saved = [];
+  const errors = [];
+  for (const outcome of outcomes) {
+    const fightId = parseInt(outcome && outcome.fight_id, 10);
+    if (!Number.isFinite(fightId) || !fightIds.has(fightId)) {
+      errors.push({ fight_id: outcome && outcome.fight_id, error: 'fight_not_in_event' });
+      continue;
+    }
+    try {
+      const savedOutcome = await db.upsertOfficialOutcome({
+        ...outcome,
+        source: outcome.source || 'official_outcome_job'
+      });
+      if (savedOutcome) saved.push(savedOutcome);
+    } catch (err) {
+      errors.push({ fight_id: fightId, error: err.code || err.message || 'outcome_failed' });
+    }
+  }
+
+  if (saved.length) {
+    await db.save();
+    cache.invalidateAll();
+  }
+  let picks = null;
+  if (req.body.reconcile_picks === true && saved.length) {
+    picks = await db.reconcilePicksForEvent(eventId);
+    await db.save();
+  }
+  res.json({ status: errors.length ? 'partial' : 'ok', event_id: eventId, captured: saved.length, outcomes: saved, errors, picks });
 }));
 
 // ============================================================
@@ -807,7 +932,7 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
   if (!fs.existsSync(seedPath)) return res.status(404).json({ error: 'seed_not_found' });
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
   const added = { fighters: 0, events: 0, fights: 0 };
-  const updated = { fighters: 0 };
+  const updated = { fighters: 0, fight_outcomes: 0 };
   for (const f of (seed.fighters || [])) {
     const existing = await db.oneRow('SELECT id FROM fighters WHERE id = ?', [f.id]);
     await db.upsertFighter(f);
@@ -820,11 +945,27 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
   }
   for (const f of (seed.fights || [])) {
     const existing = await db.oneRow('SELECT id FROM fights WHERE id = ?', [f.id]);
-    if (!existing) { await db.upsertFight(f); added.fights++; }
+    if (!existing) {
+      await db.upsertFight(f);
+      added.fights++;
+    } else if (f.winner_id || f.method || f.round || f.time) {
+      const outcome = await db.upsertOfficialOutcome({
+        fight_id: f.id,
+        winner_id: f.winner_id || null,
+        method: f.method || null,
+        method_detail: f.method_detail || null,
+        round: f.round || null,
+        time: f.time || null,
+        status: f.winner_id ? 'official' : undefined,
+        source: 'seed_import',
+        raw: f
+      });
+      if (outcome) updated.fight_outcomes++;
+    }
   }
   await db.save();
   cache.invalidateAll();
-  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights} updated_fighters=${updated.fighters}`);
+  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights} updated_fighters=${updated.fighters} fight_outcomes=${updated.fight_outcomes}`);
   res.json({ status: 'ok', added, updated, cacheEntries: cache.size() });
 }));
 

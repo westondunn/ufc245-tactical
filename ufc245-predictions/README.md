@@ -45,6 +45,10 @@ curl -X POST http://localhost:8000/trigger/retrain \
 
 curl -X POST http://localhost:8000/trigger/sync \
   -H "x-prediction-key: YOUR_KEY"
+
+# Optional: snapshot official/in-progress outcomes from the main app feed
+curl -X POST http://localhost:8000/trigger/outcomes \
+  -H "x-prediction-key: YOUR_KEY"
 ```
 
 ## Cron schedule
@@ -52,8 +56,8 @@ curl -X POST http://localhost:8000/trigger/sync \
 | Job | Schedule | Description |
 |-----|----------|-------------|
 | `daily_predict` | 06:00 UTC daily | Predict next 14 days |
-| `refresh_near` | 08:00, 14:00, 20:00 UTC | Refresh next 48h |
-| `daily_reconcile` | 07:00 UTC daily | Reconcile last 7 days |
+| `refresh_near` | 08:00, 14:00, 20:00 UTC | Refresh next 48h and snapshot official outcomes |
+| `daily_reconcile` | 07:00 UTC daily | Capture official outcomes and reconcile last 7 days |
 | `weekly_retrain` | Monday 05:00 UTC | Retrain on all data |
 | `sync_unsynced` | Every hour at :30 | Sync unsynced local backlog to main app |
 

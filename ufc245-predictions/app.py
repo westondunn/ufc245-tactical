@@ -6,7 +6,7 @@ from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, HTTPException, Header
 
 from db import init_db, get_latest_model, get_unsynced_predictions
-from jobs import daily_maintenance, daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced
+from jobs import daily_maintenance, daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced, capture_official_outcomes
 
 logging.basicConfig(level=logging.INFO, format="%(asctime)s %(name)s %(message)s")
 logger = logging.getLogger("app")
@@ -117,6 +117,12 @@ def trigger_refresh(x_prediction_key: str = Header(default="")):
 def trigger_reconcile(x_prediction_key: str = Header(default="")):
     _require_key(x_prediction_key)
     return daily_reconcile()
+
+
+@app.post("/trigger/outcomes")
+def trigger_outcomes(x_prediction_key: str = Header(default="")):
+    _require_key(x_prediction_key)
+    return capture_official_outcomes(days_back=1, days_forward=2, source="manual_trigger")
 
 
 @app.post("/trigger/retrain")

@@ -8,6 +8,55 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // XSS prevention
 function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+function todayISODate(){
+  return new Date().toISOString().slice(0, 10);
+}
+
+function eventISODate(event){
+  const date = String((event && event.date) || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) ? date : '';
+}
+
+function sortEventsForDefaultView(events, today = todayISODate()){
+  return (events || []).slice().sort((a, b) => {
+    const ad = eventISODate(a);
+    const bd = eventISODate(b);
+    const au = ad && ad >= today;
+    const bu = bd && bd >= today;
+    if (au !== bu) return au ? -1 : 1;
+    if (au && bu) return ad.localeCompare(bd) || String(a.name || '').localeCompare(String(b.name || ''));
+    if (ad && bd) return bd.localeCompare(ad) || String(a.name || '').localeCompare(String(b.name || ''));
+    if (ad) return -1;
+    if (bd) return 1;
+    return String(a.name || '').localeCompare(String(b.name || ''));
+  });
+}
+
+function getNextUpcomingEvent(events, today = todayISODate()){
+  const sorted = sortEventsForDefaultView(events, today);
+  return sorted[0] || null;
+}
+
+function formatEventOptionLabel(event, includeDate = true){
+  if (!event) return 'Event';
+  let base;
+  if (event.number) {
+    const prefix = 'UFC ' + event.number;
+    base = event.name && String(event.name).toLowerCase().startsWith(prefix.toLowerCase())
+      ? event.name
+      : prefix + (event.name ? ' · ' + event.name : '');
+  } else {
+    base = event.name || ('Event ' + event.id);
+  }
+  return base + (includeDate && event.date ? ' · ' + event.date : '');
+}
+
+function formatFightEventLabel(fight){
+  if (!fight) return 'UFC Event';
+  if (fight.event_number) return 'UFC ' + fight.event_number;
+  return fight.event_name || 'UFC Event';
+}
+
 // Theme — single source of truth, reads from CSS :root tokens in styles.css.
 // Use these in new chart/viz code instead of hardcoded hex literals.
 const theme = (() => {
@@ -2407,6 +2456,15 @@ let _currentFight = 'ufc245';
 // Sections that require full UFC 245 data
 const SCOPED_SECTIONS = ['tape','result','totals','rounds','targets','accuracy','positions','timeline','geometry','biomech','pace','aftermath'];
 
+function setHeroMeta(venueText, cells){
+  const venue = document.querySelector('.hero-venue');
+  if (venue) venue.textContent = venueText || '';
+  const resultCells = document.querySelectorAll('.hero-result__cell');
+  (cells || []).forEach((text, i) => {
+    if (resultCells[i]) resultCells[i].textContent = text || '';
+  });
+}
+
 function selectFight(fightId){
   const fight = FIGHTS[fightId];
   if (!fight) return;
@@ -2483,6 +2541,10 @@ function selectFight(fightId){
   setHtml('heroBlueName', fight.blue.name);
   setHtml('heroBlueRecord', fight.blue.record);
   setHtml('heroBlueStyle', fight.blue.style);
+  setHeroMeta(
+    (fight.date || '') + (fight.venue ? ' · ' + fight.venue : ''),
+    ['TKO · Punches', 'R5 · 4:10', 'Fight of the Night']
+  );
 
   // ── SCOPE DETAILED SECTIONS ──
   // Hide generic stats panel when viewing full UFC 245 breakdown
@@ -2513,17 +2575,18 @@ function setupFightSelector(){
   const strip = document.getElementById('eventFightStrip');
 
   fetch('/api/events').then(r=>r.json()).then(events => {
-    const numbered = events.filter(e => e.number).sort((a,b) => b.number - a.number);
+    const sorted = sortEventsForDefaultView(events);
+    const defaultEvent = getNextUpcomingEvent(sorted);
     dropdown.innerHTML = '<option value="">— Select Event —</option>' +
-      numbered.map(e =>
-        '<option value="' + e.id + '" data-num="' + e.number + '"' +
-        (e.number === 245 ? ' selected' : '') + '>' +
-        'UFC ' + e.number +
+      sorted.map(e =>
+        '<option value="' + e.id + '" data-num="' + (e.number || '') + '">' +
+        escHtml(formatEventOptionLabel(e)) +
         '</option>'
       ).join('');
-    // Auto-load UFC 245
-    const ufc245 = numbered.find(e => e.number === 245);
-    if (ufc245) loadEventFightStrip(ufc245.id);
+    if (defaultEvent) {
+      dropdown.value = String(defaultEvent.id);
+      loadEventFightStrip(defaultEvent.id);
+    }
   }).catch(() => {
     dropdown.innerHTML = '<option value="">Error loading</option>';
   });
@@ -2618,7 +2681,7 @@ async function loadEventFightStrip(eventId){
           ' <span style="color:var(--muted-dim);font-size:8px">def</span> ' + escHtml(lName);
       }
       const mainAttr = (i === 0 && f.is_main) ? ' data-main="1"' : '';
-      return '<button class="fight-chip" data-dbfight="' + f.id + '" data-event="' + data.event.number + '"' + mainAttr + ' onclick="selectDbFight(' + f.id + ',this)">' +
+      return '<button class="fight-chip" data-dbfight="' + f.id + '" data-event="' + (data.event.number || '') + '"' + mainAttr + ' onclick="selectDbFight(' + f.id + ',this)">' +
         label +
         '<br><span style="font-size:8px;color:var(--muted)">' + escHtml(method) + (isDraw ? '' : ' R' + (f.round||'')) + '</span>' +
         '</button>';
@@ -2663,7 +2726,7 @@ function renderGenericStatsPanel(f) {
 
   const setHtml = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
   setHtml('gspTitle', escHtml(f.red_name) + ' vs ' + escHtml(f.blue_name));
-  setHtml('gspSub', 'UFC ' + (f.event_number || '') + ' · ' + escHtml(f.method || '') +
+  setHtml('gspSub', escHtml(formatFightEventLabel(f)) + ' · ' + escHtml(f.method || '') +
     (f.round ? ' R' + f.round : '') + (f.time ? ' ' + escHtml(f.time) : '') +
     ' · Source: UFCStats.com');
 
@@ -2826,10 +2889,10 @@ async function selectDbFight(fightId, chipEl){
   try {
     const res = await fetch('/api/fights/' + fightId + '/rounds');
     const f = await res.json();
-    const titleTag = f.is_title ? ' · ' + (f.weight_class||'') + ' Title' : '';
+    const titleTag = f.is_title ? ' · ' + escHtml(f.weight_class||'') + ' Title' : '';
 
     const setHtml = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
-    setHtml('heroEvent', 'UFC ' + (f.event_number||'') + titleTag);
+    setHtml('heroEvent', escHtml(formatFightEventLabel(f)) + titleTag);
     setHtml('heroRedTag', 'Red Corner <span class="dot"></span>');
     setHtml('heroRedNick', f.red_nickname ? '&ldquo;' + escHtml(f.red_nickname) + '&rdquo;' : '');
     setHtml('heroRedName', escHtml(f.red_name));
@@ -2841,6 +2904,14 @@ async function selectDbFight(fightId, chipEl){
     setHtml('heroBlueName', escHtml(f.blue_name));
     setHtml('heroBlueRecord', (f.blue_height ? f.blue_height + 'cm' : '') + (f.blue_reach ? ' · ' + f.blue_reach + 'cm reach' : ''));
     setHtml('heroBlueStyle', f.blue_stance ? escHtml(f.blue_stance) + (f.blue_nationality ? ' · ' + escHtml(f.blue_nationality) : '') : '');
+    setHeroMeta(
+      [f.event_date, f.venue, f.city].filter(Boolean).join(' · '),
+      [
+        f.method ? f.method + (f.method_detail ? ' · ' + f.method_detail : '') : 'Pre-fight',
+        f.round ? 'R' + f.round + (f.time ? ' · ' + f.time : '') : (f.winner_id ? 'Final' : 'Upcoming'),
+        f.weight_class || ''
+      ]
+    );
 
     // Dim hardcoded sections
     SCOPED_SECTIONS.forEach(id => {
@@ -3204,7 +3275,7 @@ async function loadEventsTab(){
   tbody.innerHTML = '<tr><td colspan="5" style="color:var(--muted);padding:20px;text-align:center">Loading events…</td></tr>';
   try {
     const res = await fetch('/api/events');
-    _allEventsData = await res.json();
+    _allEventsData = sortEventsForDefaultView(await res.json());
     countEl.textContent = _allEventsData.length + ' events';
     renderEventsTable(_allEventsData);
     document.getElementById('eventSearchInput').addEventListener('input', function(){
@@ -4071,21 +4142,15 @@ async function populatePicksEventSelect(){
   try {
     const res = await fetch('/api/events');
     const events = await res.json();
-    // Sort: most recent date first (DESC). Null dates sort last.
-    events.sort((a, b) => (b.date || '').localeCompare(a.date || ''));
-    sel.innerHTML = events
-      .map(e => `<option value="${e.id}">UFC ${e.number || '—'} · ${escHtml(e.name)}${e.date ? ' · ' + e.date : ''}</option>`)
+    const sorted = sortEventsForDefaultView(events);
+    sel.innerHTML = sorted
+      .map(e => `<option value="${e.id}">${escHtml(formatEventOptionLabel(e))}</option>`)
       .join('');
 
-    // Default selection: nearest upcoming event (earliest future date), else
-    // the most recent past event. "Today" uses ISO date string comparison.
-    const today = new Date().toISOString().slice(0, 10);
-    const futureEvents = events.filter(e => (e.date || '') >= today);
-    const defaultEvent = futureEvents.length > 0
-      ? futureEvents[futureEvents.length - 1]   // earliest future (events sorted DESC)
-      : events[0];                              // most recent otherwise
+    const today = todayISODate();
+    const defaultEvent = getNextUpcomingEvent(sorted, today);
 
-    const storedEvent = events.find(e => e.id === _picksState.eventId);
+    const storedEvent = sorted.find(e => e.id === _picksState.eventId);
     const storedEventIsUsable = storedEvent && (
       _picksState.view !== 'upcoming' || !storedEvent.date || storedEvent.date >= today
     );
@@ -4120,16 +4185,21 @@ async function loadUpcomingView(){
       fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?event_id=${eventId}`),
       fetch(`/api/events/${eventId}/picks/model-comparison`)
     ]);
-    const { card } = await cardRes.json();
+    const { event, card } = await cardRes.json();
     const { picks } = await picksRes.json();
     const { fights: compFights } = await compRes.json();
+    const eventStarted = hasPicksEventStarted(event && event.date);
+    _picksState.event = event || null;
+    _picksState.eventStarted = eventStarted;
 
     // Normalize fighter-id field names — /api/events/:id/card uses red_id/blue_id,
     // other endpoints use red_fighter_id/blue_fighter_id. Widget reads *_fighter_id.
     const normalized = (card || []).map(f => ({
       ...f,
       red_fighter_id:  f.red_fighter_id  != null ? f.red_fighter_id  : f.red_id,
-      blue_fighter_id: f.blue_fighter_id != null ? f.blue_fighter_id : f.blue_id
+      blue_fighter_id: f.blue_fighter_id != null ? f.blue_fighter_id : f.blue_id,
+      event_date: event && event.date ? event.date : null,
+      event_started: eventStarted
     }));
     _picksState.eventCard = normalized;
     _picksState.userPicks = new Map((picks || []).map(p => [p.fight_id, p]));
@@ -4147,6 +4217,8 @@ async function loadUpcomingView(){
         hint.textContent = 'No fights on this card.';
       } else if (open === 0) {
         hint.textContent = `All ${total} fights concluded · see History`;
+      } else if (eventStarted) {
+        hint.textContent = `${open} fight${open === 1 ? '' : 's'} locked · event started`;
       } else if (open === total) {
         hint.textContent = `${open} upcoming fight${open === 1 ? '' : 's'}`;
       } else {
@@ -4247,6 +4319,11 @@ function compareModelVersions(a, b){
   return aa[3].localeCompare(bb[3]);
 }
 
+function hasPicksEventStarted(eventDate){
+  const date = String(eventDate || '').slice(0, 10);
+  return /^\d{4}-\d{2}-\d{2}$/.test(date) && date <= todayISODate();
+}
+
 function renderFighterStatsHover(fight, model, corner){
   const items = getFighterEvidenceItems(fight, model, corner).slice(0, 5);
   if (!items.length) return '';
@@ -4293,11 +4370,67 @@ function getFighterEvidenceItems(fight, model, corner){
   return items;
 }
 
+function fighterInitials(name){
+  const parts = String(name || '').trim().split(/\s+/).filter(Boolean);
+  if (!parts.length) return '—';
+  if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
+  return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+function fighterRecordText(fight, corner){
+  const prefix = corner === 'red' ? 'red_record_' : 'blue_record_';
+  const wins = Number(fight[prefix + 'wins']);
+  const losses = Number(fight[prefix + 'losses']);
+  const draws = Number(fight[prefix + 'draws']);
+  if (![wins, losses, draws].every(Number.isFinite)) return '';
+  return `${wins}-${losses}-${draws}`;
+}
+
+function renderFighterRecordBadge(fight, corner){
+  const record = fighterRecordText(fight, corner);
+  if (!record) return '';
+  return `<span class="pick-fight__record-badge" title="Fighter record">${escHtml(record)}</span>`;
+}
+
+function isUfcDebut(fight, corner){
+  const key = corner === 'red' ? 'red_is_ufc_debut' : 'blue_is_ufc_debut';
+  const value = fight ? fight[key] : null;
+  return value === true || value === 1 || value === '1';
+}
+
+function renderFighterDebutBadge(fight, corner){
+  if (!isUfcDebut(fight, corner)) return '';
+  return '<span class="pick-fight__debut-badge" title="First UFC fight">UFC debut</span>';
+}
+
+function renderFighterEvidencePanel(fight, model, corner){
+  const items = model ? getFighterEvidenceItems(fight, model, corner).slice(0, 5) : [];
+  const fighterName = corner === 'red' ? fight.red_name : fight.blue_name;
+  const rows = items.length
+    ? items.map(item => `
+        <div class="pick-fighter-evidence__row">
+          <span>${escHtml(item.label)}</span>
+          <strong>${escHtml(item.value)}</strong>
+        </div>`).join('')
+    : '<div class="pick-fighter-evidence__empty">No fighter evidence available yet.</div>';
+  return `
+    <div class="pick-fighter-evidence pick-fighter-evidence--${corner}">
+      <div class="pick-fighter-evidence__head">
+        <span>${corner === 'red' ? 'Red evidence' : 'Blue evidence'}</span>
+        <strong>${escHtml(fighterName || (corner === 'red' ? 'Red corner' : 'Blue corner'))}</strong>
+      </div>
+      ${rows}
+    </div>`;
+}
+
 function renderPickWidget(fight){
   const pick = _picksState.userPicks.get(fight.id);
   const model = _picksState.modelByFightId.get(fight.id);
-  const locked = fight.winner_id != null || (pick && pick.locked_at);
-  const lockedReason = fight.winner_id != null ? 'fight_over' : (pick && pick.locked_at ? 'event_locked' : null);
+  const eventStarted = fight.event_started === true || (pick && Number(pick.event_started) === 1);
+  const locked = fight.winner_id != null || eventStarted || (pick && (pick.locked_at || Number(pick.is_locked) === 1));
+  const lockedReason = pick && pick.lock_reason
+    ? pick.lock_reason
+    : (fight.winner_id != null ? 'fight_over' : (pick && pick.locked_at ? 'event_locked' : (eventStarted ? 'event_started' : null)));
 
   const pickedRed  = pick && pick.picked_fighter_id === fight.red_fighter_id;
   const pickedBlue = pick && pick.picked_fighter_id === fight.blue_fighter_id;
@@ -4305,8 +4438,19 @@ function renderPickWidget(fight){
   const methodVal = pick && pick.method_pick || '';
   const roundVal = pick && pick.round_pick || '';
   const notesVal = pick && pick.notes || '';
-  const redStatsHover = model ? renderFighterStatsHover(fight, model, 'red') : '';
-  const blueStatsHover = model ? renderFighterStatsHover(fight, model, 'blue') : '';
+  const redEvidence = renderFighterEvidencePanel(fight, model, 'red');
+  const blueEvidence = renderFighterEvidencePanel(fight, model, 'blue');
+  const redRecordBadge = renderFighterRecordBadge(fight, 'red');
+  const blueRecordBadge = renderFighterRecordBadge(fight, 'blue');
+  const redDebutBadge = renderFighterDebutBadge(fight, 'red');
+  const blueDebutBadge = renderFighterDebutBadge(fight, 'blue');
+  const redMeta = fight.weight_class || '';
+  const blueMeta = fight.is_main ? 'MAIN EVENT' : (fight.is_title ? 'TITLE FIGHT' : '');
+  const detailMeta = [
+    model && model.picked_fighter_id ? 'Model evidence' : 'No model yet',
+    methodVal || roundVal ? 'Scoring details set' : 'Optional scoring details',
+    notesVal ? 'Notes saved' : null
+  ].filter(Boolean).join(' · ');
 
   // Model comparison with horizontal probability bar
   let modelHtml;
@@ -4382,9 +4526,12 @@ function renderPickWidget(fight){
   // Status row
   let statusHtml = '';
   if (locked && !outcomeHtml) {
-    statusHtml = `<div class="pick-status is-locked"><span class="pick-status__label">Locked</span><span class="pick-status__detail">${lockedReason === 'fight_over' ? 'Fight already concluded' : 'Event locked by admin'}</span></div>`;
+    const lockedDetail = lockedReason === 'fight_over'
+      ? 'Fight already concluded'
+      : (lockedReason === 'event_started' ? 'Event already started' : 'Event locked by admin');
+    statusHtml = `<div class="pick-status is-locked"><span class="pick-status__label">Locked</span><span class="pick-status__detail">${lockedDetail}</span></div>`;
   } else if (pick && !locked) {
-    statusHtml = `<div class="pick-status is-saved"><span class="pick-status__label">Saved</span><span class="pick-status__detail">You can edit until the event locks.</span></div>`;
+    statusHtml = `<div class="pick-status is-saved"><span class="pick-status__label">Saved</span><span class="pick-status__detail">You can edit until the event starts.</span></div>`;
   } else if (!locked) {
     statusHtml = `<div class="pick-status is-hint"><span class="pick-status__label">Hint</span><span class="pick-status__detail">Pick a winner, tune confidence, optionally add method / round / notes.</span></div>`;
   }
@@ -4397,15 +4544,29 @@ function renderPickWidget(fight){
     <div class="pick-fight${mainClass}${lockedClass}" data-fight-id="${fight.id}">
       <div class="pick-fight__head">
         <div class="pick-fight__corner pick-fight__corner--red">
-          <div class="pick-fight__tag">Red corner</div>
-          <div class="pick-fight__name">${escHtml(fight.red_name || '—')}</div>
-          <div class="pick-fight__meta">${escHtml(fight.weight_class || '')}${redStatsHover}</div>
+          <div class="pick-fight__corner-copy">
+            <div class="pick-fight__tag">Red corner</div>
+            <div class="pick-fight__name-row">
+              ${redRecordBadge}
+              ${redDebutBadge}
+              <div class="pick-fight__name">${escHtml(fight.red_name || '—')}</div>
+            </div>
+            <div class="pick-fight__meta">${escHtml(redMeta)}</div>
+          </div>
+          <div class="pick-fight__avatar pick-fight__avatar--red" aria-hidden="true">${escHtml(fighterInitials(fight.red_name))}</div>
         </div>
         <div class="pick-fight__vs">VS</div>
         <div class="pick-fight__corner pick-fight__corner--blue">
-          <div class="pick-fight__tag">Blue corner</div>
-          <div class="pick-fight__name">${escHtml(fight.blue_name || '—')}</div>
-          <div class="pick-fight__meta">${fight.is_main ? 'MAIN EVENT' : (fight.is_title ? 'TITLE FIGHT' : '')}${blueStatsHover}</div>
+          <div class="pick-fight__avatar pick-fight__avatar--blue" aria-hidden="true">${escHtml(fighterInitials(fight.blue_name))}</div>
+          <div class="pick-fight__corner-copy">
+            <div class="pick-fight__tag">Blue corner</div>
+            <div class="pick-fight__name-row">
+              <div class="pick-fight__name">${escHtml(fight.blue_name || '—')}</div>
+              ${blueDebutBadge}
+              ${blueRecordBadge}
+            </div>
+            <div class="pick-fight__meta">${escHtml(blueMeta)}</div>
+          </div>
         </div>
       </div>
 
@@ -4424,30 +4585,43 @@ function renderPickWidget(fight){
         <span class="pick-conf__value" data-conf-display>${conf}%</span>
       </div>
 
-      <div class="pick-method">
-        <label class="pick-method__field">
-          <span class="pick-method__label">Method (optional)</span>
-          <select class="pick-method__select" data-pick-field="method_pick" ${disabled}>
-            <option value="">—</option>
-            <option value="KO/TKO"${methodVal === 'KO/TKO' ? ' selected' : ''}>KO / TKO</option>
-            <option value="SUB"${methodVal === 'SUB' ? ' selected' : ''}>Submission</option>
-            <option value="DEC"${methodVal === 'DEC' ? ' selected' : ''}>Decision</option>
-          </select>
-        </label>
-        <label class="pick-method__field">
-          <span class="pick-method__label">Round (optional)</span>
-          <select class="pick-method__select" data-pick-field="round_pick" ${disabled}>
-            <option value="">—</option>
-            ${[1,2,3,4,5].map(r => `<option value="${r}"${String(roundVal) === String(r) ? ' selected' : ''}>Round ${r}</option>`).join('')}
-          </select>
-        </label>
-      </div>
+      <details class="pick-details">
+        <summary class="pick-details__summary">
+          <span>Evidence & details</span>
+          <span class="pick-details__summary-meta">${escHtml(detailMeta)}</span>
+        </summary>
+        <div class="pick-details__body">
+          <div class="pick-details__evidence-grid">
+            ${redEvidence}
+            ${blueEvidence}
+          </div>
 
-      <div class="pick-notes">
-        <textarea class="pick-notes__input" maxlength="280" placeholder="Notes (optional) — max 280 chars" data-pick-field="notes" ${disabled}>${escHtml(notesVal)}</textarea>
-      </div>
+          ${modelHtml}
 
-      ${modelHtml}
+          <div class="pick-method">
+            <label class="pick-method__field">
+              <span class="pick-method__label">Method (optional)</span>
+              <select class="pick-method__select" data-pick-field="method_pick" ${disabled}>
+                <option value="">—</option>
+                <option value="KO/TKO"${methodVal === 'KO/TKO' ? ' selected' : ''}>KO / TKO</option>
+                <option value="SUB"${methodVal === 'SUB' ? ' selected' : ''}>Submission</option>
+                <option value="DEC"${methodVal === 'DEC' ? ' selected' : ''}>Decision</option>
+              </select>
+            </label>
+            <label class="pick-method__field">
+              <span class="pick-method__label">Round (optional)</span>
+              <select class="pick-method__select" data-pick-field="round_pick" ${disabled}>
+                <option value="">—</option>
+                ${[1,2,3,4,5].map(r => `<option value="${r}"${String(roundVal) === String(r) ? ' selected' : ''}>Round ${r}</option>`).join('')}
+              </select>
+            </label>
+          </div>
+
+          <div class="pick-notes">
+            <textarea class="pick-notes__input" maxlength="280" placeholder="Notes (optional) — max 280 chars" data-pick-field="notes" ${disabled}>${escHtml(notesVal)}</textarea>
+          </div>
+        </div>
+      </details>
       ${outcomeHtml}
       ${statusHtml}
 
@@ -4832,11 +5006,17 @@ async function loadTrendsView(){
   if (!body) return;
   body.innerHTML = '<div class="picks-loading">Loading trends...</div>';
   try {
-    const res = await fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/trends?limit=25`, {
-      headers: { 'X-User-Id': _currentUser.id }
-    });
+    const [res, modelRes, outcomeRes] = await Promise.all([
+      fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/trends?limit=25`, {
+        headers: { 'X-User-Id': _currentUser.id }
+      }),
+      fetch('/api/predictions/models/leaderboard?limit=8'),
+      fetch('/api/predictions/outcomes?limit=8')
+    ]);
     if (!res.ok) throw new Error('Trend request failed');
     const data = await res.json();
+    data.model_leaderboard = modelRes && modelRes.ok ? await modelRes.json() : null;
+    data.model_outcomes = outcomeRes && outcomeRes.ok ? await outcomeRes.json() : null;
     body.innerHTML = renderTrendsView(data);
   } catch (e) {
     body.innerHTML = '<div class="picks-placeholder">Failed to load trends.</div>';
@@ -4846,14 +5026,23 @@ async function loadTrendsView(){
 function renderTrendsView(data){
   const events = Array.isArray(data && data.events) ? data.events : [];
   const stats = renderTrendStatsStrip(data && data.summary);
+  const ranking = renderModelRanking(data && data.model_leaderboard);
+  const outcomes = renderPredictionOutcomeList(data && data.model_outcomes);
   if (!events.length) {
     return stats + `
       <div class="picks-trends-empty">
         <div class="picks-empty__title">No trend data yet</div>
         <div class="picks-empty__sub">Once an event with your picks is reconciled, your event-by-event accuracy appears here.</div>
-      </div>`;
+      </div>
+      <div class="picks-trends-grid">${ranking}${outcomes}</div>`;
   }
-  return stats + renderTrendChart(events) + renderTrendTable(events);
+  return stats + `
+    <div class="picks-trends-grid">
+      ${renderTrendChart(events)}
+      ${ranking}
+    </div>
+    ${outcomes}
+    ${renderTrendTable(events)}`;
 }
 
 function renderTrendStatsStrip(summary){
@@ -4942,6 +5131,128 @@ function renderTrendChart(events){
         <text class="picks-trend-chart__axis" x="20" y="${height - padY + 4}">0%</text>
         ${lineHtml}
       </svg>
+    </div>`;
+}
+
+function renderModelRanking(modelData){
+  const rows = Array.isArray(modelData && modelData.leaderboard) ? modelData.leaderboard : [];
+  const summary = modelData && modelData.summary ? modelData.summary : {};
+  if (!rows.length) {
+    return `
+      <div class="picks-model-ranking">
+        <div class="picks-model-ranking__head">
+          <div>
+            <div class="picks-model-ranking__eyebrow">Model ranking</div>
+            <div class="picks-model-ranking__title">Awaiting scored models</div>
+          </div>
+        </div>
+        <div class="picks-model-ranking__empty">Model records appear after reconciled predictions are available.</div>
+      </div>`;
+  }
+  return `
+    <div class="picks-model-ranking">
+      <div class="picks-model-ranking__head">
+        <div>
+          <div class="picks-model-ranking__eyebrow">Model ranking</div>
+          <div class="picks-model-ranking__title">${rows.length} scored model${rows.length === 1 ? '' : 's'}</div>
+        </div>
+        <div class="picks-model-ranking__summary">${summary.score || 0} pts</div>
+      </div>
+      <div class="picks-model-ranking__rows">
+        ${rows.map(row => {
+          const rank = row.rank || 0;
+          const score = Number(row.score != null ? row.score : row.points);
+          const total = row.total || 0;
+          const correct = row.correct_count || 0;
+          return `
+            <div class="picks-model-ranking__row ${rank === 1 ? 'is-top' : ''}">
+              <div class="picks-model-ranking__rank">#${rank}</div>
+              <div class="picks-model-ranking__model">
+                <div class="picks-model-ranking__name">${escHtml(row.model_version || 'model')}</div>
+                <div class="picks-model-ranking__meta">${correct}-${Math.max(total - correct, 0)} record · ${formatTrendPct(row.accuracy_pct)} · ${formatTrendPct(row.avg_confidence_pct)} conf</div>
+              </div>
+              <div class="picks-model-ranking__score">${Number.isFinite(score) ? score : 0}</div>
+            </div>`;
+        }).join('')}
+      </div>
+    </div>`;
+}
+
+function outcomeStatusClass(value){
+  return value === 1 ? 'is-correct' : (value === 0 ? 'is-missed' : 'is-unknown');
+}
+
+function formatOutcomeRound(value){
+  const n = Number(value);
+  return Number.isFinite(n) && n > 0 ? `R${n}` : '--';
+}
+
+function renderOutcomeAccuracy(label, correct, total, pct){
+  return `
+    <div class="picks-prediction-outcomes__metric">
+      <span>${escHtml(label)}</span>
+      <strong>${correct || 0}/${total || 0}</strong>
+      <em>${formatTrendPct(pct)}</em>
+    </div>`;
+}
+
+function renderPredictionOutcomeList(outcomeData){
+  const rows = Array.isArray(outcomeData && outcomeData.predictions) ? outcomeData.predictions : [];
+  const summary = outcomeData && outcomeData.summary ? outcomeData.summary : {};
+  const metrics = `
+    <div class="picks-prediction-outcomes__metrics">
+      ${renderOutcomeAccuracy('Winner', summary.correct_count, summary.total, summary.accuracy_pct)}
+      ${renderOutcomeAccuracy('Method', summary.method_correct_count, summary.method_total, summary.method_accuracy_pct)}
+      ${renderOutcomeAccuracy('Round', summary.round_correct_count, summary.round_total, summary.round_accuracy_pct)}
+    </div>`;
+  if (!rows.length) {
+    return `
+      <div class="picks-prediction-outcomes">
+        <div class="picks-prediction-outcomes__head">
+          <div>
+            <div class="picks-prediction-outcomes__eyebrow">Prediction checks</div>
+            <div class="picks-prediction-outcomes__title">Awaiting official outcomes</div>
+          </div>
+          ${metrics}
+        </div>
+        <div class="picks-prediction-outcomes__empty">Fight-by-fight model calls appear after predictions are reconciled.</div>
+      </div>`;
+  }
+  return `
+    <div class="picks-prediction-outcomes">
+      <div class="picks-prediction-outcomes__head">
+        <div>
+          <div class="picks-prediction-outcomes__eyebrow">Prediction checks</div>
+          <div class="picks-prediction-outcomes__title">Predicted fighter vs official outcome</div>
+        </div>
+        ${metrics}
+      </div>
+      <div class="picks-prediction-outcomes__rows">
+        ${rows.map(row => {
+          const predicted = `${row.predicted_fighter_name || 'Model pick'} ${formatTrendPct(row.predicted_confidence_pct)}`;
+          const predictedMethod = row.predicted_method || '--';
+          const actualMethod = row.actual_method || '--';
+          const actualDetail = row.actual_method_detail ? ` · ${row.actual_method_detail}` : '';
+          const actualTime = row.actual_time ? ` · ${row.actual_time}` : '';
+          const official = `${row.actual_winner_name || 'No winner'} · ${actualMethod}${actualDetail} · ${formatOutcomeRound(row.actual_round)}${actualTime}`;
+          return `
+            <div class="picks-prediction-outcomes__row ${outcomeStatusClass(row.correct)}">
+              <div class="picks-prediction-outcomes__status">${row.correct === 1 ? 'Hit' : (row.correct === 0 ? 'Miss' : 'Open')}</div>
+              <div class="picks-prediction-outcomes__main">
+                <div class="picks-prediction-outcomes__fight">${escHtml(row.fight_label || 'Fight')}</div>
+                <div class="picks-prediction-outcomes__meta">${escHtml(row.event_date || '--')} · ${escHtml(row.event_label || 'Event')} · ${escHtml(row.model_version || 'model')}</div>
+                <div class="picks-prediction-outcomes__compare">
+                  <span>Predicted: ${escHtml(predicted)} · ${escHtml(predictedMethod)} · ${escHtml(formatOutcomeRound(row.predicted_round))}</span>
+                  <span>Official: ${escHtml(official)}</span>
+                </div>
+              </div>
+              <div class="picks-prediction-outcomes__badges">
+                <span class="${outcomeStatusClass(row.method_correct)}">Method</span>
+                <span class="${outcomeStatusClass(row.round_correct)}">Round</span>
+              </div>
+            </div>`;
+        }).join('')}
+      </div>
     </div>`;
 }
 
@@ -5100,8 +5411,6 @@ window.renderFighterDir = function(){ renderFighterDir(_allFightersData); };
 /* -----------------------------------------------------------
    PREDICTION REVIEW TAB — read-only QA overlay
 ----------------------------------------------------------- */
-const REVIEW_DEFAULT_EVENT_ID = 101;
-const REVIEW_DEFAULT_OFFICIAL_DATE = '2026-04-25';
 let _reviewEvents = null;
 
 async function loadReviewTab(){
@@ -5113,7 +5422,7 @@ async function loadReviewTab(){
   if (!_reviewEvents) {
     try {
       const res = await fetch('/api/events');
-      _reviewEvents = await res.json();
+      _reviewEvents = sortEventsForDefaultView(await res.json());
     } catch (e) {
       document.getElementById('reviewBody').innerHTML =
         '<div style="color:var(--red);font-family:var(--f-mono);font-size:11px">Failed to load events.</div>';
@@ -5121,17 +5430,20 @@ async function loadReviewTab(){
     }
   }
   select.innerHTML = _reviewEvents.map(e =>
-    '<option value="' + e.id + '">' + escHtml((e.number ? '#' + e.number + ' ' : '') + e.name + ' — ' + (e.date || '')) + '</option>'
+    '<option value="' + e.id + '">' + escHtml(formatEventOptionLabel(e)) + '</option>'
   ).join('');
-  if (_reviewEvents.some(e => e.id === REVIEW_DEFAULT_EVENT_ID)) {
-    select.value = String(REVIEW_DEFAULT_EVENT_ID);
-    dateInput.value = REVIEW_DEFAULT_OFFICIAL_DATE;
-  } else if (_reviewEvents[0]) {
-    select.value = String(_reviewEvents[0].id);
+  const defaultEvent = getNextUpcomingEvent(_reviewEvents);
+  if (defaultEvent) {
+    select.value = String(defaultEvent.id);
+    dateInput.value = defaultEvent.date || '';
   }
 
   const trigger = () => fetchAndRenderReview(parseInt(select.value, 10), dateInput.value || null);
-  select.addEventListener('change', trigger);
+  select.addEventListener('change', () => {
+    const selected = _reviewEvents.find(e => String(e.id) === String(select.value));
+    dateInput.value = selected && selected.date ? selected.date : '';
+    trigger();
+  });
   reloadBtn.addEventListener('click', trigger);
   trigger();
 }

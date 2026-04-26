@@ -40,6 +40,8 @@ def init_db():
             model_version TEXT NOT NULL,
             feature_hash TEXT,
             explanation_json TEXT,
+            predicted_method TEXT,
+            predicted_round INTEGER,
             predicted_at TEXT NOT NULL,
             event_date TEXT,
             synced INTEGER DEFAULT 0
@@ -50,6 +52,10 @@ def init_db():
     cols = {row["name"] for row in conn.execute("PRAGMA table_info(prediction_log)").fetchall()}
     if "explanation_json" not in cols:
         conn.execute("ALTER TABLE prediction_log ADD COLUMN explanation_json TEXT")
+    if "predicted_method" not in cols:
+        conn.execute("ALTER TABLE prediction_log ADD COLUMN predicted_method TEXT")
+    if "predicted_round" not in cols:
+        conn.execute("ALTER TABLE prediction_log ADD COLUMN predicted_round INTEGER")
     conn.commit()
     conn.close()
 
@@ -81,17 +87,19 @@ def log_prediction(fight_id: int, red_id: int, blue_id: int,
                    red_prob: float, blue_prob: float,
                    model_version: str, feature_hash: str,
                    event_date: str | None = None,
-                   explanation: dict | None = None) -> int:
+                   explanation: dict | None = None,
+                   predicted_method: str | None = None,
+                   predicted_round: int | None = None) -> int:
     conn = get_conn()
     explanation_json = json.dumps(explanation) if explanation is not None else None
     cursor = conn.execute(
         """INSERT INTO prediction_log
            (fight_id, red_fighter_id, blue_fighter_id, red_win_prob,
             blue_win_prob, model_version, feature_hash, explanation_json,
-            predicted_at, event_date)
-           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            predicted_method, predicted_round, predicted_at, event_date)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
         (fight_id, red_id, blue_id, red_prob, blue_prob,
-         model_version, feature_hash, explanation_json,
+         model_version, feature_hash, explanation_json, predicted_method, predicted_round,
          datetime.utcnow().isoformat(), event_date)
     )
     conn.commit()

@@ -230,8 +230,8 @@ point totals.
    (first visit per session).
 2. Display name + one of 12 avatar colors → `POST /api/users` → the
    server-issued UUID is stored in `localStorage['ufc_user']`.
-3. Back on the tab, the event picker defaults to UFC 245 (the demo
-   event). Switching events loads the card, existing picks, and
+3. Back on the tab, the event picker defaults to the next upcoming
+   event. Switching events loads the card, existing picks, and
    model-comparison in parallel.
 4. For each fight, users pick a winner, move the confidence slider
    (0–100), optionally select method / round, and write notes up to

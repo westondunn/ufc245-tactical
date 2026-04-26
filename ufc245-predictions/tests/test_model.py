@@ -103,13 +103,17 @@ def test_db_operations():
 
         pred_id = log_prediction(
             1, 10, 20, 0.6, 0.4, "v0.1.test", "abc123", "2026-05-01",
-            explanation={"summary": "Red A has the stronger pace.", "factors": []}
+            explanation={"summary": "Red A has the stronger pace.", "factors": []},
+            predicted_method="Decision",
+            predicted_round=3,
         )
         assert pred_id > 0
         unsynced = get_unsynced_predictions()
         assert len(unsynced) == 1
         assert unsynced[0]["fight_id"] == 1
         assert "stronger pace" in unsynced[0]["explanation_json"]
+        assert unsynced[0]["predicted_method"] == "Decision"
+        assert unsynced[0]["predicted_round"] == 3
         assert len(get_unsynced_predictions(limit=1)) == 1
         print("  PASS: log_prediction + get_unsynced")
 

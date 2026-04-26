@@ -2,8 +2,8 @@
 
 Schedule:
   - daily_maintenance: every day at 06:00 UTC
-  - refresh_near:     3x daily at 08:00, 14:00, 20:00 UTC
-  - daily_reconcile:  every day at 07:00 UTC
+  - refresh_near:     3x daily at 08:00, 14:00, 20:00 UTC, also snapshots official outcomes
+  - daily_reconcile:  every day at 07:00 UTC, captures official outcomes then scores
   - weekly_retrain:   every Monday at 05:00 UTC
   - sync_unsynced:    hourly at :30
 """
@@ -30,11 +30,11 @@ def main():
     scheduler.add_job(daily_maintenance, "cron", hour=6, minute=0,
                       id="daily_maintenance", replace_existing=True)
 
-    # Refresh near-term predictions 3x daily
+    # Refresh near-term predictions and official outcome snapshots 3x daily
     scheduler.add_job(refresh_near, "cron", hour="8,14,20", minute=0,
                       id="refresh_near", replace_existing=True)
 
-    # Daily reconciliation at 07:00 UTC
+    # Daily official outcome capture + reconciliation at 07:00 UTC
     scheduler.add_job(daily_reconcile, "cron", hour=7, minute=0,
                       id="daily_reconcile", replace_existing=True)
 
