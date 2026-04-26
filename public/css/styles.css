@@ -227,6 +227,18 @@ body::after{
   background:var(--cyan);
   box-shadow:0 0 8px var(--cyan);
 }
+.units-toggle{
+  appearance:none;background:transparent;border:1px solid var(--border-soft);
+  border-radius:3px;padding:3px 0;
+  font-family:var(--f-mono);font-size:10px;font-weight:700;letter-spacing:.12em;
+  color:var(--muted);cursor:pointer;display:inline-flex;align-items:center;
+  user-select:none;line-height:1;
+}
+.units-toggle:hover{border-color:var(--cyan);color:var(--fg)}
+.units-toggle__opt{padding:2px 8px;transition:color .15s ease}
+.units-toggle__opt--active{color:var(--cyan)}
+.units-toggle__sep{color:var(--muted-dim);padding:0 1px}
+@media(max-width:600px){.units-toggle{font-size:9px}.units-toggle__opt{padding:2px 6px}}
 @media(max-width:600px){
   .top-bar{padding:0 12px;height:40px}
   .top-bar__name{font-size:11px;letter-spacing:.1em}

@@ -8,6 +8,74 @@ const clamp = (v, a, b) => Math.max(a, Math.min(b, v));
 // XSS prevention
 function escHtml(s){ return String(s||'').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;'); }
 
+/* -----------------------------------------------------------
+   UNITS — global metric/imperial toggle
+   Persists in localStorage; defaults to imperial (US-centric audience).
+   Helpers always take a base value in metric (cm / kg) — store metric in
+   the DB, format on read. Returning '—' for null so render sites don't
+   need to null-check.
+----------------------------------------------------------- */
+const UNITS_LS_KEY = 'ufc_units';
+let _unitsPref = (() => {
+  try { return localStorage.getItem(UNITS_LS_KEY) === 'metric' ? 'metric' : 'imperial'; }
+  catch { return 'imperial'; }
+})();
+function getUnits(){ return _unitsPref; }
+function setUnits(next){
+  if (next !== 'metric' && next !== 'imperial') return;
+  _unitsPref = next;
+  try { localStorage.setItem(UNITS_LS_KEY, next); } catch {}
+  document.documentElement.setAttribute('data-units', next);
+  syncUnitsToggleUI();
+  rerenderActiveViewForUnits();
+}
+function formatHeight(cm){
+  if (cm == null || !Number.isFinite(+cm)) return '—';
+  if (_unitsPref === 'metric') return `${Math.round(+cm)} cm`;
+  const totalIn = (+cm) / 2.54;
+  const ft = Math.floor(totalIn / 12);
+  const inches = Math.round(totalIn - ft * 12);
+  // Carry inches=12 → +1 ft (e.g. 11.6 → 12 → bump)
+  if (inches === 12) return `${ft + 1}'0"`;
+  return `${ft}'${inches}"`;
+}
+function formatReach(cm){
+  if (cm == null || !Number.isFinite(+cm)) return '—';
+  if (_unitsPref === 'metric') return `${Math.round(+cm)} cm`;
+  return `${Math.round((+cm) / 2.54)}"`;
+}
+function formatReachDelta(cm){
+  if (cm == null || !Number.isFinite(+cm)) return '—';
+  const sign = cm > 0 ? '+' : '';
+  if (_unitsPref === 'metric') return `${sign}${Math.round(+cm)} cm`;
+  // Round-trip both endpoints separately would be more accurate, but for a
+  // delta the inch-rounding error is at worst ±1" — fine for display.
+  return `${sign}${Math.round((+cm) / 2.54)}"`;
+}
+function formatWeight(kg){
+  if (kg == null || !Number.isFinite(+kg)) return '—';
+  if (_unitsPref === 'metric') return `${Math.round(+kg)} kg`;
+  return `${Math.round((+kg) * 2.20462)} lb`;
+}
+function syncUnitsToggleUI(){
+  const btn = document.getElementById('unitsToggle');
+  if (!btn) return;
+  btn.querySelectorAll('.units-toggle__opt').forEach(opt => {
+    const target = opt.dataset.units === 'imp' ? 'imperial' : 'metric';
+    opt.classList.toggle('units-toggle__opt--active', target === _unitsPref);
+  });
+}
+function rerenderActiveViewForUnits(){
+  // Re-run the loader for whatever tab is active so measurement strings refresh
+  // without a full reload. Cheap because the DB queries are cached server-side.
+  try {
+    const tab = (document.querySelector('.primary-tab.active') || {}).dataset || {};
+    if (tab.tab === 'fighters') { if (typeof renderFighterDir === 'function' && Array.isArray(_allFightersData)) renderFighterDir(_allFightersData); }
+    if (tab.tab === 'picks' && _picksState && _picksState.view === 'event') { if (typeof loadEventView === 'function') loadEventView(); }
+    if (tab.tab === 'events' && typeof updateAllRecHeaders === 'function') { try { updateAllRecHeaders(); } catch {} }
+  } catch {}
+}
+
 function todayISODate(){
   return new Date().toISOString().slice(0, 10);
 }
@@ -2896,13 +2964,13 @@ async function selectDbFight(fightId, chipEl){
     setHtml('heroRedTag', 'Red Corner <span class="dot"></span>');
     setHtml('heroRedNick', f.red_nickname ? '&ldquo;' + escHtml(f.red_nickname) + '&rdquo;' : '');
     setHtml('heroRedName', escHtml(f.red_name));
-    setHtml('heroRedRecord', (f.red_height ? f.red_height + 'cm' : '') + (f.red_reach ? ' · ' + f.red_reach + 'cm reach' : ''));
+    setHtml('heroRedRecord', (f.red_height ? formatHeight(f.red_height) : '') + (f.red_reach ? ' · ' + formatReach(f.red_reach) + ' reach' : ''));
     setHtml('heroRedStyle', f.red_stance ? escHtml(f.red_stance) + (f.red_nationality ? ' · ' + escHtml(f.red_nationality) : '') : '');
 
     setHtml('heroBlueTag', '<span class="dot"></span> Blue Corner');
     setHtml('heroBlueNick', f.blue_nickname ? '&ldquo;' + escHtml(f.blue_nickname) + '&rdquo;' : '');
     setHtml('heroBlueName', escHtml(f.blue_name));
-    setHtml('heroBlueRecord', (f.blue_height ? f.blue_height + 'cm' : '') + (f.blue_reach ? ' · ' + f.blue_reach + 'cm reach' : ''));
+    setHtml('heroBlueRecord', (f.blue_height ? formatHeight(f.blue_height) : '') + (f.blue_reach ? ' · ' + formatReach(f.blue_reach) + ' reach' : ''));
     setHtml('heroBlueStyle', f.blue_stance ? escHtml(f.blue_stance) + (f.blue_nationality ? ' · ' + escHtml(f.blue_nationality) : '') : '');
     setHeroMeta(
       [f.event_date, f.venue, f.city].filter(Boolean).join(' · '),
@@ -3124,14 +3192,13 @@ function renderComparison(data){
 
   // Physical
   html += '<div class="compare-section-title">Physical Profile</div>';
-  html += compRow('Height', f1.height_cm+'cm', f2.height_cm+'cm', 210);
-  html += compRow('Reach', f1.reach_cm+'cm', f2.reach_cm+'cm', 210);
+  html += compRow('Height', formatHeight(f1.height_cm), formatHeight(f2.height_cm), 210);
+  html += compRow('Reach', formatReach(f1.reach_cm), formatReach(f2.reach_cm), 210);
   html += '<div class="compare-row">' +
     '<div class="compare-val compare-val--left">' + f1.stance + '</div>' +
     '<div class="compare-label">Stance</div>' +
     '<div class="compare-val compare-val--right">' + f2.stance + '</div></div>';
-  html += compRow('Reach Adv.', (f1.reach_cm-f2.reach_cm>0?'+':'') + (f1.reach_cm-f2.reach_cm)+'cm',
-    (f2.reach_cm-f1.reach_cm>0?'+':'') + (f2.reach_cm-f1.reach_cm)+'cm', 20);
+  html += compRow('Reach Adv.', formatReachDelta(f1.reach_cm - f2.reach_cm), formatReachDelta(f2.reach_cm - f1.reach_cm), 20);
 
   // Record
   html += '<div class="compare-section-title">Record (in database)</div>';
@@ -3568,8 +3635,8 @@ function renderFighterDir(fighters){
     const metaHtml = hasAnyMeta
       ? '<div class="fighter-card__meta">' +
           (f.weight_class ? escHtml(f.weight_class) : '—') + ' · ' +
-          (f.height_cm ? f.height_cm + 'cm' : '—') + ' · ' +
-          (f.reach_cm ? f.reach_cm + 'cm reach' : '—') + ' · ' +
+          (f.height_cm ? formatHeight(f.height_cm) : '—') + ' · ' +
+          (f.reach_cm ? formatReach(f.reach_cm) + ' reach' : '—') + ' · ' +
           (f.stance ? escHtml(f.stance) : '—') +
         '</div>'
       : '<div class="fighter-card__meta fighter-card__meta--empty">No profile data</div>';
@@ -3595,7 +3662,7 @@ async function showFighterProfile(fid){
     const f = prof.fighter; const s = prof.stats || {}; const r = prof.record || {};
     let html = '<h2>' + escHtml(f.name) + (f.nickname ? ' <span style="color:var(--muted);font-size:14px">"' + escHtml(f.nickname) + '"</span>' : '') + '</h2>' +
       '<div style="font-family:var(--f-mono);font-size:11px;color:var(--fg-dim);margin-bottom:16px">' +
-        (f.weight_class||'') + ' · ' + (f.height_cm||'?') + 'cm · ' + (f.reach_cm||'?') + 'cm reach · ' + (f.stance||'?') +
+        (f.weight_class||'') + ' · ' + (f.height_cm ? formatHeight(f.height_cm) : '?') + ' · ' + (f.reach_cm ? formatReach(f.reach_cm) + ' reach' : '?') + ' · ' + (f.stance||'?') +
         ' · Record: ' + (r.wins||0) + 'W-' + (r.losses||0) + 'L' + (r.draws ? '-' + r.draws + 'D' : '') +
       '</div>';
     if (events.length) {
@@ -4817,7 +4884,13 @@ function formatEvidenceNumber(value, unit){
   const abs = Math.abs(n);
   const sign = n > 0 ? '+' : (n < 0 ? '−' : '');
   if (unit === 'pct') return sign + Math.round(abs * 100) + '%';
-  if ((unit || '').includes('cm')) return sign + Math.round(abs) + ' cm';
+  if ((unit || '').includes('cm')) {
+    // Reuse the global units pref so evidence panels render in the user's
+    // chosen system (cm vs inches).
+    return _unitsPref === 'metric'
+      ? sign + Math.round(abs) + ' cm'
+      : sign + Math.round(abs / 2.54) + '"';
+  }
   if ((unit || '').includes('sec')) return sign + Math.round(abs) + ' sec';
   const rendered = abs >= 10 ? Math.round(abs) : abs.toFixed(1);
   return sign + rendered + (unit && unit !== 'delta' ? ' ' + unit : '');
@@ -5703,6 +5776,17 @@ function showReviewChecklist(fightId){
   pane.scrollIntoView({ behavior: 'smooth', block: 'start' });
 }
 window.showReviewChecklist = showReviewChecklist;
+
+// Wire the metric/imperial toggle. Apply persisted pref before any measurement
+// renders so initial paint already reflects the user's choice.
+document.documentElement.setAttribute('data-units', _unitsPref);
+syncUnitsToggleUI();
+{
+  const btn = document.getElementById('unitsToggle');
+  if (btn) {
+    btn.addEventListener('click', () => setUnits(_unitsPref === 'imperial' ? 'metric' : 'imperial'));
+  }
+}
 
 // Fetch and display version from API
 fetch('/api/version').then(r=>r.json()).then(v=>{
