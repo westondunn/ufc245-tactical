@@ -3968,13 +3968,31 @@ async function initPicksFeature(){
   if (!_picksFeatureEnabled) { if (tabBtn) tabBtn.style.display = 'none'; return; }
   if (tabBtn) tabBtn.style.display = '';
 
-  // Resume local profile
-  const local = getLocalProfile();
-  if (local) {
-    const server = await validateProfileWithServer(local.id);
-    if (server) { _currentUser = server; setLocalProfile(server); }
-    else setLocalProfile(null);              // stale id — clear it
+  // Resume profile. Prefer the better-auth cookie session if present —
+  // localStorage `ufc_user` may still hold a pre-migration guest id from
+  // before the user signed up (the auth bridge writes localStorage AFTER
+  // this init runs, so we'd otherwise fetch picks under the stale id).
+  // Falls back to legacy localStorage for users who never signed up.
+  let resolved = null;
+  try {
+    const r = await fetch('/api/auth/get-session', { credentials: 'include' });
+    if (r.ok) {
+      const body = await r.json();
+      if (body && body.user && body.user.id) {
+        const server = await validateProfileWithServer(body.user.id);
+        if (server) resolved = server;
+      }
+    }
+  } catch (_) { /* fall through to localStorage path */ }
+  if (!resolved) {
+    const local = getLocalProfile();
+    if (local) {
+      const server = await validateProfileWithServer(local.id);
+      if (server) resolved = server;
+      else setLocalProfile(null);            // stale id — clear it
+    }
   }
+  if (resolved) { _currentUser = resolved; setLocalProfile(resolved); }
   renderProfileChip();
   setupPicksSubnav();
   restoreStoredView();
