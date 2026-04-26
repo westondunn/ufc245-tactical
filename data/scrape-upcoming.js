@@ -65,6 +65,68 @@ function isoDateFromTimestamp(tsSec){
   return d.toISOString().slice(0, 10);
 }
 
+function isoUtcFromTimestamp(tsSec){
+  if (!tsSec) return null;
+  const n = parseInt(tsSec, 10);
+  if (!Number.isFinite(n)) return null;
+  const d = new Date(n * 1000);
+  if (isNaN(d.getTime())) return null;
+  return d.toISOString();
+}
+
+// Best-effort city → IANA timezone for the cities UFC actually books. UFC.com
+// publishes timestamps in UTC, so this is purely for display. NULL when we
+// don't recognize the city — UI falls back to the user's local TZ.
+const CITY_TZ_TABLE = [
+  // North America
+  [/(las\s*vegas|paradise)\s*,?\s*(?:nv|nevada|usa)?/i, 'America/Los_Angeles'],
+  [/los\s*angeles|inglewood|anaheim/i, 'America/Los_Angeles'],
+  [/sacramento|fresno|san\s*jose/i, 'America/Los_Angeles'],
+  [/seattle|tacoma|portland\s*,?\s*or/i, 'America/Los_Angeles'],
+  [/phoenix|arizona/i, 'America/Phoenix'],
+  [/denver|colorado/i, 'America/Denver'],
+  [/dallas|houston|san\s*antonio|austin|texas/i, 'America/Chicago'],
+  [/chicago|illinois|saint\s*louis|st\.?\s*louis|nashville|memphis|milwaukee/i, 'America/Chicago'],
+  [/miami|orlando|tampa|jacksonville|florida|atlanta|georgia|new\s*orleans|louisiana|charlotte|north\s*carolina|columbus|ohio|cleveland|pittsburgh|philadelphia|boston|massachusetts|new\s*york|brooklyn|buffalo|newark|new\s*jersey|washington|d\.?c\.?|baltimore|maryland|detroit|michigan/i, 'America/New_York'],
+  [/toronto|montreal|ottawa|quebec/i, 'America/Toronto'],
+  [/vancouver|edmonton|calgary/i, 'America/Edmonton'],
+  [/mexico\s*city|guadalajara|monterrey/i, 'America/Mexico_City'],
+  // Europe
+  [/london|manchester|liverpool|england|united\s*kingdom|uk/i, 'Europe/London'],
+  [/dublin|ireland/i, 'Europe/Dublin'],
+  [/paris|france/i, 'Europe/Paris'],
+  [/berlin|hamburg|munich|germany/i, 'Europe/Berlin'],
+  [/madrid|spain/i, 'Europe/Madrid'],
+  [/lisbon|portugal/i, 'Europe/Lisbon'],
+  [/stockholm|sweden/i, 'Europe/Stockholm'],
+  [/copenhagen|denmark/i, 'Europe/Copenhagen'],
+  [/rome|milan|italy/i, 'Europe/Rome'],
+  [/amsterdam|rotterdam|netherlands/i, 'Europe/Amsterdam'],
+  [/moscow|russia/i, 'Europe/Moscow'],
+  // Middle East / Asia / Oceania
+  [/abu\s*dhabi|dubai|uae|united\s*arab\s*emirates/i, 'Asia/Dubai'],
+  [/riyadh|jeddah|saudi\s*arabia/i, 'Asia/Riyadh'],
+  [/singapore/i, 'Asia/Singapore'],
+  [/seoul|korea/i, 'Asia/Seoul'],
+  [/tokyo|saitama|japan/i, 'Asia/Tokyo'],
+  [/shanghai|beijing|china/i, 'Asia/Shanghai'],
+  [/sydney|melbourne|brisbane|australia/i, 'Australia/Sydney'],
+  [/perth/i, 'Australia/Perth'],
+  [/auckland|new\s*zealand/i, 'Pacific/Auckland'],
+  // South America
+  [/sao\s*paulo|rio\s*de\s*janeiro|brasil(?:ia)?|brazil/i, 'America/Sao_Paulo'],
+  [/buenos\s*aires|argentina/i, 'America/Argentina/Buenos_Aires'],
+  [/santiago|chile/i, 'America/Santiago'],
+];
+function ianaTimezoneFromVenueLocation(...parts){
+  const blob = parts.filter(Boolean).join(' ');
+  if (!blob) return null;
+  for (const [re, tz] of CITY_TZ_TABLE) {
+    if (re.test(blob)) return tz;
+  }
+  return null;
+}
+
 function inchesToCm(value){
   const n = parseFloat(String(value || '').replace(/[^\d.]/g, ''));
   return Number.isFinite(n) ? Math.round(n * 2.54) : null;
@@ -147,12 +209,25 @@ async function fetchEventList(){
 
     const dateEl = $(art).find('.c-card-event--result__date').first();
     const mainTs = dateEl.attr('data-main-card-timestamp');
+    const prelimsTs = dateEl.attr('data-prelims-card-timestamp');
+    const earlyTs = dateEl.attr('data-early-prelims-timestamp');
     const date = isoDateFromTimestamp(mainTs);
+
+    // Earliest of the three timestamps = card start. UFC publishes these as
+    // unix seconds (UTC). End is a 4-hour estimate from the main card start —
+    // UFC events almost always wrap within that window. Both are stored as
+    // ISO-8601 UTC strings; UI converts to user's preferred timezone.
+    const startCandidates = [earlyTs, prelimsTs, mainTs].filter(Boolean).map(s => parseInt(s, 10)).filter(Number.isFinite);
+    const startSec = startCandidates.length ? Math.min(...startCandidates) : null;
+    const endSec = mainTs ? parseInt(mainTs, 10) + (4 * 60 * 60) : null;
+    const start_time = isoUtcFromTimestamp(startSec);
+    const end_time = isoUtcFromTimestamp(endSec);
 
     const venue = clean($(art).find('.field--name-taxonomy-term-title h5').first().text());
     const location = clean($(art).find('.c-card-event--result__location').text());
+    const timezone = ianaTimezoneFromVenueLocation(venue, location);
 
-    events.push({ slug, title, date, venue, location });
+    events.push({ slug, title, date, venue, location, start_time, end_time, timezone });
   });
 
   console.log(`  Parsed ${events.length} events from the page.`);
@@ -239,6 +314,7 @@ async function run(){
   const addedFights = [];
   const addedFighters = [];
   let enrichedFighters = 0;
+  let enrichedEvents = 0;
   const profileCache = new Map();
 
   async function enrichFromUfcProfile(fighter, slug){
@@ -271,6 +347,15 @@ async function run(){
     if (!card.length) { console.warn(`    ⚠ Empty card, skipping`); continue; }
 
     if (existing) {
+      // Refresh time + venue metadata on existing rows when we have it. Don't
+      // wipe a previously-set value with null — UFC.com sometimes drops the
+      // timestamp attributes a few hours after an event ends.
+      let touched = false;
+      if (ev.start_time && !existing.start_time) { existing.start_time = ev.start_time; touched = true; }
+      if (ev.end_time && !existing.end_time) { existing.end_time = ev.end_time; touched = true; }
+      if (ev.timezone && !existing.timezone) { existing.timezone = ev.timezone; touched = true; }
+      if (ev.venue && !existing.venue) { existing.venue = ev.venue; touched = true; }
+      if (touched) { enrichedEvents++; console.log(`    enriched timing/venue for existing event`); }
       for (const bout of card) {
         await enrichFromUfcProfile(findSeedFighter(bout.red_name, bout.red_slug), bout.red_slug);
         await enrichFromUfcProfile(findSeedFighter(bout.blue_name, bout.blue_slug), bout.blue_slug);
@@ -281,6 +366,7 @@ async function run(){
 
     const number = parseUfcNumber(ev.title);
     const [city, country] = (ev.location || '').split(',').map(s => clean(s));
+    const timezone = ev.timezone || ianaTimezoneFromVenueLocation(ev.venue, city, country, ev.location);
     const eventRow = {
       id: nextEventId++,
       number: number || null,
@@ -289,6 +375,9 @@ async function run(){
       venue: ev.venue || null,
       city: city || null,
       country: country || null,
+      start_time: ev.start_time || null,
+      end_time: ev.end_time || null,
+      timezone: timezone || null,
       ufcstats_hash: null,
       ufc_slug: ev.slug
     };
@@ -374,10 +463,11 @@ async function run(){
     return;
   }
 
-  if (!addedEvents.length && !addedFights.length && !addedFighters.length && !enrichedFighters) {
+  if (!addedEvents.length && !addedFights.length && !addedFighters.length && !enrichedFighters && !enrichedEvents) {
     console.log('\nNothing new — seed.json unchanged.');
     return;
   }
+  if (enrichedEvents) console.log(`  ✦ ${enrichedEvents} existing events enriched with timing/venue metadata`);
 
   seed.events.push(...addedEvents);
   seed.fights.push(...addedFights);

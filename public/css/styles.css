@@ -2393,6 +2393,23 @@ footer{
 
 .picks-stats-strip--event-history{margin-bottom:14px}
 
+/* Rich event info strip below the dropdown. Shows date · venue · location ·
+ * main-event division (whichever fields are populated). */
+.picks-event-info{
+  display:flex;flex-wrap:wrap;align-items:center;gap:8px;
+  font-family:var(--f-mono);font-size:11px;color:var(--fg-dim);
+  letter-spacing:.04em;margin:6px 0 14px;
+  padding:8px 12px;background:var(--bg-card-soft);
+  border:1px solid var(--border-soft);border-radius:3px;
+}
+.picks-event-info__when{color:var(--cyan)}
+.picks-event-info__venue{color:var(--fg)}
+.picks-event-info__location{color:var(--muted)}
+.picks-event-info__division{
+  color:var(--amber);font-weight:700;letter-spacing:.1em;text-transform:uppercase;
+}
+.picks-event-info__sep{color:var(--muted-dim)}
+
 .picks-event-history__rows{display:flex;flex-direction:column;gap:8px}
 .picks-event-history__row{
   padding:10px 12px;border:1px solid var(--border-soft);border-radius:4px;

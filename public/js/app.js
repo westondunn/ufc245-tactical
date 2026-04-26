@@ -4313,6 +4313,42 @@ function updateEventStateBadge(state) {
   el.style.display = '';
 }
 
+// Format an event's start_time in the venue's IANA timezone when known,
+// otherwise the user's local timezone. Falls back to the date string when
+// no start_time is set yet.
+function formatEventStartDisplay(event){
+  if (!event) return '';
+  const start = event.start_time ? new Date(event.start_time) : null;
+  if (start && !isNaN(start.getTime())) {
+    const opts = { weekday: 'short', month: 'short', day: 'numeric', hour: 'numeric', minute: '2-digit', timeZoneName: 'short' };
+    if (event.timezone) {
+      try { return new Intl.DateTimeFormat(undefined, { ...opts, timeZone: event.timezone }).format(start); }
+      catch { /* invalid TZ — fall through */ }
+    }
+    return new Intl.DateTimeFormat(undefined, opts).format(start);
+  }
+  return event.date || '';
+}
+
+function renderPicksEventInfo(event, card){
+  const el = document.getElementById('picksEventInfo');
+  if (!el) return;
+  if (!event) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  const main = (card || []).find(f => f.is_main === 1) || (card || [])[0];
+  const venue = event.venue ? escHtml(event.venue) : '';
+  const cityCountry = [event.city, event.country].filter(Boolean).map(escHtml).join(', ');
+  const wc = main && main.weight_class ? escHtml(main.weight_class) : '';
+  const when = escHtml(formatEventStartDisplay(event));
+  const parts = [];
+  if (when) parts.push(`<span class="picks-event-info__when">${when}</span>`);
+  if (venue) parts.push(`<span class="picks-event-info__venue">${venue}</span>`);
+  if (cityCountry) parts.push(`<span class="picks-event-info__location">${cityCountry}</span>`);
+  if (wc) parts.push(`<span class="picks-event-info__division">${wc}</span>`);
+  if (parts.length === 0) { el.style.display = 'none'; el.innerHTML = ''; return; }
+  el.innerHTML = parts.join('<span class="picks-event-info__sep">·</span>');
+  el.style.display = '';
+}
+
 async function loadEventView(){
   if (!_currentUser) return;
   await populatePicksEventSelect();
@@ -4339,6 +4375,7 @@ async function loadEventView(){
     _picksState.eventStarted = eventStarted;
 
     updateEventStateBadge(state);
+    renderPicksEventInfo(event, card);
     if (_tcForceSet) _tcForceSet(PICKS_EVENT_TC_BY_STATE[state] || 'PICKS · EVENT');
 
     // Normalize fighter-id field names — /api/events/:id/card uses red_id/blue_id,
