@@ -1280,6 +1280,23 @@ async function run() {
   const validDates = seed.events.every(e => !e.date || dateRegex.test(e.date));
   assert(validDates, 'all event dates are valid YYYY-MM-DD format');
 
+  const scrapeUpcoming = require('../data/scrape-upcoming');
+  assertEq(
+    scrapeUpcoming.ianaTimezoneFromVenueLocation('Meta APEX', 'Las Vegas, NV United States'),
+    'America/Los_Angeles',
+    'upcoming scraper resolves Las Vegas timezone'
+  );
+  assertEq(
+    scrapeUpcoming.isoDateFromTimestamp(1777161600, 'America/Los_Angeles'),
+    '2026-04-25',
+    'upcoming scraper stores event-local date for evening Las Vegas cards'
+  );
+  assertEq(
+    scrapeUpcoming.isoDateFromTimestamp(1777161600, 'UTC'),
+    '2026-04-26',
+    'upcoming scraper UTC fallback remains available'
+  );
+
   // ── HTML Structure ──
   console.log('\nHTML:');
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
@@ -1348,7 +1365,7 @@ async function run() {
   const review = await buildPredictionReview({ db, eventId: 101, officialDate: null });
   assertTruthy(review, 'review payload returned for event 101');
   assertEq(review.event.id, 101, 'review.event.id is 101');
-  assertEq(review.event.local_date, '2026-04-26', 'review.event.local_date is local seed date');
+  assertEq(review.event.local_date, '2026-04-25', 'review.event.local_date is official event date');
   assertEq(review.event.official_date, null, 'official_date null when not provided');
   assertEq(review.event.date_mismatch, false, 'no mismatch when official_date omitted');
   assertEq(review.card.length, 13, 'review.card has 13 fights');
@@ -1358,11 +1375,11 @@ async function run() {
   assert(JSON.stringify(fightIds) === JSON.stringify(expectedIds),
     `fight ids 740-752 all present (got ${fightIds.join(',')})`);
 
-  const reviewMismatch = await buildPredictionReview({ db, eventId: 101, officialDate: '2026-04-25' });
-  assertEq(reviewMismatch.event.official_date, '2026-04-25', 'official_date echoed back');
-  assertEq(reviewMismatch.event.date_mismatch, true, 'date_mismatch true when official_date=2026-04-25');
+  const reviewMismatch = await buildPredictionReview({ db, eventId: 101, officialDate: '2026-04-26' });
+  assertEq(reviewMismatch.event.official_date, '2026-04-26', 'official_date echoed back');
+  assertEq(reviewMismatch.event.date_mismatch, true, 'date_mismatch true when official_date=2026-04-26');
 
-  const reviewMatch = await buildPredictionReview({ db, eventId: 101, officialDate: '2026-04-26' });
+  const reviewMatch = await buildPredictionReview({ db, eventId: 101, officialDate: '2026-04-25' });
   assertEq(reviewMatch.event.date_mismatch, false, 'date_mismatch false when official matches local');
 
   // Main event: Sterling complete, Zalal missing stance/str_def/td_def
@@ -1405,7 +1422,7 @@ async function run() {
     model_version: 'v0.2.test-review',
     feature_hash: 'test-review',
     predicted_at: '2026-04-24T18:00:00.000Z',
-    event_date: '2026-04-26',
+    event_date: '2026-04-25',
     explanation_json: JSON.stringify({
       favored_corner: 'red',
       favored_name: 'Aljamain Sterling',
@@ -1441,7 +1458,7 @@ async function run() {
     model_version: 'v0.2.test-review',
     feature_hash: 'test-bad-json',
     predicted_at: '2026-04-24T18:00:00.000Z',
-    event_date: '2026-04-26',
+    event_date: '2026-04-25',
     explanation_json: '{ not valid json'
   });
   const seeded2 = await buildPredictionReview({ db, eventId: 101, officialDate: null });

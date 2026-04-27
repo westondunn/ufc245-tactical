@@ -58,10 +58,25 @@ function parseUfcNumber(title){
   return m ? parseInt(m[1], 10) : null;
 }
 
-function isoDateFromTimestamp(tsSec){
+function isoDateFromTimestamp(tsSec, timeZone = 'UTC'){
   if (!tsSec) return null;
   const d = new Date(parseInt(tsSec, 10) * 1000);
   if (isNaN(d.getTime())) return null;
+  if (timeZone) {
+    try {
+      const parts = new Intl.DateTimeFormat('en-CA', {
+        timeZone,
+        year: 'numeric',
+        month: '2-digit',
+        day: '2-digit'
+      }).formatToParts(d);
+      const values = Object.fromEntries(parts.map(part => [part.type, part.value]));
+      if (values.year && values.month && values.day) return `${values.year}-${values.month}-${values.day}`;
+    } catch {
+      // Fall back to the UTC calendar date when the venue timezone is unknown
+      // or unsupported by this Node runtime.
+    }
+  }
   return d.toISOString().slice(0, 10);
 }
 
@@ -211,8 +226,6 @@ async function fetchEventList(){
     const mainTs = dateEl.attr('data-main-card-timestamp');
     const prelimsTs = dateEl.attr('data-prelims-card-timestamp');
     const earlyTs = dateEl.attr('data-early-prelims-timestamp');
-    const date = isoDateFromTimestamp(mainTs);
-
     // Earliest of the three timestamps = card start. UFC publishes these as
     // unix seconds (UTC). End is a 4-hour estimate from the main card start —
     // UFC events almost always wrap within that window. Both are stored as
@@ -226,6 +239,7 @@ async function fetchEventList(){
     const venue = clean($(art).find('.field--name-taxonomy-term-title h5').first().text());
     const location = clean($(art).find('.c-card-event--result__location').text());
     const timezone = ianaTimezoneFromVenueLocation(venue, location);
+    const date = isoDateFromTimestamp(mainTs, timezone);
 
     events.push({ slug, title, date, venue, location, start_time, end_time, timezone });
   });
@@ -351,10 +365,12 @@ async function run(){
       // wipe a previously-set value with null — UFC.com sometimes drops the
       // timestamp attributes a few hours after an event ends.
       let touched = false;
+      if (ev.date && existing.date !== ev.date) { existing.date = ev.date; touched = true; }
       if (ev.start_time && !existing.start_time) { existing.start_time = ev.start_time; touched = true; }
       if (ev.end_time && !existing.end_time) { existing.end_time = ev.end_time; touched = true; }
       if (ev.timezone && !existing.timezone) { existing.timezone = ev.timezone; touched = true; }
       if (ev.venue && !existing.venue) { existing.venue = ev.venue; touched = true; }
+      if (ev.slug && !existing.ufc_slug) { existing.ufc_slug = ev.slug; touched = true; }
       if (touched) { enrichedEvents++; console.log(`    enriched timing/venue for existing event`); }
       for (const bout of card) {
         await enrichFromUfcProfile(findSeedFighter(bout.red_name, bout.red_slug), bout.red_slug);
@@ -482,4 +498,12 @@ async function run(){
   console.log(`\n  ✓ seed.json updated (${seed.events.length} events, ${seed.fights.length} fights, ${seed.fighters.length} fighters)`);
 }
 
-run().catch(err => { console.error('scrape-upcoming failed:', err); process.exit(1); });
+if (require.main === module) {
+  run().catch(err => { console.error('scrape-upcoming failed:', err); process.exit(1); });
+}
+
+module.exports = {
+  isoDateFromTimestamp,
+  isoUtcFromTimestamp,
+  ianaTimezoneFromVenueLocation
+};
