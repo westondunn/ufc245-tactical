@@ -144,10 +144,15 @@ const SCHEMA = `
     is_stale INTEGER DEFAULT 0,
     actual_winner_id INTEGER,
     reconciled_at TEXT,
-    correct INTEGER
+    correct INTEGER,
+    enrichment_level TEXT NOT NULL DEFAULT 'lr',
+    narrative_text TEXT,
+    method_confidence REAL,
+    insights TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_predictions_fight ON predictions(fight_id);
   CREATE INDEX IF NOT EXISTS idx_predictions_event_date ON predictions(event_date);
+  CREATE INDEX IF NOT EXISTS idx_predictions_enrichment ON predictions(enrichment_level);
   CREATE TABLE IF NOT EXISTS official_fight_outcomes (
     fight_id INTEGER PRIMARY KEY REFERENCES fights(id),
     event_id INTEGER REFERENCES events(id),
@@ -380,6 +385,19 @@ function ensurePredictionExplanationColumn() {
   if (!cols.includes('predicted_round')) {
     run('ALTER TABLE predictions ADD COLUMN predicted_round INTEGER');
   }
+  if (!cols.includes('enrichment_level')) {
+    run("ALTER TABLE predictions ADD COLUMN enrichment_level TEXT NOT NULL DEFAULT 'lr'");
+  }
+  if (!cols.includes('narrative_text')) {
+    run('ALTER TABLE predictions ADD COLUMN narrative_text TEXT');
+  }
+  if (!cols.includes('method_confidence')) {
+    run('ALTER TABLE predictions ADD COLUMN method_confidence REAL');
+  }
+  if (!cols.includes('insights')) {
+    run('ALTER TABLE predictions ADD COLUMN insights TEXT');
+  }
+  run('CREATE INDEX IF NOT EXISTS idx_predictions_enrichment ON predictions(enrichment_level)');
 }
 
 function ensureEventTimingColumns() {
@@ -1061,12 +1079,15 @@ function upsertPrediction(p) {
     : (p.explanation != null ? JSON.stringify(p.explanation) : null);
   const predictedMethod = predictionPredictedMethod(p);
   const predictedRound = predictionPredictedRound(p);
+  const enrichmentLevel = p.enrichment_level || 'lr';
+  const insightsJson = p.insights != null ? JSON.stringify(p.insights) : null;
   run(
     `INSERT INTO predictions
      (fight_id, red_fighter_id, blue_fighter_id, red_win_prob, blue_win_prob,
       model_version, feature_hash, explanation_json, predicted_method, predicted_round,
-      predicted_at, event_date, is_stale)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      predicted_at, event_date, is_stale,
+      enrichment_level, narrative_text, method_confidence, insights)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(fight_id, model_version) DO UPDATE SET
        red_fighter_id = excluded.red_fighter_id,
        blue_fighter_id = excluded.blue_fighter_id,
@@ -1078,10 +1099,15 @@ function upsertPrediction(p) {
        predicted_round = excluded.predicted_round,
        predicted_at = excluded.predicted_at,
        event_date = excluded.event_date,
-       is_stale = excluded.is_stale`,
+       is_stale = excluded.is_stale,
+       enrichment_level = excluded.enrichment_level,
+       narrative_text = excluded.narrative_text,
+       method_confidence = excluded.method_confidence,
+       insights = excluded.insights`,
 	    [p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
 	     p.model_version, p.feature_hash || null, explanationJson, predictedMethod, predictedRound,
-       p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0]
+       p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0,
+       enrichmentLevel, p.narrative_text || null, p.method_confidence ?? null, insightsJson]
 	  );
   if (!p.is_stale) {
     run(

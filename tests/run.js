@@ -363,6 +363,45 @@ async function run() {
   assertEq(reconciledModelRows.find(r => r.model_version === 'v.test.reconcile.a').correct, 1, 'older model version is also scored');
   assertEq(reconciledModelRows.find(r => r.model_version === 'v.test.reconcile.b').correct, 0, 'newer model version is scored');
 
+  // ── Enrichment fields ──
+  console.log('\nEnrichment fields:');
+  await db.upsertPrediction({
+    fight_id: mainEvent.id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.6, blue_win_prob: 0.4,
+    model_version: 'v.enrich.test.lr.1',
+    feature_hash: 'eh1',
+    predicted_at: new Date().toISOString(),
+    event_date: '2030-01-01',
+    enrichment_level: 'lr'
+  });
+  const lrRow = (await db.getPredictions({ fight_id: mainEvent.id })).find(r => r.model_version === 'v.enrich.test.lr.1');
+  assertEq(lrRow.enrichment_level, 'lr', 'lr row stores enrichment_level=lr');
+  assertEq(lrRow.narrative_text, null, 'lr row narrative_text defaults null');
+
+  await db.upsertPrediction({
+    fight_id: mainEvent.id,
+    red_fighter_id: mainEvent.red_id,
+    blue_fighter_id: mainEvent.blue_id,
+    red_win_prob: 0.7, blue_win_prob: 0.3,
+    model_version: 'v.enrich.test.ensemble.1',
+    feature_hash: 'eh2',
+    predicted_at: new Date().toISOString(),
+    event_date: '2030-01-01',
+    enrichment_level: 'ensemble',
+    narrative_text: 'LLM said so',
+    method_confidence: 0.55,
+    insights: [{ label: 'coach change', severity: 2, favors: 'red', source: 'MMAJunkie' }]
+  });
+  const enRow = (await db.getPredictions({ fight_id: mainEvent.id })).find(r => r.model_version === 'v.enrich.test.ensemble.1');
+  assertEq(enRow.enrichment_level, 'ensemble', 'ensemble row stores enrichment_level=ensemble');
+  assertEq(enRow.narrative_text, 'LLM said so', 'narrative_text persists');
+  assertEq(enRow.method_confidence, 0.55, 'method_confidence persists');
+  const insights = typeof enRow.insights === 'string' ? JSON.parse(enRow.insights) : enRow.insights;
+  assertEq(insights.length, 1, 'insights persist as JSON');
+  assertEq(insights[0].label, 'coach change', 'insights content preserved');
+
   // Model predictions lock when the event has started or the fight is final.
   const predLockEventId = (await db.nextId('events')) + 2300;
   const predLockFightId = (await db.nextId('fights')) + 2300;

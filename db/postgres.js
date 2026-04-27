@@ -241,6 +241,11 @@ async function ensureSchema() {
   await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS explanation_json TEXT');
   await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS predicted_method TEXT');
   await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS predicted_round INTEGER');
+  await run(`ALTER TABLE predictions ADD COLUMN IF NOT EXISTS enrichment_level TEXT NOT NULL DEFAULT 'lr'`);
+  await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS narrative_text TEXT');
+  await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS method_confidence DOUBLE PRECISION');
+  await run('ALTER TABLE predictions ADD COLUMN IF NOT EXISTS insights JSONB');
+  await run('CREATE INDEX IF NOT EXISTS idx_predictions_enrichment ON predictions(enrichment_level)');
   await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS start_time TEXT');
   await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS end_time TEXT');
   await run('ALTER TABLE events ADD COLUMN IF NOT EXISTS timezone TEXT');
@@ -1242,12 +1247,15 @@ async function upsertPrediction(p) {
     : (p.explanation != null ? JSON.stringify(p.explanation) : null);
   const predictedMethod = predictionPredictedMethod(p);
   const predictedRound = predictionPredictedRound(p);
+  const enrichmentLevel = p.enrichment_level || 'lr';
+  const insightsJson = p.insights != null ? JSON.stringify(p.insights) : null;
   await run(
     `INSERT INTO predictions
      (fight_id, red_fighter_id, blue_fighter_id, red_win_prob, blue_win_prob,
       model_version, feature_hash, explanation_json, predicted_method, predicted_round,
-      predicted_at, event_date, is_stale)
-     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?)
+      predicted_at, event_date, is_stale,
+      enrichment_level, narrative_text, method_confidence, insights)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
      ON CONFLICT(fight_id, model_version) DO UPDATE SET
        red_fighter_id = EXCLUDED.red_fighter_id,
        blue_fighter_id = EXCLUDED.blue_fighter_id,
@@ -1259,11 +1267,16 @@ async function upsertPrediction(p) {
        predicted_round = EXCLUDED.predicted_round,
        predicted_at = EXCLUDED.predicted_at,
        event_date = EXCLUDED.event_date,
-       is_stale = EXCLUDED.is_stale`,
+       is_stale = EXCLUDED.is_stale,
+       enrichment_level = EXCLUDED.enrichment_level,
+       narrative_text = EXCLUDED.narrative_text,
+       method_confidence = EXCLUDED.method_confidence,
+       insights = EXCLUDED.insights`,
     [
       p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
       p.model_version, p.feature_hash || null, explanationJson, predictedMethod, predictedRound,
-      p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0
+      p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0,
+      enrichmentLevel, p.narrative_text || null, p.method_confidence ?? null, insightsJson
     ]
   );
   if (!p.is_stale) {
