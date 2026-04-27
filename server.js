@@ -510,6 +510,10 @@ app.post('/api/predictions/ingest', requirePredictionKey, apiHandler(async (req,
       skippedInvalid++;
       continue;
     }
+    if (p.enrichment_level && !['lr', 'ensemble'].includes(p.enrichment_level)) {
+      skippedInvalid++;
+      continue;
+    }
     const lock = await db.getPredictionLockState(p);
     if (lock && lock.locked) {
       skippedLocked++;

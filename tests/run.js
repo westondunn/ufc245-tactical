@@ -402,6 +402,58 @@ async function run() {
   assertEq(insights.length, 1, 'insights persist as JSON');
   assertEq(insights[0].label, 'coach change', 'insights content preserved');
 
+  // ── Upgrade semantics ──
+  console.log('\nUpgrade semantics:');
+  // Pick a different fight than mainEvent so prior enrichment-test predictions
+  // don't pollute these assertions.
+  const upgradeFight = card.find(f => !f.is_main && f.red_id && f.blue_id);
+  assertTruthy(upgradeFight, 'upgrade-semantics fixture: a non-main UFC 245 fight exists');
+
+  // Setup: insert an LR prediction.
+  await db.upsertPrediction({
+    fight_id: upgradeFight.id,
+    red_fighter_id: upgradeFight.red_id,
+    blue_fighter_id: upgradeFight.blue_id,
+    red_win_prob: 0.55, blue_win_prob: 0.45,
+    model_version: 'v.upgrade.lr.1', feature_hash: 'u1',
+    predicted_at: new Date().toISOString(), event_date: '2030-02-01',
+    enrichment_level: 'lr'
+  });
+  // Ensemble lands; LR should be marked stale, ensemble fresh.
+  await db.upsertPrediction({
+    fight_id: upgradeFight.id,
+    red_fighter_id: upgradeFight.red_id,
+    blue_fighter_id: upgradeFight.blue_id,
+    red_win_prob: 0.62, blue_win_prob: 0.38,
+    model_version: 'v.upgrade.ensemble.1', feature_hash: 'u2',
+    predicted_at: new Date().toISOString(), event_date: '2030-02-01',
+    enrichment_level: 'ensemble',
+    narrative_text: 'reasoning',
+    insights: []
+  });
+  const upRows = await db.getPredictions({ fight_id: upgradeFight.id });
+  const lrAfter = upRows.find(r => r.model_version === 'v.upgrade.lr.1');
+  const enAfter = upRows.find(r => r.model_version === 'v.upgrade.ensemble.1');
+  assertEq(lrAfter.is_stale, 1, 'lr row marked stale after ensemble lands');
+  assertEq(enAfter.is_stale, 0, 'ensemble row is fresh');
+
+  // Late LR for same fight should be inserted as stale-on-arrival.
+  await db.upsertPrediction({
+    fight_id: upgradeFight.id,
+    red_fighter_id: upgradeFight.red_id,
+    blue_fighter_id: upgradeFight.blue_id,
+    red_win_prob: 0.51, blue_win_prob: 0.49,
+    model_version: 'v.upgrade.lr.2', feature_hash: 'u3',
+    predicted_at: new Date().toISOString(), event_date: '2030-02-01',
+    enrichment_level: 'lr'
+  });
+  const afterRows = await db.getPredictions({ fight_id: upgradeFight.id });
+  const stillFresh = afterRows.filter(r => r.is_stale === 0);
+  assertEq(stillFresh.length, 1, 'exactly one fresh row after late lr arrival');
+  assertEq(stillFresh[0].enrichment_level, 'ensemble', 'fresh row remains the ensemble row');
+  const lrLate = afterRows.find(r => r.model_version === 'v.upgrade.lr.2');
+  assertEq(lrLate.is_stale, 1, 'late lr inserted but stale');
+
   // Model predictions lock when the event has started or the fight is final.
   const predLockEventId = (await db.nextId('events')) + 2300;
   const predLockFightId = (await db.nextId('fights')) + 2300;
@@ -579,8 +631,13 @@ async function run() {
   assertEq(updated.display_name, 'WestonD', 'updateUser applies change');
 
   // ── Pick upsert + snapshot ──
-  // Ensure we have a prediction for the fight so snapshot captures it
+  // Ensure we have a prediction for the fight so snapshot captures it.
+  // Clear any prior fixture-inserted predictions on this fight (incl. the
+  // ensemble row from the Enrichment-fields block above) so the snapshot
+  // resolves to v.test.pick rather than a leftover fresher row.
   db.run('DELETE FROM predictions WHERE fight_id = ? AND model_version = ?', [mainEvent.id, 'v.test.pick']);
+  db.run('DELETE FROM predictions WHERE fight_id = ? AND model_version = ?', [mainEvent.id, 'v.enrich.test.ensemble.1']);
+  db.run('DELETE FROM predictions WHERE fight_id = ? AND model_version = ?', [mainEvent.id, 'v.enrich.test.lr.1']);
   db.upsertPrediction({
     fight_id: mainEvent.id,
     red_fighter_id: mainEvent.red_id,

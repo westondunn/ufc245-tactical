@@ -1249,6 +1249,22 @@ async function upsertPrediction(p) {
   const predictedRound = predictionPredictedRound(p);
   const enrichmentLevel = p.enrichment_level || 'lr';
   const insightsJson = p.insights != null ? JSON.stringify(p.insights) : null;
+
+  // Upgrade semantics: an incoming 'lr' is stale-on-arrival if a fresh
+  // 'ensemble' already exists for the same fight. The post-insert UPDATE
+  // below handles the reverse case (ensemble landing on a fresh lr row
+  // marks the lr stale).
+  let forceStale = !!p.is_stale;
+  if (enrichmentLevel === 'lr') {
+    const existing = await oneRow(
+      `SELECT id FROM predictions
+       WHERE fight_id = ? AND enrichment_level = 'ensemble'
+         AND is_stale = 0 AND actual_winner_id IS NULL`,
+      [p.fight_id]
+    );
+    if (existing) forceStale = true;
+  }
+
   await run(
     `INSERT INTO predictions
      (fight_id, red_fighter_id, blue_fighter_id, red_win_prob, blue_win_prob,
@@ -1275,11 +1291,11 @@ async function upsertPrediction(p) {
     [
       p.fight_id, p.red_fighter_id, p.blue_fighter_id, p.red_win_prob, p.blue_win_prob,
       p.model_version, p.feature_hash || null, explanationJson, predictedMethod, predictedRound,
-      p.predicted_at, p.event_date || null, p.is_stale ? 1 : 0,
+      p.predicted_at, p.event_date || null, forceStale ? 1 : 0,
       enrichmentLevel, p.narrative_text || null, p.method_confidence ?? null, insightsJson
     ]
   );
-  if (!p.is_stale) {
+  if (!forceStale) {
     await run(
       `UPDATE predictions
        SET is_stale = 1
