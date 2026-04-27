@@ -52,7 +52,8 @@ services:
       - pipeline_data:/data
       - ./ufc245-predictions/model:/shared/model:ro
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     entrypoint: ["python", "-m", "cli"]
 
 volumes:
