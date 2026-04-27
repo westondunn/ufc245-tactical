@@ -1,4 +1,4 @@
-"""SQLite DAO. One file, no ORM. Thread-safe per process via short-lived connections."""
+"""SQLite DAO. One file, no ORM."""
 from __future__ import annotations
 import hashlib
 import json
@@ -15,8 +15,13 @@ def _sha1(s: str) -> str:
 
 
 class Store:
-    def __init__(self, path: str):
+    """SQLite DAO. Schema auto-initialized on construction. Thread-safe per
+    process via short-lived connections. Pass auto_init=False to defer."""
+
+    def __init__(self, path: str, *, auto_init: bool = True):
         self.path = path
+        if auto_init:
+            self.init()
 
     def _conn(self) -> sqlite3.Connection:
         os.makedirs(os.path.dirname(self.path) or ".", exist_ok=True)
