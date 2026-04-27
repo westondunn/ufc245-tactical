@@ -6,19 +6,26 @@ from dataclasses import dataclass, field
 
 def _bool_env(name: str, default: bool) -> bool:
     raw = os.getenv(name)
-    if raw is None:
+    if raw is None or raw.strip() == "":
         return default
-    return raw.strip().lower() not in {"0", "false", "no", ""}
+    return raw.strip().lower() not in {"0", "false", "no"}
 
 
 def _int_env(name: str, default: int) -> int:
     raw = os.getenv(name)
-    if not raw:
+    if raw is None or raw.strip() == "":
         return default
     try:
         return int(raw)
-    except ValueError:
-        return default
+    except ValueError as e:
+        raise ValueError(f"{name} must be an integer, got {raw!r}") from e
+
+
+SCRAPER_ENV_VARS: dict[str, str] = {
+    "news": "ENABLE_SCRAPER_NEWS",
+    "ufc_preview": "ENABLE_SCRAPER_UFC_PREVIEW",
+    "tapology": "ENABLE_SCRAPER_TAPOLOGY",
+}
 
 
 @dataclass(frozen=True)
@@ -53,13 +60,10 @@ class Config:
         if not key:
             raise ValueError("PREDICTION_SERVICE_KEY is required")
 
-        enabled: set[str] = set()
-        if _bool_env("ENABLE_SCRAPER_NEWS", True):
-            enabled.add("news")
-        if _bool_env("ENABLE_SCRAPER_UFC_PREVIEW", True):
-            enabled.add("ufc_preview")
-        if _bool_env("ENABLE_SCRAPER_TAPOLOGY", True):
-            enabled.add("tapology")
+        enabled: set[str] = {
+            name for name, var in SCRAPER_ENV_VARS.items()
+            if _bool_env(var, True)
+        }
 
         return cls(
             llm_provider=os.getenv("LLM_PROVIDER", "ollama").lower(),

@@ -31,3 +31,26 @@ def test_config_scraper_toggles(monkeypatch):
     monkeypatch.setenv("ENABLE_SCRAPER_TAPOLOGY", "0")
     cfg = Config.from_env()
     assert "tapology" not in cfg.scrapers_enabled
+
+
+def test_config_raises_on_bad_int(monkeypatch):
+    monkeypatch.setenv("MAIN_APP_URL", "http://example.test")
+    monkeypatch.setenv("PREDICTION_SERVICE_KEY", "secret")
+    monkeypatch.setenv("ENRICH_HORIZON_DAYS", "not-a-number")
+    try:
+        Config.from_env()
+    except ValueError as e:
+        assert "ENRICH_HORIZON_DAYS" in str(e)
+        return
+    raise AssertionError("expected ValueError for bad int")
+
+
+def test_config_requires_prediction_service_key(monkeypatch):
+    monkeypatch.setenv("MAIN_APP_URL", "http://example.test")
+    monkeypatch.delenv("PREDICTION_SERVICE_KEY", raising=False)
+    try:
+        Config.from_env()
+    except ValueError as e:
+        assert "PREDICTION_SERVICE_KEY" in str(e)
+        return
+    raise AssertionError("expected ValueError for missing PREDICTION_SERVICE_KEY")

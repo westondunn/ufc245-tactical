@@ -8,6 +8,8 @@ import pytest
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 
+from config import SCRAPER_ENV_VARS
+
 
 @pytest.fixture(autouse=True)
 def _isolated_env(monkeypatch, tmp_path):
@@ -16,7 +18,7 @@ def _isolated_env(monkeypatch, tmp_path):
         "LLM_PROVIDER", "LLM_MODEL", "OLLAMA_URL", "ANTHROPIC_API_KEY", "OPENAI_API_KEY",
         "MAIN_APP_URL", "PREDICTION_SERVICE_KEY",
         "ENRICH_HORIZON_DAYS", "MAX_CONCURRENT_FIGHTS", "ENABLE_SCHEDULER",
-        "ENABLE_SCRAPER_NEWS", "ENABLE_SCRAPER_UFC_PREVIEW", "ENABLE_SCRAPER_TAPOLOGY",
+        *SCRAPER_ENV_VARS.values(),
     ]:
         monkeypatch.delenv(var, raising=False)
     monkeypatch.setenv("PIPELINE_DB_PATH", str(tmp_path / "pipeline.db"))
