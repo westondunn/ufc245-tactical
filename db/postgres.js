@@ -589,9 +589,9 @@ async function init(options = {}) {
   return pool;
 }
 
-// Re-applies start_time / end_time / timezone from seed.json on every boot.
+// Re-applies event date / timing metadata from seed.json on every boot.
 // The seed-on-init path only INSERTs when the table is empty, so production
-// Postgres rows from older deploys keep their NULL timing fields forever
+// Postgres rows from older deploys keep stale date/timing fields forever
 // without an explicit UPDATE pass. Cheap (only touches rows whose value
 // would change).
 async function backfillEventTimingFromSeed(seedPath) {
@@ -603,18 +603,20 @@ async function backfillEventTimingFromSeed(seedPath) {
   let applied = 0;
   for (const e of seed.events || []) {
     if (!e || !Number.isFinite(+e.id)) continue;
-    if (e.start_time == null && e.end_time == null && e.timezone == null) continue;
+    if (e.date == null && e.start_time == null && e.end_time == null && e.timezone == null) continue;
     const rc = await run(
       `UPDATE events SET
+         date       = COALESCE(?, date),
          start_time = COALESCE(?, start_time),
          end_time   = COALESCE(?, end_time),
          timezone   = COALESCE(?, timezone)
        WHERE id = ?
-         AND (COALESCE(start_time,'') IS DISTINCT FROM COALESCE(?,'')
+         AND (COALESCE(date,'')       IS DISTINCT FROM COALESCE(?,'')
+           OR COALESCE(start_time,'') IS DISTINCT FROM COALESCE(?,'')
            OR COALESCE(end_time,'')   IS DISTINCT FROM COALESCE(?,'')
            OR COALESCE(timezone,'')   IS DISTINCT FROM COALESCE(?,''))`,
-      [e.start_time || null, e.end_time || null, e.timezone || null, e.id,
-       e.start_time || null, e.end_time || null, e.timezone || null]
+      [e.date || null, e.start_time || null, e.end_time || null, e.timezone || null, e.id,
+       e.date || null, e.start_time || null, e.end_time || null, e.timezone || null]
     );
     if (typeof rc === 'number') applied += rc;
   }
@@ -689,7 +691,7 @@ async function getFighter(id) {
 
 async function getFighterEvents(fighterId) {
   return allRows(
-    'SELECT DISTINCT e.id, e.number, e.name, e.date, e.venue, e.city, f.id as fight_id, f.method, f.round, f.time, f.winner_id, f.is_title, f.is_main, fr.name as red_name, fb.name as blue_name, fr.id as red_id, fb.id as blue_id FROM events e JOIN fights f ON f.event_id = e.id JOIN fighters fr ON f.red_fighter_id = fr.id JOIN fighters fb ON f.blue_fighter_id = fb.id WHERE f.red_fighter_id = ? OR f.blue_fighter_id = ? ORDER BY e.date DESC, f.card_position ASC',
+    'SELECT DISTINCT e.id, e.number, e.name, e.date, e.venue, e.city, f.id as fight_id, f.card_position, f.method, f.round, f.time, f.winner_id, f.is_title, f.is_main, fr.name as red_name, fr.headshot_url as red_headshot_url, fr.body_url as red_body_url, fb.name as blue_name, fb.headshot_url as blue_headshot_url, fb.body_url as blue_body_url, fr.id as red_id, fb.id as blue_id FROM events e JOIN fights f ON f.event_id = e.id JOIN fighters fr ON f.red_fighter_id = fr.id JOIN fighters fb ON f.blue_fighter_id = fb.id WHERE f.red_fighter_id = ? OR f.blue_fighter_id = ? ORDER BY e.date DESC, f.card_position ASC',
     [fighterId, fighterId]
   );
 }
@@ -1060,7 +1062,7 @@ async function getStatLeaders(stat, limit = 10) {
   if (!expr) return [];
   const minFights = ['sig_accuracy', 'td_accuracy'].includes(stat) ? 'HAVING COUNT(*) >= 3' : '';
   return allRows(
-    'SELECT fs.fighter_id, f.name, f.weight_class, f.nationality, COUNT(*)::int as fight_count, ' + expr + ' as value FROM fight_stats fs JOIN fighters f ON fs.fighter_id = f.id GROUP BY fs.fighter_id, f.name, f.weight_class, f.nationality ' + minFights + ' ORDER BY value DESC LIMIT ?',
+    'SELECT fs.fighter_id, f.name, f.weight_class, f.nationality, f.headshot_url, f.body_url, COUNT(*)::int as fight_count, ' + expr + ' as value FROM fight_stats fs JOIN fighters f ON fs.fighter_id = f.id GROUP BY fs.fighter_id, f.name, f.weight_class, f.nationality, f.headshot_url, f.body_url ' + minFights + ' ORDER BY value DESC LIMIT ?',
     [limit]
   );
 }
@@ -1632,15 +1634,19 @@ async function getPicksForUser(userId, opts = {}) {
       p.*,
       f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name, f.winner_id, f.method, f.round AS fight_round,
       f.is_main, f.weight_class,
+      fr.headshot_url AS red_headshot_url, fr.body_url AS red_body_url,
+      fb.headshot_url AS blue_headshot_url, fb.body_url AS blue_body_url,
       ev.number AS event_number, ev.name AS event_name, ev.date AS event_date,
       ev.start_time AS event_start_time, ev.end_time AS event_end_time, ev.timezone AS event_timezone,
-      fp.name AS picked_fighter_name,
+      fp.name AS picked_fighter_name, fp.headshot_url AS picked_headshot_url, fp.body_url AS picked_body_url,
       s.model_version AS model_version,
       s.model_picked_fighter_id AS model_picked_fighter_id,
       s.model_confidence AS model_confidence,
       s.user_agreed_with_model AS user_agreed_with_model
     FROM user_picks p
     JOIN fights f ON f.id = p.fight_id
+    LEFT JOIN fighters fr ON fr.id = f.red_fighter_id
+    LEFT JOIN fighters fb ON fb.id = f.blue_fighter_id
     LEFT JOIN events ev ON ev.id = p.event_id
     LEFT JOIN fighters fp ON fp.id = p.picked_fighter_id
     LEFT JOIN pick_model_snapshots s ON s.user_pick_id = p.id

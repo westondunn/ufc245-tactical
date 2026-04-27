@@ -240,7 +240,7 @@ test.describe('Picks API — admin', () => {
   test('POST /api/admin/import-seed is idempotent (second run adds zero)', async ({ request }) => {
     const headers = { 'x-admin-key': ADMIN_KEY };
     // First call may add new rows if seed has entries not in DB. Second call
-    // must add zero of each kind — the endpoint is append-only.
+    // must add zero of each kind; metadata refreshes report under `updated`.
     const first = await request.post('/api/admin/import-seed', { headers });
     expect(first.ok()).toBe(true);
     const a = await first.json();

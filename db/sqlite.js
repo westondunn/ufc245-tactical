@@ -395,9 +395,9 @@ function ensureFighterImageColumns() {
   if (!cols.includes('body_url')) run('ALTER TABLE fighters ADD COLUMN body_url TEXT');
 }
 
-// Re-applies start_time / end_time / timezone from seed.json on every boot.
+// Re-applies event date / timing metadata from seed.json on every boot.
 // The INSERT OR IGNORE seed path only inserts when a row is missing, so
-// existing rows from prior boots keep NULL timing fields forever without
+// existing rows from prior boots keep stale date/timing fields forever without
 // this UPDATE pass. Idempotent — only touches rows whose value would change.
 function backfillEventTimingFromSeed(seedPath) {
   const sp = seedPath || path.join(__dirname, '..', 'data', 'seed.json');
@@ -408,19 +408,21 @@ function backfillEventTimingFromSeed(seedPath) {
   let applied = 0;
   const stmt = db.prepare(
     `UPDATE events SET
+       date       = COALESCE(?, date),
        start_time = COALESCE(?, start_time),
        end_time   = COALESCE(?, end_time),
        timezone   = COALESCE(?, timezone)
      WHERE id = ?
-       AND (COALESCE(start_time,'') != COALESCE(?,'')
+       AND (COALESCE(date,'')       != COALESCE(?,'')
+         OR COALESCE(start_time,'') != COALESCE(?,'')
          OR COALESCE(end_time,'')   != COALESCE(?,'')
          OR COALESCE(timezone,'')   != COALESCE(?,''))`
   );
   for (const e of seed.events || []) {
     if (!e || !Number.isFinite(+e.id)) continue;
-    if (e.start_time == null && e.end_time == null && e.timezone == null) continue;
-    stmt.run([e.start_time || null, e.end_time || null, e.timezone || null, e.id,
-              e.start_time || null, e.end_time || null, e.timezone || null]);
+    if (e.date == null && e.start_time == null && e.end_time == null && e.timezone == null) continue;
+    stmt.run([e.date || null, e.start_time || null, e.end_time || null, e.timezone || null, e.id,
+              e.date || null, e.start_time || null, e.end_time || null, e.timezone || null]);
     if (db.getRowsModified && db.getRowsModified() > 0) applied++;
   }
   stmt.free();
@@ -637,7 +639,7 @@ function getFighter(id) { return oneRow('SELECT * FROM fighters WHERE id = ?', [
 
 function getFighterEvents(fighterId) {
   return allRows(
-    'SELECT DISTINCT e.id, e.number, e.name, e.date, e.venue, e.city, f.id as fight_id, f.method, f.round, f.time, f.winner_id, f.is_title, f.is_main, fr.name as red_name, fb.name as blue_name, fr.id as red_id, fb.id as blue_id FROM events e JOIN fights f ON f.event_id = e.id JOIN fighters fr ON f.red_fighter_id = fr.id JOIN fighters fb ON f.blue_fighter_id = fb.id WHERE f.red_fighter_id = ? OR f.blue_fighter_id = ? ORDER BY e.date DESC, f.card_position ASC',
+    'SELECT DISTINCT e.id, e.number, e.name, e.date, e.venue, e.city, f.id as fight_id, f.card_position, f.method, f.round, f.time, f.winner_id, f.is_title, f.is_main, fr.name as red_name, fr.headshot_url as red_headshot_url, fr.body_url as red_body_url, fb.name as blue_name, fb.headshot_url as blue_headshot_url, fb.body_url as blue_body_url, fr.id as red_id, fb.id as blue_id FROM events e JOIN fights f ON f.event_id = e.id JOIN fighters fr ON f.red_fighter_id = fr.id JOIN fighters fb ON f.blue_fighter_id = fb.id WHERE f.red_fighter_id = ? OR f.blue_fighter_id = ? ORDER BY e.date DESC, f.card_position ASC',
     [fighterId, fighterId]);
 }
 
@@ -988,7 +990,7 @@ function getStatLeaders(stat, limit = 10) {
   const expr = validStats[stat];
   if (!expr) return [];
   const minFights = ['sig_accuracy','td_accuracy'].includes(stat) ? 'HAVING COUNT(*) >= 3' : '';
-  return allRows('SELECT fs.fighter_id, f.name, f.weight_class, f.nationality, COUNT(*) as fight_count, ' + expr + ' as value FROM fight_stats fs JOIN fighters f ON fs.fighter_id = f.id GROUP BY fs.fighter_id ' + minFights + ' ORDER BY value DESC LIMIT ?', [limit]);
+  return allRows('SELECT fs.fighter_id, f.name, f.weight_class, f.nationality, f.headshot_url, f.body_url, COUNT(*) as fight_count, ' + expr + ' as value FROM fight_stats fs JOIN fighters f ON fs.fighter_id = f.id GROUP BY fs.fighter_id ' + minFights + ' ORDER BY value DESC LIMIT ?', [limit]);
 }
 
 function getAllFighters(limit = 500) { return allRows('SELECT * FROM fighters ORDER BY name LIMIT ?', [limit]); }
@@ -1432,15 +1434,19 @@ function getPicksForUser(userId, opts = {}) {
       p.*,
       f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name, f.winner_id, f.method, f.round AS fight_round,
       f.is_main, f.weight_class,
+      fr.headshot_url AS red_headshot_url, fr.body_url AS red_body_url,
+      fb.headshot_url AS blue_headshot_url, fb.body_url AS blue_body_url,
       ev.number AS event_number, ev.name AS event_name, ev.date AS event_date,
       ev.start_time AS event_start_time, ev.end_time AS event_end_time, ev.timezone AS event_timezone,
-      fp.name AS picked_fighter_name,
+      fp.name AS picked_fighter_name, fp.headshot_url AS picked_headshot_url, fp.body_url AS picked_body_url,
       s.model_version AS model_version,
       s.model_picked_fighter_id AS model_picked_fighter_id,
       s.model_confidence AS model_confidence,
       s.user_agreed_with_model AS user_agreed_with_model
     FROM user_picks p
     JOIN fights f ON f.id = p.fight_id
+    LEFT JOIN fighters fr ON fr.id = f.red_fighter_id
+    LEFT JOIN fighters fb ON fb.id = f.blue_fighter_id
     LEFT JOIN events ev ON ev.id = p.event_id
     LEFT JOIN fighters fp ON fp.id = p.picked_fighter_id
     LEFT JOIN pick_model_snapshots s ON s.user_pick_id = p.id

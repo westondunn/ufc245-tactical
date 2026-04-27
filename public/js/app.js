@@ -96,6 +96,49 @@ function fighterAvatar(fighter, opts = {}){
   return `<span class="${cls}" aria-hidden="true"><span class="fighter-avatar__initials">${escHtml(initials)}</span>${img}</span>`;
 }
 
+function fighterPlainName(name){
+  return String(name || '')
+    .replace(/<br\s*\/?>/gi, ' ')
+    .replace(/<[^>]+>/g, ' ')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
+
+function fighterDisplayNameHtml(name){
+  return escHtml(String(name || '—')).replace(/&lt;br\s*\/?&gt;/gi, '<br>');
+}
+
+function fightFighter(fight, corner){
+  const prefix = corner === 'blue' ? 'blue' : 'red';
+  return {
+    id: fight && (fight[`${prefix}_fighter_id`] != null ? fight[`${prefix}_fighter_id`] : fight[`${prefix}_id`]),
+    name: fight && (fight[`${prefix}_name`] || fight[`${prefix}_fighter_name`]),
+    headshot_url: fight && fight[`${prefix}_headshot_url`],
+    body_url: fight && fight[`${prefix}_body_url`]
+  };
+}
+
+function fighterNameWithAvatar(fighter, opts = {}){
+  const size = opts.size || 'xs';
+  const corner = opts.corner || '';
+  const rawName = fighter && fighter.name != null ? fighter.name : opts.name;
+  const plain = fighterPlainName(rawName) || '—';
+  const classes = [
+    'fighter-name-with-avatar',
+    opts.compact ? 'fighter-name-with-avatar--compact' : '',
+    opts.align === 'end' ? 'fighter-name-with-avatar--end' : '',
+    opts.className || ''
+  ].filter(Boolean).join(' ');
+  const textClasses = [
+    'fighter-name-with-avatar__text',
+    opts.textClass || ''
+  ].filter(Boolean).join(' ');
+  return `<span class="${classes}">` +
+    fighterAvatar({ ...fighter, name: plain }, { size, corner, body: opts.body === true }) +
+    `<span class="${textClasses}">${fighterDisplayNameHtml(rawName || plain)}</span>` +
+    '</span>';
+}
+
 function rerenderActiveViewForUnits(){
   // Re-run the loader for whatever tab is active so measurement strings refresh
   // without a full reload. Cheap because the DB queries are cached server-side.
@@ -2632,12 +2675,12 @@ function selectFight(fightId){
   setHtml('heroEvent', fight.event);
   setHtml('heroRedTag', fight.red.tag + ' <span class="dot"></span>');
   setHtml('heroRedNick', fight.red.nick);
-  setHtml('heroRedName', fight.red.name);
+  setHtml('heroRedName', fighterNameWithAvatar({ name: fight.red.name }, { size: 'lg', corner: 'red', align: 'end', className: 'hero-fighter__name-avatar' }));
   setHtml('heroRedRecord', fight.red.record);
   setHtml('heroRedStyle', fight.red.style);
   setHtml('heroBlueTag', '<span class="dot"></span> ' + fight.blue.tag);
   setHtml('heroBlueNick', fight.blue.nick);
-  setHtml('heroBlueName', fight.blue.name);
+  setHtml('heroBlueName', fighterNameWithAvatar({ name: fight.blue.name }, { size: 'lg', corner: 'blue', className: 'hero-fighter__name-avatar' }));
   setHtml('heroBlueRecord', fight.blue.record);
   setHtml('heroBlueStyle', fight.blue.style);
   setHeroMeta(
@@ -2722,12 +2765,13 @@ function setupFightSelector(){
             ' onmouseover="this.style.background=\'rgba(45,220,255,.06)\'"' +
             ' onmouseout="this.style.background=\'none\'">' +
             '<div style="flex:1">' +
-            '<strong style="color:var(--fg)">' + escHtml(f.name) + '</strong>' +
+            '<strong style="color:var(--fg)">' + fighterNameWithAvatar(f, { size: 'xs', compact: true }) + '</strong>' +
             (f.nickname ? ' <span style="color:var(--muted)">"' + escHtml(f.nickname) + '"</span>' : '') +
             ' <span style="color:var(--muted-dim);font-size:9px;margin-left:8px">' + escHtml(f.weight_class) + '</span>' +
             '</div>' +
             '<button class="add-compare-btn" data-cfid="' + f.id + '" data-cfname="' + escHtml(f.name) +
             '" data-cfnick="' + escHtml(f.nickname||'') + '" data-cfwc="' + escHtml(f.weight_class) +
+            '" data-cfhead="' + escHtml(f.headshot_url || '') + '" data-cfbody="' + escHtml(f.body_url || '') +
             '" onclick="event.stopPropagation();addToCompare(this.dataset)">⊕</button>' +
             '</div>'
           ).join('');
@@ -2738,7 +2782,7 @@ function setupFightSelector(){
           el.addEventListener('click', () => {
             const fid = el.dataset.fid;
             results.style.display = 'none';
-            input.value = el.querySelector('strong').textContent;
+            input.value = (el.querySelector('.fighter-name-with-avatar__text') || el.querySelector('strong')).textContent;
             loadFighterEvents(fid);
           });
         });
@@ -2768,16 +2812,20 @@ async function loadEventFightStrip(eventId){
       const isWB = f.winner_id === f.blue_id;
       const isDraw = !f.winner_id;
       const method = (f.method||'').replace('KO/TKO','TKO').replace('U-DEC','DEC').replace('S-DEC','SDEC').replace('M-DEC','MDEC').replace('CNC','NC');
+      const redFighter = fightFighter(f, 'red');
+      const blueFighter = fightFighter(f, 'blue');
       let label;
       if (isDraw) {
-        label = escHtml(f.red_name.split(' ').pop()) +
+        label = fighterNameWithAvatar(redFighter, { size: 'xs', corner: 'red', compact: true }) +
           ' <span style="color:var(--muted-dim);font-size:8px">vs</span> ' +
-          escHtml(f.blue_name.split(' ').pop());
+          fighterNameWithAvatar(blueFighter, { size: 'xs', corner: 'blue', compact: true });
       } else {
-        const wName = isWR ? f.red_name.split(' ').pop() : f.blue_name.split(' ').pop();
-        const lName = isWR ? f.blue_name.split(' ').pop() : f.red_name.split(' ').pop();
-        label = '<span style="color:var(--green);font-weight:700">' + escHtml(wName) + '</span>' +
-          ' <span style="color:var(--muted-dim);font-size:8px">def</span> ' + escHtml(lName);
+        const winnerFighter = isWR ? redFighter : blueFighter;
+        const loserFighter = isWR ? blueFighter : redFighter;
+        label = '<span style="color:var(--green);font-weight:700">' +
+          fighterNameWithAvatar(winnerFighter, { size: 'xs', corner: isWR ? 'red' : 'blue', compact: true }) +
+          '</span> <span style="color:var(--muted-dim);font-size:8px">def</span> ' +
+          fighterNameWithAvatar(loserFighter, { size: 'xs', corner: isWR ? 'blue' : 'red', compact: true });
       }
       const mainAttr = (i === 0 && f.is_main) ? ' data-main="1"' : '';
       return '<button class="fight-chip" data-dbfight="' + f.id + '" data-event="' + (data.event.number || '') + '"' + mainAttr + ' onclick="selectDbFight(' + f.id + ',this)">' +
@@ -2824,7 +2872,11 @@ function renderGenericStatsPanel(f) {
   if (!hasStats && !hasRounds) { panel.style.display = 'none'; return; }
 
   const setHtml = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
-  setHtml('gspTitle', escHtml(f.red_name) + ' vs ' + escHtml(f.blue_name));
+  setHtml('gspTitle',
+    fighterNameWithAvatar(fightFighter(f, 'red'), { size: 'sm', corner: 'red' }) +
+    ' <span style="color:var(--muted-dim)">vs</span> ' +
+    fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'sm', corner: 'blue' })
+  );
   setHtml('gspSub', escHtml(formatFightEventLabel(f)) + ' · ' + escHtml(f.method || '') +
     (f.round ? ' R' + f.round : '') + (f.time ? ' ' + escHtml(f.time) : '') +
     ' · Source: UFCStats.com');
@@ -2989,18 +3041,20 @@ async function selectDbFight(fightId, chipEl){
     const res = await fetch('/api/fights/' + fightId + '/rounds');
     const f = await res.json();
     const titleTag = f.is_title ? ' · ' + escHtml(f.weight_class||'') + ' Title' : '';
+    const redFighter = fightFighter(f, 'red');
+    const blueFighter = fightFighter(f, 'blue');
 
     const setHtml = (id, html) => { const e = document.getElementById(id); if (e) e.innerHTML = html; };
     setHtml('heroEvent', escHtml(formatFightEventLabel(f)) + titleTag);
     setHtml('heroRedTag', 'Red Corner <span class="dot"></span>');
     setHtml('heroRedNick', f.red_nickname ? '&ldquo;' + escHtml(f.red_nickname) + '&rdquo;' : '');
-    setHtml('heroRedName', escHtml(f.red_name));
+    setHtml('heroRedName', fighterNameWithAvatar(redFighter, { size: 'lg', corner: 'red', align: 'end', className: 'hero-fighter__name-avatar' }));
     setHtml('heroRedRecord', (f.red_height ? formatHeight(f.red_height) : '') + (f.red_reach ? ' · ' + formatReach(f.red_reach) + ' reach' : ''));
     setHtml('heroRedStyle', f.red_stance ? escHtml(f.red_stance) + (f.red_nationality ? ' · ' + escHtml(f.red_nationality) : '') : '');
 
     setHtml('heroBlueTag', '<span class="dot"></span> Blue Corner');
     setHtml('heroBlueNick', f.blue_nickname ? '&ldquo;' + escHtml(f.blue_nickname) + '&rdquo;' : '');
-    setHtml('heroBlueName', escHtml(f.blue_name));
+    setHtml('heroBlueName', fighterNameWithAvatar(blueFighter, { size: 'lg', corner: 'blue', className: 'hero-fighter__name-avatar' }));
     setHtml('heroBlueRecord', (f.blue_height ? formatHeight(f.blue_height) : '') + (f.blue_reach ? ' · ' + formatReach(f.blue_reach) + ' reach' : ''));
     setHtml('heroBlueStyle', f.blue_stance ? escHtml(f.blue_stance) + (f.blue_nationality ? ' · ' + escHtml(f.blue_nationality) : '') : '');
     setHeroMeta(
@@ -3049,9 +3103,9 @@ async function loadFighterEvents(fighterId){
     const fighter = await fighterRes.json();
     const events = await eventsRes.json();
 
-    title.innerHTML = fighter.name +
-      (fighter.nickname ? ' <span style="color:var(--muted);font-weight:400">"' + fighter.nickname + '"</span>' : '') +
-      ' <span style="color:var(--cyan);font-size:12px;margin-left:12px">' + (fighter.weight_class || '') + '</span>';
+    title.innerHTML = fighterNameWithAvatar(fighter, { size: 'sm', className: 'fighter-panel-title__identity' }) +
+      (fighter.nickname ? ' <span style="color:var(--muted);font-weight:400">"' + escHtml(fighter.nickname) + '"</span>' : '') +
+      ' <span style="color:var(--cyan);font-size:12px;margin-left:12px">' + escHtml(fighter.weight_class || '') + '</span>';
 
     if (!events.length){
       body.innerHTML = '<div style="color:var(--muted);font-family:var(--f-mono);font-size:11px">No UFC numbered events found in database</div>';
@@ -3071,6 +3125,8 @@ async function loadFighterEvents(fighterId){
         ev.fights.map(f => {
           const won = f.winner_id === parseInt(fighterId, 10);
           const isRedCorner = f.red_id === parseInt(fighterId, 10);
+          const redName = fighterNameWithAvatar(fightFighter(f, 'red'), { size: 'xs', corner: 'red', compact: true });
+          const blueName = fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'xs', corner: 'blue', compact: true });
           return '<div class="event-fight-row" data-eid="' + ev.event_id + '" style="display:flex;align-items:center;gap:12px;' +
             'padding:8px 12px;cursor:pointer;transition:background .15s;margin-bottom:2px;' +
             'border-left:3px solid ' + (won ? 'var(--green)' : 'var(--red)') + '"' +
@@ -3079,8 +3135,8 @@ async function loadFighterEvents(fighterId){
             '<span style="font-family:var(--f-mono);font-size:9px;color:' + (won ? 'var(--green)' : 'var(--red)') +
               ';font-weight:700;min-width:14px">' + (won ? 'W' : 'L') + '</span>' +
             '<span style="font-family:var(--f-mono);font-size:11px;color:var(--fg);flex:1">' +
-              (isRedCorner ? '<span style="color:#FF5965">' + f.red_name + '</span> vs ' + f.blue_name :
-                f.red_name + ' vs <span style="color:#5EC2FF">' + f.blue_name + '</span>') +
+              (isRedCorner ? '<span style="color:#FF5965">' + redName + '</span> vs ' + blueName :
+                redName + ' vs <span style="color:#5EC2FF">' + blueName + '</span>') +
             '</span>' +
             (f.is_title ? '<span style="font-size:8px;border:1px solid var(--amber);color:var(--amber);padding:1px 5px;font-family:var(--f-mono);letter-spacing:.12em">TITLE</span>' : '') +
             '<span style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">' +
@@ -3120,9 +3176,9 @@ async function loadEventCard(eventId){
           '<span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim);min-width:20px">' + (i+1) + '</span>' +
           '<div style="flex:1">' +
             '<div style="font-family:var(--f-mono);font-size:12px;letter-spacing:.08em">' +
-              '<span style="color:#FF5965;font-weight:600">' + f.red_name + '</span>' +
+              '<span style="color:#FF5965;font-weight:600">' + fighterNameWithAvatar(fightFighter(f, 'red'), { size: 'xs', corner: 'red', compact: true }) + '</span>' +
               ' <span style="color:var(--muted)">vs</span> ' +
-              '<span style="color:#5EC2FF;font-weight:600">' + f.blue_name + '</span>' +
+              '<span style="color:#5EC2FF;font-weight:600">' + fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'xs', corner: 'blue', compact: true }) + '</span>' +
             '</div>' +
             '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);margin-top:3px;letter-spacing:.1em">' +
               f.weight_class + (f.is_title ? ' · TITLE FIGHT' : '') + '</div>' +
@@ -3147,7 +3203,14 @@ async function loadEventCard(eventId){
 const _compareSlots = [null, null];
 
 function addToCompare(dataset){
-  const fighter = { id: dataset.cfid, name: dataset.cfname, nickname: dataset.cfnick, weight_class: dataset.cfwc };
+  const fighter = {
+    id: dataset.cfid,
+    name: dataset.cfname,
+    nickname: dataset.cfnick,
+    weight_class: dataset.cfwc,
+    headshot_url: dataset.cfhead,
+    body_url: dataset.cfbody
+  };
   if (_compareSlots[0] && _compareSlots[0].id === fighter.id) return;
   if (_compareSlots[1] && _compareSlots[1].id === fighter.id) return;
   if (!_compareSlots[0]) _compareSlots[0] = fighter;
@@ -3172,9 +3235,11 @@ function renderCompareSlots(){
     if (f){
       slot.classList.add('filled');
       slot.innerHTML =
-        '<div class="compare-slot__name" style="color:' + (i===0?'#FF5965':'#5EC2FF') + '">' + f.name + '</div>' +
-        (f.nickname ? '<div class="compare-slot__meta">"' + f.nickname + '"</div>' : '') +
-        '<div class="compare-slot__meta">' + (f.weight_class||'') + '</div>' +
+        '<div class="compare-slot__name" style="color:' + (i===0?'#FF5965':'#5EC2FF') + '">' +
+          fighterNameWithAvatar(f, { size: 'md', corner: i === 0 ? 'red' : 'blue', className: 'compare-slot__name-avatar' }) +
+        '</div>' +
+        (f.nickname ? '<div class="compare-slot__meta">"' + escHtml(f.nickname) + '"</div>' : '') +
+        '<div class="compare-slot__meta">' + escHtml(f.weight_class||'') + '</div>' +
         '<div class="compare-slot__clear" onclick="clearCompareSlot(' + i + ')">Remove ×</div>';
     } else {
       slot.classList.remove('filled');
@@ -3282,10 +3347,11 @@ function renderComparison(data){
     html += '<div class="compare-section-title">Head-to-Head · ' + data.head_to_head.length + ' fight(s)</div>';
     html += data.head_to_head.map(f => {
       const w1 = f.winner_id === parseInt(_compareSlots[0].id,10);
+      const winnerSlot = w1 ? _compareSlots[0] : _compareSlots[1];
       return '<div class="h2h-fight">' +
         '<span class="h2h-fight__event">UFC ' + f.event_number + '</span>' +
         '<span class="h2h-fight__result" style="color:' + (w1?'#FF5965':'#5EC2FF') + '">' +
-          (w1 ? _compareSlots[0].name.split(' ').pop() : _compareSlots[1].name.split(' ').pop()) + ' W</span>' +
+          fighterNameWithAvatar(winnerSlot, { size: 'xs', corner: w1 ? 'red' : 'blue', compact: true }) + ' W</span>' +
         '<span class="h2h-fight__method">' + f.method + (f.method_detail ? ' · '+f.method_detail : '') + '</span>' +
         '<span style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">R' + f.round + ' ' + f.time + '</span></div>';
     }).join('');
@@ -3452,13 +3518,15 @@ async function toggleEventCard(eventId, eventNum, rowEl){
       html += data.card.map((f, i) => {
         const isWR = f.winner_id === f.red_id;
         const isWB = f.winner_id === f.blue_id;
+        const redFighter = fightFighter(f, 'red');
+        const blueFighter = fightFighter(f, 'blue');
         return '<div class="fight-row" id="frow-' + f.id + '" onclick="event.stopPropagation();toggleFightDetail(' + f.id + ',this)">' +
           '<div class="fight-row__pos">' + (i+1) + '</div>' +
           '<div class="fight-row__names">' +
             (f.is_title ? '<span class="fight-row__title-badge">TITLE</span>' : '') +
-            '<span' + (isWR?' class="fight-row__winner"':'') + '>' + escHtml(f.red_name) + '</span>' +
+            '<span' + (isWR?' class="fight-row__winner"':'') + '>' + fighterNameWithAvatar(redFighter, { size: 'xs', corner: 'red', compact: true }) + '</span>' +
             ' <span style="color:var(--muted-dim)">vs</span> ' +
-            '<span' + (isWB?' class="fight-row__winner"':'') + '>' + escHtml(f.blue_name) + '</span>' +
+            '<span' + (isWB?' class="fight-row__winner"':'') + '>' + fighterNameWithAvatar(blueFighter, { size: 'xs', corner: 'blue', compact: true }) + '</span>' +
           '</div>' +
           '<div class="fight-row__wc">' + escHtml(f.weight_class||'').replace("Women's ",'W-') + '</div>' +
           '<div class="fight-row__result">' + escHtml(f.method||'') + ' R' + (f.round||'') + ' ' + escHtml(f.time||'') + '</div>' +
@@ -3506,12 +3574,14 @@ async function toggleFightDetail(fightId, rowEl){
     ]);
     const f = await fightRes.json();
     const tac = await tacRes.json();
+    const redFighter = fightFighter(f, 'red');
+    const blueFighter = fightFighter(f, 'blue');
 
     let html = '<div class="fight-detail-drop__header">' +
       '<div class="fight-detail-drop__names">' +
-        '<span style="color:#FF5965">' + escHtml(f.red_name) + '</span>' +
+        '<span style="color:#FF5965">' + fighterNameWithAvatar(redFighter, { size: 'sm', corner: 'red' }) + '</span>' +
         ' <span style="color:var(--muted-dim);font-size:12px;font-family:var(--f-mono)">vs</span> ' +
-        '<span style="color:#5EC2FF">' + escHtml(f.blue_name) + '</span>' +
+        '<span style="color:#5EC2FF">' + fighterNameWithAvatar(blueFighter, { size: 'sm', corner: 'blue' }) + '</span>' +
       '</div>' +
       '<div style="text-align:right;font-family:var(--f-mono);font-size:10px;color:var(--muted)">' +
         escHtml(f.method||'') + ' · R' + (f.round||'') + ' ' + escHtml(f.time||'') +
@@ -3714,7 +3784,10 @@ async function showFighterProfile(fid){
         ev.fights.forEach(fight => {
           const won = fight.winner_id === fid;
           html += '<div style="font-family:var(--f-mono);font-size:11px;padding:3px 0;color:' + (won?'var(--green)':'var(--fg-dim)') + '">' +
-            (won ? 'W' : 'L') + ' · ' + escHtml(fight.red_name) + ' vs ' + escHtml(fight.blue_name) +
+            (won ? 'W' : 'L') + ' · ' +
+            fighterNameWithAvatar(fightFighter(fight, 'red'), { size: 'xs', corner: 'red', compact: true }) +
+            ' vs ' +
+            fighterNameWithAvatar(fightFighter(fight, 'blue'), { size: 'xs', corner: 'blue', compact: true }) +
             ' · ' + escHtml(fight.method||'') + ' R' + (fight.round||'') + '</div>';
         });
         html += '</div>';
@@ -3751,7 +3824,7 @@ async function loadStatsTab(){
         data.leaders.forEach((l, i) => {
           html += '<div class="leader-entry">' +
             '<span class="leader-entry__rank">' + (i+1) + '</span>' +
-            '<span class="leader-entry__name">' + escHtml(l.name) + '</span>' +
+            '<span class="leader-entry__name">' + fighterNameWithAvatar(l, { size: 'xs', compact: true }) + '</span>' +
             '<span class="leader-entry__val">' + (l.value||0) + cat.unit + '</span></div>';
         });
       }
@@ -4479,23 +4552,28 @@ function renderEventHistoryBody(normalized, userPicks, event){
   const rows = normalized.map(f => {
     const pick = userPickById.get(f.id);
     const winnerName = f.winner_id === f.red_fighter_id ? f.red_name : (f.winner_id === f.blue_fighter_id ? f.blue_name : null);
+    const winnerFighter = f.winner_id === f.red_fighter_id ? fightFighter(f, 'red')
+      : (f.winner_id === f.blue_fighter_id ? fightFighter(f, 'blue') : null);
     const resultMeta = winnerName
-      ? `Winner: <strong>${escHtml(winnerName)}</strong>${f.method ? ` <span class="picks-event-history__method">· ${escHtml(f.method)}${f.round ? ` R${f.round}` : ''}</span>` : ''}`
+      ? `Winner: <strong>${fighterNameWithAvatar(winnerFighter, { size: 'xs', corner: f.winner_id === f.red_fighter_id ? 'red' : 'blue', compact: true })}</strong>${f.method ? ` <span class="picks-event-history__method">· ${escHtml(f.method)}${f.round ? ` R${f.round}` : ''}</span>` : ''}`
       : 'Result pending';
     const youPicked = pick
       ? (pick.picked_fighter_id === f.red_fighter_id ? f.red_name : f.blue_name)
+      : null;
+    const youPickedFighter = pick
+      ? (pick.picked_fighter_id === f.red_fighter_id ? fightFighter(f, 'red') : fightFighter(f, 'blue'))
       : null;
     const correctCls = pick && (pick.correct === 1 || pick.correct === true) ? 'picks-event-history__row--correct' :
       pick && (pick.correct === 0 || pick.correct === false) ? 'picks-event-history__row--wrong' : '';
     return `
       <div class="picks-event-history__row ${correctCls}">
         <div class="picks-event-history__matchup">
-          ${fighterAvatar({ name: f.red_name, headshot_url: f.red_headshot_url, body_url: f.red_body_url }, { size: 'sm', corner: 'red' })}
-          ${escHtml(f.red_name || '—')} <span class="picks-event-history__vs">vs</span> ${escHtml(f.blue_name || '—')}
-          ${fighterAvatar({ name: f.blue_name, headshot_url: f.blue_headshot_url, body_url: f.blue_body_url }, { size: 'sm', corner: 'blue' })}
+          ${fighterNameWithAvatar(fightFighter(f, 'red'), { size: 'sm', corner: 'red' })}
+          <span class="picks-event-history__vs">vs</span>
+          ${fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'sm', corner: 'blue' })}
         </div>
         <div class="picks-event-history__winner">${resultMeta}</div>
-        <div class="picks-event-history__yours">Your pick: ${youPicked ? `<strong>${escHtml(youPicked)}</strong>` : '<em>no pick</em>'}</div>
+        <div class="picks-event-history__yours">Your pick: ${youPicked ? `<strong>${fighterNameWithAvatar(youPickedFighter, { size: 'xs', corner: pick.picked_fighter_id === f.red_fighter_id ? 'red' : 'blue', compact: true })}</strong>` : '<em>no pick</em>'}</div>
       </div>`;
   }).join('');
 
@@ -4531,15 +4609,20 @@ function renderPicksCardSummary(openFights, opts = {}){
     const pickedBlue = pick && pick.picked_fighter_id === f.blue_fighter_id;
     const pickedName = pickedRed ? f.red_name : (pickedBlue ? f.blue_name : '—');
     const corner = pickedRed ? 'red' : (pickedBlue ? 'blue' : '');
+    const pickedFighter = pickedRed ? fightFighter(f, 'red') : (pickedBlue ? fightFighter(f, 'blue') : { name: pickedName });
     const extras = [
       pick.method_pick ? pick.method_pick : null,
       pick.round_pick ? 'R' + pick.round_pick : null
     ].filter(Boolean).join(' · ');
     return `
       <div class="picks-card-summary__row">
-        <div class="picks-card-summary__matchup">${escHtml(f.red_name || '—')} <span>vs</span> ${escHtml(f.blue_name || '—')}</div>
+        <div class="picks-card-summary__matchup">
+          ${fighterNameWithAvatar(fightFighter(f, 'red'), { size: 'xs', corner: 'red', compact: true })}
+          <span>vs</span>
+          ${fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'xs', corner: 'blue', compact: true })}
+        </div>
         <div class="picks-card-summary__pick ${corner}">
-          <strong>${escHtml(pickedName)}</strong>
+          <strong>${fighterNameWithAvatar(pickedFighter, { size: 'xs', corner, compact: true })}</strong>
           <span>${pick.confidence || 50}%${extras ? ' · ' + escHtml(extras) : ''}</span>
         </div>
       </div>`;
@@ -4600,7 +4683,7 @@ function renderFighterStatsHover(fight, model, corner){
     <span class="pick-fighter-stats pick-fighter-stats--${corner}" tabindex="0">
       Stats
       <span class="pick-fighter-stats__panel">
-        <span class="pick-fighter-stats__title">${escHtml(fighterName || (corner === 'red' ? 'Red' : 'Blue'))}</span>
+        <span class="pick-fighter-stats__title">${fighterNameWithAvatar(fightFighter(fight, corner), { size: 'xs', corner, compact: true })}</span>
         ${rows}
         <span class="pick-fighter-stats__note">Model evidence from completed fight records and fighter profile metrics.</span>
       </span>
@@ -4680,7 +4763,7 @@ function renderFighterEvidencePanel(fight, model, corner){
     <div class="pick-fighter-evidence pick-fighter-evidence--${corner}">
       <div class="pick-fighter-evidence__head">
         <span>${corner === 'red' ? 'Red evidence' : 'Blue evidence'}</span>
-        <strong>${escHtml(fighterName || (corner === 'red' ? 'Red corner' : 'Blue corner'))}</strong>
+        <strong>${fighterNameWithAvatar(fightFighter(fight, corner), { size: 'xs', corner, compact: true })}</strong>
       </div>
       ${rows}
     </div>`;
@@ -4758,8 +4841,8 @@ function renderPickWidget(fight){
           ${youTick}
         </div>
         <div class="pick-model__legend">
-          <span class="pick-model__legend-red">${escHtml(fight.red_name || '')}</span>
-          <span class="pick-model__legend-blue">${escHtml(fight.blue_name || '')}</span>
+          <span class="pick-model__legend-red">${fighterNameWithAvatar(fightFighter(fight, 'red'), { size: 'xs', corner: 'red', compact: true })}</span>
+          <span class="pick-model__legend-blue">${fighterNameWithAvatar(fightFighter(fight, 'blue'), { size: 'xs', corner: 'blue', compact: true })}</span>
         </div>
         ${explanation}
       </div>`;
@@ -4771,6 +4854,8 @@ function renderPickWidget(fight){
   let outcomeHtml = '';
   if (fight.winner_id != null) {
     const winnerName = fight.winner_id === fight.red_fighter_id ? fight.red_name : fight.blue_name;
+    const winnerFighter = fight.winner_id === fight.red_fighter_id ? fightFighter(fight, 'red') : fightFighter(fight, 'blue');
+    const winnerCorner = fight.winner_id === fight.red_fighter_id ? 'red' : 'blue';
     const meta = `${escHtml(fight.method || '—')}${fight.round ? ' · R' + fight.round : ''}${fight.time ? ' · ' + escHtml(fight.time) : ''}`;
     const correct = pick && pick.correct === 1;
     const wrong = pick && pick.correct === 0;
@@ -4778,7 +4863,7 @@ function renderPickWidget(fight){
     outcomeHtml = `
       <div class="pick-outcome ${correct ? 'is-correct' : (wrong ? 'is-wrong' : '')}">
         <div>
-          <div class="pick-outcome__winner">WINNER · ${escHtml(winnerName.toUpperCase())}</div>
+          <div class="pick-outcome__winner">WINNER · ${fighterNameWithAvatar(winnerFighter, { size: 'xs', corner: winnerCorner, compact: true })}</div>
           <div class="pick-outcome__detail">${meta}</div>
         </div>
         <div></div>
@@ -4835,10 +4920,10 @@ function renderPickWidget(fight){
 
       <div class="pick-fighters">
         <button class="pick-fighter${pickedRed ? ' selected' : ''}" data-corner="red" data-fighter-id="${fight.red_fighter_id}" ${disabled}>
-          ${pickedRed ? '✓ ' : ''}Pick ${escHtml((fight.red_name || '').split(' ').pop() || 'Red')}
+          ${pickedRed ? '✓ ' : ''}Pick ${fighterNameWithAvatar(fightFighter(fight, 'red'), { size: 'xs', corner: 'red', compact: true, className: 'pick-fighter__label' })}
         </button>
         <button class="pick-fighter${pickedBlue ? ' selected' : ''}" data-corner="blue" data-fighter-id="${fight.blue_fighter_id}" ${disabled}>
-          ${pickedBlue ? '✓ ' : ''}Pick ${escHtml((fight.blue_name || '').split(' ').pop() || 'Blue')}
+          ${pickedBlue ? '✓ ' : ''}Pick ${fighterNameWithAvatar(fightFighter(fight, 'blue'), { size: 'xs', corner: 'blue', compact: true, className: 'pick-fighter__label' })}
         </button>
       </div>
 
@@ -5263,6 +5348,15 @@ function renderHistoryPickRow(p){
     || (p.picked_fighter_id === p.red_fighter_id ? p.red_name : p.blue_name);
   const winnerName = p.actual_winner_id === p.red_fighter_id ? p.red_name
     : (p.actual_winner_id === p.blue_fighter_id ? p.blue_name : null);
+  const redFighter = fightFighter(p, 'red');
+  const blueFighter = fightFighter(p, 'blue');
+  const pickedRed = p.picked_fighter_id === p.red_fighter_id;
+  const pickedBlue = p.picked_fighter_id === p.blue_fighter_id;
+  const pickedFighter = pickedRed ? redFighter : (pickedBlue ? blueFighter : {
+    name: pickedName,
+    headshot_url: p.picked_headshot_url,
+    body_url: p.picked_body_url
+  });
 
   const badges = [];
   if (p.method_correct === 1) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--method">+ method</span>');
@@ -5270,7 +5364,11 @@ function renderHistoryPickRow(p){
   if (status === 'correct' && p.user_agreed_with_model === 0) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--upset">beat model</span>');
   if (p.user_agreed_with_model === 1) badges.push('<span class="picks-history-pick__badge picks-history-pick__badge--agreed">w/ model</span>');
 
-  const matchup = `<strong>${escHtml(pickedName)}</strong> · ${escHtml(p.red_name)} vs ${escHtml(p.blue_name)}`;
+  const matchup = `<strong>${fighterNameWithAvatar(pickedFighter, { size: 'xs', corner: pickedRed ? 'red' : (pickedBlue ? 'blue' : ''), compact: true })}</strong>` +
+    ` <span class="picks-history-pick__sep">·</span> ` +
+    `${fighterNameWithAvatar(redFighter, { size: 'xs', corner: 'red', compact: true })}` +
+    ` <span class="picks-history-pick__vs">vs</span> ` +
+    `${fighterNameWithAvatar(blueFighter, { size: 'xs', corner: 'blue', compact: true })}`;
   const metaLine = status === 'voided'
     ? `Draw / NC · no points awarded`
     : status === 'pending'
@@ -5791,9 +5889,12 @@ function renderReviewPayload(data){
 
   const rows = (data.card || []).map(c => {
     const trustColor = _trustColor(c.trust_grade);
+    const redFighter = c.red || {};
+    const blueFighter = c.blue || {};
+    const leanFighter = c.model && c.model.lean === 'red' ? redFighter : blueFighter;
     const lean = c.model
       ? '<span style="color:' + (c.model.lean === 'red' ? 'var(--red)' : 'var(--cyan)') + '">' +
-          escHtml(c.model.lean_fighter_name || '') + '</span>' +
+          fighterNameWithAvatar(leanFighter, { size: 'xs', corner: c.model.lean === 'red' ? 'red' : 'blue', compact: true }) + '</span>' +
           ' <span style="font-family:var(--f-mono);font-size:9px;color:var(--muted)">' + _fmtPct(c.model.confidence) + '</span>'
       : '<span style="color:var(--muted);font-family:var(--f-mono);font-size:10px">no prediction</span>';
     const probs = c.model
@@ -5822,7 +5923,11 @@ function renderReviewPayload(data){
       : '';
     return '<tr ' + (c.is_main ? 'style="background:rgba(0,255,255,.04)"' : '') + '>' +
       '<td style="text-align:center">' + (c.is_main ? '★' : (c.is_title ? '◆' : (c.card_position || ''))) + '</td>' +
-      '<td><b>' + escHtml(c.matchup) + '</b>' +
+      '<td><b class="review-matchup-name">' +
+        fighterNameWithAvatar(redFighter, { size: 'xs', corner: 'red', compact: true }) +
+        ' <span class="review-matchup-name__vs">vs</span> ' +
+        fighterNameWithAvatar(blueFighter, { size: 'xs', corner: 'blue', compact: true }) +
+        '</b>' +
         (c.weight_class ? '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted)">' + escHtml(c.weight_class) + '</div>' : '') +
       '</td>' +
       '<td>' + lean + '<div>' + probs + '</div>' +
@@ -5892,7 +5997,11 @@ function showReviewChecklist(fightId){
   pane.innerHTML =
     '<div style="display:flex;justify-content:space-between;align-items:center">' +
       '<div><div class="section-tag">Live observation checklist</div>' +
-      '<div style="font-size:14px;margin-top:2px"><b>' + escHtml(fight.matchup) + '</b></div></div>' +
+      '<div style="font-size:14px;margin-top:2px"><b>' +
+        fighterNameWithAvatar(fight.red, { size: 'xs', corner: 'red', compact: true }) +
+        ' <span style="color:var(--muted-dim)">vs</span> ' +
+        fighterNameWithAvatar(fight.blue, { size: 'xs', corner: 'blue', compact: true }) +
+      '</b></div></div>' +
       '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);letter-spacing:.12em">NOT PERSISTED · NOT A PREDICTION INPUT</div>' +
     '</div>' +
     '<ul style="list-style:none;padding:0;margin:8px 0 0 0">' + items + '</ul>';

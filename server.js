@@ -205,6 +205,8 @@ app.get('/api/fighters/:id/events', apiHandler(async (req, res) => {
     }
     grouped[row.id].fights.push({
       fight_id: row.fight_id, red_name: row.red_name, blue_name: row.blue_name,
+      red_headshot_url: row.red_headshot_url, red_body_url: row.red_body_url,
+      blue_headshot_url: row.blue_headshot_url, blue_body_url: row.blue_body_url,
       red_id: row.red_id, blue_id: row.blue_id, method: row.method,
       round: row.round, time: row.time, winner_id: row.winner_id,
       is_title: row.is_title, is_main: row.is_main
@@ -923,15 +925,16 @@ app.post('/api/admin/reconcile-all-picks', requireAdmin, apiHandler(async (_req,
 }));
 
 // Import new rows from data/seed.json without clobbering existing data.
-// Idempotent: only rows whose id doesn't already exist are inserted. Used
-// after data/scrape-upcoming.js updates seed.json with new upcoming events —
-// call this endpoint on the live app to sync the additions into the DB.
+// Idempotent: rows whose id doesn't already exist are inserted, and existing
+// event rows get non-null seed date/timing metadata refreshed. Used after
+// data/scrape-upcoming.js updates seed.json with new upcoming events — call
+// this endpoint on the live app to sync the additions into the DB.
 app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) => {
   const seedPath = path.join(__dirname, 'data', 'seed.json');
   if (!fs.existsSync(seedPath)) return res.status(404).json({ error: 'seed_not_found' });
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
   const added = { fighters: 0, events: 0, fights: 0 };
-  const updated = { fighters: 0, fight_outcomes: 0 };
+  const updated = { fighters: 0, events: 0, fight_outcomes: 0 };
   for (const f of (seed.fighters || [])) {
     const existing = await db.oneRow('SELECT id FROM fighters WHERE id = ?', [f.id]);
     await db.upsertFighter(f);
@@ -939,8 +942,28 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
     else updated.fighters++;
   }
   for (const e of (seed.events || [])) {
-    const existing = await db.oneRow('SELECT id FROM events WHERE id = ?', [e.id]);
-    if (!existing) { await db.upsertEvent(e); added.events++; }
+    const existing = await db.oneRow('SELECT * FROM events WHERE id = ?', [e.id]);
+    if (!existing) {
+      await db.upsertEvent(e);
+      added.events++;
+    } else {
+      const changed = ['date', 'start_time', 'end_time', 'timezone'].some(key => {
+        const value = e[key];
+        return value != null && value !== '' && String(existing[key] || '') !== String(value);
+      });
+      if (changed) {
+        await db.run(
+          `UPDATE events SET
+             date       = COALESCE(?, date),
+             start_time = COALESCE(?, start_time),
+             end_time   = COALESCE(?, end_time),
+             timezone   = COALESCE(?, timezone)
+           WHERE id = ?`,
+          [e.date || null, e.start_time || null, e.end_time || null, e.timezone || null, e.id]
+        );
+        updated.events++;
+      }
+    }
   }
   for (const f of (seed.fights || [])) {
     const existing = await db.oneRow('SELECT id FROM fights WHERE id = ?', [f.id]);
@@ -964,7 +987,7 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
   }
   await db.save();
   cache.invalidateAll();
-  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights} updated_fighters=${updated.fighters} fight_outcomes=${updated.fight_outcomes}`);
+  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights} updated_fighters=${updated.fighters} updated_events=${updated.events} fight_outcomes=${updated.fight_outcomes}`);
   res.json({ status: 'ok', added, updated, cacheEntries: cache.size() });
 }));
 
