@@ -454,6 +454,39 @@ async function run() {
   const lrLate = afterRows.find(r => r.model_version === 'v.upgrade.lr.2');
   assertEq(lrLate.is_stale, 1, 'late lr inserted but stale');
 
+  // ── Accuracy breakdown by enrichment_level ──
+  console.log('\nAccuracy breakdown:');
+  // Pick a third non-main fight: one not used by Task 1 (mainEvent) or
+  // Task 2 (upgradeFight = first non-main). Use the second non-main fight.
+  const nonMainFights = card.filter(f => !f.is_main && f.red_id && f.blue_id);
+  assertGt(nonMainFights.length, 1, 'accuracy-breakdown fixture: 2+ non-main UFC 245 fights exist');
+  const accFight = nonMainFights[1];
+  await db.upsertPrediction({
+    fight_id: accFight.id, red_fighter_id: accFight.red_id, blue_fighter_id: accFight.blue_id,
+    red_win_prob: 0.7, blue_win_prob: 0.3,
+    model_version: 'v.acc.lr', feature_hash: 'a1',
+    predicted_at: new Date().toISOString(), event_date: '2030-03-01',
+    enrichment_level: 'lr'
+  });
+  await db.upsertPrediction({
+    fight_id: accFight.id, red_fighter_id: accFight.red_id, blue_fighter_id: accFight.blue_id,
+    red_win_prob: 0.65, blue_win_prob: 0.35,
+    model_version: 'v.acc.ensemble', feature_hash: 'a2',
+    predicted_at: new Date().toISOString(), event_date: '2030-03-01',
+    enrichment_level: 'ensemble'
+  });
+  // Reconcile: red wins. Both predictions should be scored correct.
+  await db.reconcilePrediction(accFight.id, accFight.red_id);
+  const breakdown = await db.getPredictionAccuracy({ breakdown: 'enrichment_level' });
+  assertTruthy(breakdown.lr, 'breakdown has lr bucket');
+  assertTruthy(breakdown.ensemble, 'breakdown has ensemble bucket');
+  // Both buckets must include the v.acc rows we just reconciled. Use >= because
+  // earlier tests in the run may have produced additional reconciled rows.
+  assert(breakdown.lr.n >= 1, 'lr bucket has >= 1 prediction');
+  assert(breakdown.ensemble.n >= 1, 'ensemble bucket has >= 1 prediction');
+  assert(breakdown.lr.correct >= 1, 'lr bucket has >= 1 correct');
+  assert(breakdown.ensemble.correct >= 1, 'ensemble bucket has >= 1 correct');
+
   // Model predictions lock when the event has started or the fight is final.
   const predLockEventId = (await db.nextId('events')) + 2300;
   const predLockFightId = (await db.nextId('fights')) + 2300;

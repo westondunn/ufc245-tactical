@@ -1387,7 +1387,29 @@ async function reconcilePrediction(fightId, actualWinnerId) {
   };
 }
 
-async function getPredictionAccuracy() {
+async function getPredictionAccuracy(opts = {}) {
+  if (opts && opts.breakdown === 'enrichment_level') {
+    const rows = await allRows(
+      `SELECT enrichment_level,
+              COUNT(*)::int AS n,
+              COALESCE(SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END),0)::int AS correct
+       FROM predictions
+       WHERE actual_winner_id IS NOT NULL
+       GROUP BY enrichment_level`
+    );
+    const out = {};
+    for (const r of rows) {
+      const level = r.enrichment_level || 'lr';
+      const n = Number(r.n);
+      const correct = Number(r.correct || 0);
+      out[level] = {
+        n,
+        correct,
+        accuracy: n > 0 ? correct / n : 0
+      };
+    }
+    return out;
+  }
   return oneRow(
     `SELECT COUNT(*)::int as total,
        COALESCE(SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END),0)::int as correct_count,

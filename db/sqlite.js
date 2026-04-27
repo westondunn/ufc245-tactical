@@ -1216,7 +1216,29 @@ function reconcilePrediction(fightId, actualWinnerId) {
   };
 }
 
-function getPredictionAccuracy() {
+function getPredictionAccuracy(opts = {}) {
+  if (opts && opts.breakdown === 'enrichment_level') {
+    const rows = allRows(
+      `SELECT enrichment_level,
+              COUNT(*) AS n,
+              SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS correct
+       FROM predictions
+       WHERE actual_winner_id IS NOT NULL
+       GROUP BY enrichment_level`
+    );
+    const out = {};
+    for (const r of rows) {
+      const level = r.enrichment_level || 'lr';
+      const n = Number(r.n);
+      const correct = Number(r.correct || 0);
+      out[level] = {
+        n,
+        correct,
+        accuracy: n > 0 ? correct / n : 0
+      };
+    }
+    return out;
+  }
   return oneRow(
     `SELECT COUNT(*) as total,
        SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) as correct_count,

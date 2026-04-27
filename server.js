@@ -460,8 +460,10 @@ app.get('/api/predictions', apiHandler(async (req, res) => {
 }));
 
 // Public: prediction accuracy stats
-app.get('/api/predictions/accuracy', apiHandler(async (_req, res) => {
-  res.json(await db.getPredictionAccuracy());
+app.get('/api/predictions/accuracy', apiHandler(async (req, res) => {
+  const opts = {};
+  if (req.query.breakdown) opts.breakdown = String(req.query.breakdown).slice(0, 32);
+  res.json(await db.getPredictionAccuracy(opts));
 }));
 
 // Public: event-by-event model accuracy trend
