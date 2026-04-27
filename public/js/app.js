@@ -5285,6 +5285,7 @@ async function loadHistoryView(){
 function renderPicksStatsStrip(stats){
   if (!stats) return '';
   const total = stats.total_picks || 0;
+  if (total <= 0) return '';
   const correct = stats.correct_count || 0;
   const acc = stats.accuracy_pct;
   const points = stats.points || 0;
@@ -5307,7 +5308,7 @@ function renderPicksStatsStrip(stats){
         <div class="picks-stat__sub">picks right where model was wrong</div>
       </div>
       <div class="picks-stat">
-        <div class="picks-stat__label">Best call</div>
+        <div class="picks-stat__label">Avg score</div>
         <div class="picks-stat__value">${total > 0 ? Math.round((points / total) * 10) / 10 : '—'}</div>
         <div class="picks-stat__sub">points per pick (avg)</div>
       </div>
@@ -5457,6 +5458,7 @@ function renderTrendStatsStrip(summary){
   const s = summary || {};
   const model = s.model_on_user_picks || {};
   const total = s.total_picks || 0;
+  if (total <= 0) return '';
   const correct = s.correct_count || 0;
   const modelTotal = model.total || 0;
   const modelCorrect = model.correct_count || 0;
