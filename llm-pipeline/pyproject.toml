@@ -1,0 +1,41 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "ufc-llm-pipeline"
+version = "0.1.0"
+requires-python = ">=3.12"
+dependencies = [
+  "fastapi==0.115.12",
+  "uvicorn[standard]==0.34.2",
+  "apscheduler==3.11.0",
+  "httpx==0.28.1",
+  "scikit-learn==1.6.1",
+  "numpy==2.2.5",
+  "pandas==2.2.3",
+  "joblib==1.4.2",
+  "pydantic==2.11.1",
+  "python-dotenv==1.1.0",
+  "beautifulsoup4==4.12.3",
+  "lxml==5.3.0",
+  "feedparser==6.0.11",
+  "ollama==0.4.7",
+  "anthropic==0.40.0",
+  "openai==1.55.0",
+]
+
+[project.optional-dependencies]
+dev = [
+  "pytest==8.3.4",
+  "pytest-asyncio==0.24.0",
+  "respx==0.21.1",
+]
+
+[tool.setuptools.packages.find]
+where = ["."]
+include = ["pipeline*", "scrapers*", "providers*", "db*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+asyncio_mode = "auto"

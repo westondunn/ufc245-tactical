@@ -36,3 +36,10 @@ tmp/
 # Don't auto-commit pasted screenshots dropped in data/
 data/Screenshot*.png
 data/screenshot*.png
+
+# Local LLM pipeline
+.env.local
+llm-pipeline/data/
+llm-pipeline/.pytest_cache/
+llm-pipeline/__pycache__/
+llm-pipeline/**/__pycache__/

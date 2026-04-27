@@ -1,0 +1,60 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    container_name: ufc-ollama
+    volumes:
+      - ollama_models:/root/.ollama
+    ports:
+      - "127.0.0.1:11434:11434"
+    healthcheck:
+      test: ["CMD", "ollama", "list"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    restart: unless-stopped
+
+  llm-pipeline:
+    build:
+      context: ./llm-pipeline
+    container_name: ufc-llm-pipeline
+    env_file:
+      - .env.local
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      PIPELINE_DB_PATH: /data/pipeline.db
+      MODEL_DIR: /data/model_store
+      SCRAPE_CACHE_DIR: /data/scrape_cache
+      SHARED_MODEL_PATH: /shared/model
+    volumes:
+      - pipeline_data:/data
+      - ./ufc245-predictions/model:/shared/model:ro
+    ports:
+      - "127.0.0.1:8787:8787"
+    depends_on:
+      ollama:
+        condition: service_healthy
+    restart: unless-stopped
+
+  pipeline-shell:
+    build:
+      context: ./llm-pipeline
+    container_name: ufc-pipeline-shell
+    profiles: ["cli"]
+    env_file:
+      - .env.local
+    environment:
+      OLLAMA_URL: http://ollama:11434
+      PIPELINE_DB_PATH: /data/pipeline.db
+      MODEL_DIR: /data/model_store
+      SCRAPE_CACHE_DIR: /data/scrape_cache
+      SHARED_MODEL_PATH: /shared/model
+    volumes:
+      - pipeline_data:/data
+      - ./ufc245-predictions/model:/shared/model:ro
+    depends_on:
+      - ollama
+    entrypoint: ["python", "-m", "cli"]
+
+volumes:
+  ollama_models:
+  pipeline_data:
