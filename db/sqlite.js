@@ -1223,7 +1223,7 @@ function getPredictionAccuracy(opts = {}) {
               COUNT(*) AS n,
               SUM(CASE WHEN correct = 1 THEN 1 ELSE 0 END) AS correct
        FROM predictions
-       WHERE actual_winner_id IS NOT NULL
+       WHERE reconciled_at IS NOT NULL
        GROUP BY enrichment_level`
     );
     const out = {};
