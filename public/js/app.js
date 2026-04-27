@@ -943,7 +943,7 @@ function startTicker(){
     setTc._t = setTimeout(() => tc.classList.remove('is-updating'), 520);
   }
 
-  const tabTc = { events:'ALL EVENTS', fighters:'DIRECTORY', stats:'STAT LEADERS', picks:'YOUR PICKS' };
+  const tabTc = { events:'ALL EVENTS', fighters:'DIRECTORY', stats:'STAT LEADERS', review:'REVIEW', picks:'YOUR PICKS' };
 
   // Picks subnav can force an overriding label (see activatePicksView)
   _tcForceSet = (value) => {
@@ -3425,6 +3425,9 @@ function activatePrimaryTab(target, opts = {}){
       _picksAutoPrompted = true;
       setTimeout(() => { if (!_currentUser) openCreateProfileModal(null); }, 120);
     }
+    if (_currentUser && typeof activatePicksView === 'function') {
+      activatePicksView(_picksState ? _picksState.view : 'event', { persist: opts.persist !== false });
+    }
   }
 }
 
@@ -3868,7 +3871,7 @@ function parseViewHash(){
   if (!raw) return {};
   const parts = raw.split('/').filter(Boolean);
   const tab = parts[0];
-  if (!['dashboard','events','fighters','stats','picks'].includes(tab)) return {};
+  if (!['dashboard','events','fighters','stats','review','picks'].includes(tab)) return {};
   const out = { tab };
   if (tab === 'picks' && ['event','history','trends','leaderboard'].includes(parts[1])) out.picksView = parts[1];
   // Backwards compat: legacy /#picks/upcoming bookmarks now resolve to /#picks/event.
@@ -3881,9 +3884,13 @@ function updateViewHash(tab, picksView){
   if (window.location.hash !== next) history.replaceState(null, '', next);
 }
 
-function getCurrentViewState(){
+function getActivePrimaryTabName(){
   const activeTab = document.querySelector('.primary-tab.active');
-  const tab = activeTab && activeTab.dataset.tab || 'dashboard';
+  return activeTab && activeTab.dataset.tab || 'dashboard';
+}
+
+function getCurrentViewState(){
+  const tab = getActivePrimaryTabName();
   const state = { tab };
   if (tab === 'picks') {
     state.picksView = _picksState ? _picksState.view : 'event';
@@ -3893,12 +3900,15 @@ function getCurrentViewState(){
 }
 
 function restoreStoredView(){
-  const target = { ...getStoredViewState(), ...parseViewHash() };
+  const stored = getStoredViewState();
+  const fromHash = parseViewHash();
+  const target = { ...stored, ...fromHash };
+  if (!fromHash.tab) target.tab = 'dashboard';
   if (target.picksView && _picksState) _picksState.view = target.picksView;
   if (Number.isFinite(parseInt(target.picksEventId, 10)) && _picksState) {
     _picksState.eventId = parseInt(target.picksEventId, 10);
   }
-  if (target.tab && ['dashboard','events','fighters','stats','picks'].includes(target.tab)) {
+  if (target.tab && ['dashboard','events','fighters','stats','review','picks'].includes(target.tab)) {
     activatePrimaryTab(target.tab, { persist:false });
   }
 }
@@ -3960,8 +3970,11 @@ function renderProfileChip(){
   document.getElementById('profileChipBtn').addEventListener('click', openProfileActionsModal);
   if (empty) empty.style.display = 'none';
   if (subnav) subnav.style.display = '';
-  // Load the active subnav view for the current user (fire-and-forget)
-  try { activatePicksView(_picksState.view || 'event'); } catch { /* view fns defined below */ }
+  // Load the active subnav only when Picks is actually visible. During startup
+  // this prevents profile hydration from rewriting other tabs to #picks/event.
+  if (getActivePrimaryTabName() === 'picks') {
+    try { activatePicksView(_picksState.view || 'event', { persist:false }); } catch { /* view fns defined below */ }
+  }
 }
 
 function openModal(id){
@@ -4297,10 +4310,14 @@ function setupPicksSubnav(){
 const PICKS_TC_LABEL = { event:'PICKS · EVENT', history:'PICKS · HISTORY', trends:'PICKS · TRENDS', leaderboard:'PICKS · LEADERBOARD' };
 const PICKS_EVENT_TC_BY_STATE = { upcoming:'PICKS · UPCOMING', live:'PICKS · LIVE', history:'PICKS · EVENT HISTORY' };
 
-function activatePicksView(view){
+function activatePicksView(view, opts = {}){
+  if (!['event','history','trends','leaderboard'].includes(view)) view = 'event';
+  const primaryIsPicks = getActivePrimaryTabName() === 'picks';
   _picksState.view = view;
-  setStoredViewState({ tab:'picks', picksView:view });
-  updateViewHash('picks', view);
+  if (opts.persist !== false && primaryIsPicks) {
+    setStoredViewState({ tab:'picks', picksView:view });
+    updateViewHash('picks', view);
+  }
   document.querySelectorAll('.picks-subnav__btn').forEach(b => {
     b.classList.toggle('active', b.dataset.picksView === view);
   });
@@ -4309,8 +4326,8 @@ function activatePicksView(view){
   document.getElementById('picksViewTrends').style.display      = view === 'trends'      ? '' : 'none';
   document.getElementById('picksViewLeaderboard').style.display = view === 'leaderboard' ? '' : 'none';
   // Update TC to reflect the subview
-  if (_tcForceSet) _tcForceSet(PICKS_TC_LABEL[view] || 'YOUR PICKS');
-  if (!_currentUser) return;
+  if (_tcForceSet && primaryIsPicks) _tcForceSet(PICKS_TC_LABEL[view] || 'YOUR PICKS');
+  if (!_currentUser || !primaryIsPicks) return;
   if (view === 'event')       loadEventView();
   if (view === 'history')     loadHistoryView();
   if (view === 'trends')      loadTrendsView();

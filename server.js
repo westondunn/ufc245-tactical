@@ -111,7 +111,7 @@ app.use((req, res, next) => {
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com; " +
     "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
-    "img-src 'self' data:; " +
+    "img-src 'self' data: https://ufc.com https://www.ufc.com https://*.ufc.com; " +
     "connect-src 'self'"
   );
   next();
