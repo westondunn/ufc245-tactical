@@ -32,7 +32,8 @@ docker compose run --rm pipeline-shell enrich --dry-run
 ```
 
 Scrapes, extracts, reasons, but does NOT POST to Railway. Output prints the
-predictions that would be sent. Use this to eyeball Stage 2 quality before going live.
+predictions that would be sent plus an audit summary. Use this to eyeball Stage
+2 quality before going live.
 
 Limit to a single event:
 
@@ -49,6 +50,9 @@ docker compose run --rm pipeline-shell enrich
 Same as above but POSTs ensemble predictions to `MAIN_APP_URL`. The existing
 `predictions` row for each fight gets superseded; the LR row stays in place
 marked `is_stale=1` so accuracy comparisons still work.
+
+Set `REQUIRE_AUDIT_PASS=1` to block live sync for ensemble rows with audit
+blockers while still showing them in dry-run output.
 
 ## Provider swap
 

@@ -65,6 +65,7 @@ def status():
         "model": _cfg.llm_model if _cfg else None,
         "main_app_url": _cfg.main_app_url if _cfg else None,
         "scheduler_enabled": _cfg.enable_scheduler if _cfg else False,
+        "require_audit_pass": _cfg.require_audit_pass if _cfg else False,
         "last_run": runs[0] if runs else None,
         "scrapers_enabled": sorted(_cfg.scrapers_enabled) if _cfg else [],
     }

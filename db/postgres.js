@@ -1250,19 +1250,27 @@ async function upsertPrediction(p) {
   const enrichmentLevel = p.enrichment_level || 'lr';
   const insightsJson = p.insights != null ? JSON.stringify(p.insights) : null;
 
-  // Upgrade semantics: an incoming 'lr' is stale-on-arrival if a fresh
-  // 'ensemble' already exists for the same fight. The post-insert UPDATE
-  // below handles the reverse case (ensemble landing on a fresh lr row
-  // marks the lr stale).
+  // Upgrade/freshness semantics: an incoming 'lr' is stale-on-arrival if a fresh
+  // 'ensemble' already exists for the same fight. Same-level arrivals only
+  // supersede older fresh rows; older reruns are stored stale for evaluation.
   let forceStale = !!p.is_stale;
-  if (enrichmentLevel === 'lr') {
-    const existing = await oneRow(
-      `SELECT id FROM predictions
-       WHERE fight_id = ? AND enrichment_level = 'ensemble'
-         AND is_stale = 0 AND actual_winner_id IS NULL`,
-      [p.fight_id]
-    );
-    if (existing) forceStale = true;
+  const activeFresh = await oneRow(
+    `SELECT id, model_version, enrichment_level, predicted_at FROM predictions
+     WHERE fight_id = ? AND is_stale = 0 AND actual_winner_id IS NULL
+     ORDER BY predicted_at DESC, id DESC
+     LIMIT 1`,
+    [p.fight_id]
+  );
+  if (activeFresh && activeFresh.model_version !== p.model_version) {
+    if (enrichmentLevel === 'lr' && activeFresh.enrichment_level === 'ensemble') {
+      forceStale = true;
+    } else if (activeFresh.enrichment_level === enrichmentLevel) {
+      const incomingTime = Date.parse(p.predicted_at || '');
+      const activeTime = Date.parse(activeFresh.predicted_at || '');
+      if (Number.isFinite(incomingTime) && Number.isFinite(activeTime) && activeTime > incomingTime) {
+        forceStale = true;
+      }
+    }
   }
 
   await run(

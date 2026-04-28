@@ -41,6 +41,7 @@ class Config:
 
     enrich_horizon_days: int
     max_concurrent_fights: int
+    require_audit_pass: bool
     enable_scheduler: bool
     scheduler_cron_hour: int
 
@@ -75,6 +76,7 @@ class Config:
             prediction_service_key=key,
             enrich_horizon_days=_int_env("ENRICH_HORIZON_DAYS", 14),
             max_concurrent_fights=_int_env("MAX_CONCURRENT_FIGHTS", 4),
+            require_audit_pass=_bool_env("REQUIRE_AUDIT_PASS", False),
             enable_scheduler=_bool_env("ENABLE_SCHEDULER", False),
             scheduler_cron_hour=_int_env("SCHEDULER_CRON_HOUR", 8),
             pipeline_db_path=os.getenv("PIPELINE_DB_PATH", "/data/pipeline.db"),

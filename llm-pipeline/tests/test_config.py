@@ -10,6 +10,7 @@ def test_config_defaults(monkeypatch):
     assert cfg.llm_model == "llama3.1:8b"
     assert cfg.enrich_horizon_days == 14
     assert cfg.max_concurrent_fights == 4
+    assert cfg.require_audit_pass is False
     assert cfg.enable_scheduler is False
     assert cfg.scrapers_enabled == {"news", "ufc_preview", "tapology"}
 

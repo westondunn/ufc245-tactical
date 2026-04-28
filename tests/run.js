@@ -454,6 +454,33 @@ async function run() {
   const lrLate = afterRows.find(r => r.model_version === 'v.upgrade.lr.2');
   assertEq(lrLate.is_stale, 1, 'late lr inserted but stale');
 
+  // Older same-level ensemble should not supersede a newer fresh ensemble.
+  const freshnessFight = card.find(f => !f.is_main && f.id !== upgradeFight.id && f.red_id && f.blue_id);
+  assertTruthy(freshnessFight, 'freshness fixture: a second non-main fight exists');
+  await db.upsertPrediction({
+    fight_id: freshnessFight.id,
+    red_fighter_id: freshnessFight.red_id,
+    blue_fighter_id: freshnessFight.blue_id,
+    red_win_prob: 0.6, blue_win_prob: 0.4,
+    model_version: 'v.fresh.ensemble.newer', feature_hash: 'f1',
+    predicted_at: '2030-04-02T00:00:00.000Z', event_date: '2030-04-10',
+    enrichment_level: 'ensemble'
+  });
+  await db.upsertPrediction({
+    fight_id: freshnessFight.id,
+    red_fighter_id: freshnessFight.red_id,
+    blue_fighter_id: freshnessFight.blue_id,
+    red_win_prob: 0.4, blue_win_prob: 0.6,
+    model_version: 'v.fresh.ensemble.older', feature_hash: 'f2',
+    predicted_at: '2030-04-01T00:00:00.000Z', event_date: '2030-04-10',
+    enrichment_level: 'ensemble'
+  });
+  const freshnessRows = await db.getPredictions({ fight_id: freshnessFight.id });
+  const freshnessFresh = freshnessRows.filter(r => r.is_stale === 0);
+  assertEq(freshnessFresh.length, 1, 'older ensemble arrival keeps one fresh row');
+  assertEq(freshnessFresh[0].model_version, 'v.fresh.ensemble.newer', 'newer ensemble remains fresh');
+  assertEq(freshnessRows.find(r => r.model_version === 'v.fresh.ensemble.older').is_stale, 1, 'older ensemble inserted stale');
+
   // ── Accuracy breakdown by enrichment_level ──
   console.log('\nAccuracy breakdown:');
   // Pick a third non-main fight: one not used by Task 1 (mainEvent) or

@@ -13,6 +13,7 @@ import httpx
 
 from config import Config
 from db.store import Store
+from pipeline.audit import audit_prediction, review_record, summarize_audits
 from pipeline.extract import StageOneExtractor
 from pipeline.reason import StageTwoReasoner
 from pipeline.lr_runner import LRRunner
@@ -199,6 +200,7 @@ class Orchestrator:
                     "agreement_with_lr": decision["agreement_with_lr"],
                 },
             }
+            payload["audit"] = audit_prediction(payload)
             if dry_run:
                 logger.info("[dry-run] would post: fight=%s winner=%s prob=%.2f method=%s",
                             bout["id"], winner, wp, decision["predicted_method"])
@@ -240,14 +242,22 @@ class Orchestrator:
                             predictions.append(payload)
 
         synced = 0
-        if predictions and not dry_run:
-            ack = self.sync.post(predictions)
+        blocked_by_audit = 0
+        sync_predictions = predictions
+        if self.cfg.require_audit_pass:
+            sync_predictions = [p for p in predictions if (p.get("audit") or {}).get("publishable")]
+            blocked_by_audit = len(predictions) - len(sync_predictions)
+
+        if sync_predictions and not dry_run:
+            ack = self.sync.post(sync_predictions)
             synced = int(ack.get("ingested", 0))
             synced += self.sync.drain_pending()
 
         status = "ok"
-        if predictions and not dry_run and synced < len(predictions):
+        if sync_predictions and not dry_run and synced < len(sync_predictions):
             status = "partial"
+        if blocked_by_audit and not dry_run:
+            status = "partial" if synced else "blocked"
 
         self.store.finish_run(
             run_id, status=status,
@@ -255,10 +265,15 @@ class Orchestrator:
             fights_predicted=len(predictions),
             predictions_synced=synced,
         )
-        return {
+        result = {
             "status": status,
             "events_processed": events_processed,
             "fights_predicted": len(predictions),
             "predictions_synced": synced,
+            "blocked_by_audit": blocked_by_audit,
+            "audit": summarize_audits(predictions),
             "dry_run": dry_run,
         }
+        if dry_run:
+            result["predictions"] = [review_record(p) for p in predictions]
+        return result
