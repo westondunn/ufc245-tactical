@@ -4,6 +4,7 @@ import logging
 import os
 from contextlib import asynccontextmanager
 
+from apscheduler.schedulers.background import BackgroundScheduler
 from fastapi import FastAPI, Header, HTTPException
 
 from config import Config
@@ -15,16 +16,24 @@ logger = logging.getLogger("app")
 
 _store: Store | None = None
 _cfg: Config | None = None
+_scheduler: BackgroundScheduler | None = None
 
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
-    global _store, _cfg
+    global _store, _cfg, _scheduler
     _cfg = Config.from_env()
     _store = Store(_cfg.pipeline_db_path)
     _store.init()
+    if _cfg.enable_scheduler:
+        from scheduler import build_scheduler
+        _scheduler = build_scheduler(_store)
+        _scheduler.start()
+        logger.info("scheduler started (cron hour=%d UTC)", _cfg.scheduler_cron_hour)
     logger.info("LLM pipeline started; provider=%s model=%s", _cfg.llm_provider, _cfg.llm_model)
     yield
+    if _scheduler:
+        _scheduler.shutdown(wait=False)
 
 
 app = FastAPI(title="UFC LLM Pipeline", version="0.1.0", lifespan=lifespan)
