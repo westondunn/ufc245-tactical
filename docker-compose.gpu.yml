@@ -1,0 +1,13 @@
+services:
+  ollama:
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: ["gpu"]
+    # Override the base compose's host port mapping; assume host already has
+    # something on 11434 (e.g. native Ollama). The llm-pipeline container talks
+    # to this service via the internal Docker network at http://ollama:11434.
+    ports: !reset []
