@@ -953,7 +953,7 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
       await db.upsertEvent(e);
       added.events++;
     } else {
-      const changed = ['date', 'start_time', 'end_time', 'timezone'].some(key => {
+      const changed = ['date', 'start_time', 'end_time', 'timezone', 'venue', 'city', 'country'].some(key => {
         const value = e[key];
         return value != null && value !== '' && String(existing[key] || '') !== String(value);
       });
@@ -963,9 +963,13 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
              date       = COALESCE(?, date),
              start_time = COALESCE(?, start_time),
              end_time   = COALESCE(?, end_time),
-             timezone   = COALESCE(?, timezone)
+             timezone   = COALESCE(?, timezone),
+             venue      = COALESCE(?, venue),
+             city       = COALESCE(?, city),
+             country    = COALESCE(?, country)
            WHERE id = ?`,
-          [e.date || null, e.start_time || null, e.end_time || null, e.timezone || null, e.id]
+          [e.date || null, e.start_time || null, e.end_time || null, e.timezone || null,
+           e.venue || null, e.city || null, e.country || null, e.id]
         );
         updated.events++;
       }

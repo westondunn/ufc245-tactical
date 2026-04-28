@@ -52,6 +52,64 @@ async function fetchPage(url, retries = 3) {
 
 function clean(s){ return (s || '').replace(/\s+/g, ' ').trim(); }
 
+// 2-letter regional subdivision codes that appear after a city in UFC location
+// strings (e.g. "Las Vegas, NV, USA" → "NV"; "Perth WA Australia" → "WA"). Used
+// to strip a state/province token that would otherwise pollute `country`.
+const SUBDIVISION_CODES = new Set([
+  // US states + DC
+  'AL','AK','AZ','AR','CA','CO','CT','DE','FL','GA','HI','ID','IL','IN','IA','KS','KY','LA',
+  'ME','MD','MA','MI','MN','MS','MO','MT','NE','NV','NH','NJ','NM','NY','NC','ND','OH','OK',
+  'OR','PA','RI','SC','SD','TN','TX','UT','VT','VA','WA','WV','WI','WY','DC',
+  // Australian states/territories
+  'NSW','VIC','QLD','SA','TAS','ACT','NT',
+  // Canadian provinces (NT/NS/QC overlap is fine — context disambiguates)
+  'ON','QC','BC','AB','MB','SK','NS','NB','NL','PE','YT','NU',
+]);
+
+// Parse a UFC.com location string into { city, country }. Defensive against
+// two real-world quirks of the source HTML:
+//   1. The location element sometimes has the venue name concatenated as a
+//      prefix (e.g. venue "RAC Arena" + location "RAC Arena Perth WA Australia").
+//   2. The string may be unpunctuated ("Perth WA Australia"), 2-part
+//      ("Sydney, Australia"), or 3-part ("Las Vegas, NV, USA").
+// Also strips a leading state/province code from the country segment so
+// "DC United States" → "United States".
+function parseEventLocation(rawLocation, venue){
+  let loc = clean(rawLocation || '');
+  if (!loc) return { city: null, country: null };
+  if (venue && loc.toLowerCase().startsWith(String(venue).toLowerCase())) {
+    loc = loc.slice(venue.length).replace(/^[\s,\-]+/, '').trim();
+  }
+  if (!loc) return { city: null, country: null };
+
+  function dropLeadingSubdivision(str){
+    const tokens = str.split(/\s+/);
+    if (tokens.length > 1 && SUBDIVISION_CODES.has(tokens[0].toUpperCase())) {
+      return tokens.slice(1).join(' ');
+    }
+    return str;
+  }
+
+  const parts = loc.split(',').map(s => s.trim()).filter(Boolean);
+  if (parts.length >= 2) {
+    return { city: parts[0], country: dropLeadingSubdivision(parts[parts.length - 1]) || null };
+  }
+
+  const tokens = parts[0].split(/\s+/);
+  if (tokens.length === 1) return { city: tokens[0], country: null };
+  for (let i = 1; i < tokens.length; i++) {
+    if (SUBDIVISION_CODES.has(tokens[i].toUpperCase())) {
+      const city = tokens.slice(0, i).join(' ');
+      const country = tokens.slice(i + 1).join(' ');
+      return { city: city || tokens[0], country: country || null };
+    }
+  }
+  // No subdivision code present (e.g. "Abu Dhabi", "Hong Kong"): treat the
+  // whole string as the city. Splitting on whitespace would mangle multi-word
+  // city names. Country is left null for the timezone fallback to handle.
+  return { city: parts[0], country: null };
+}
+
 function parseUfcNumber(title){
   // "UFC 328: Nunes vs X" → 328;  "UFC Fight Night: ..." → null
   const m = clean(title).match(/^UFC\s+(\d+)/i);
@@ -180,6 +238,10 @@ async function fetchFighterProfile(slug){
     const value = clean($(el).find('.c-bio__text').text());
     if (label === 'height') profile.height_cm = inchesToCm(value);
     if (label === 'reach') profile.reach_cm = inchesToCm(value);
+    if (label === 'fighting style' || label === 'stance') {
+      const stance = value.toLowerCase();
+      if (stance) profile.stance = stance;
+    }
   });
 
   $('.c-stat-compare__group').each((_, el) => {
@@ -197,6 +259,7 @@ async function fetchFighterProfile(slug){
     const pct = parsePct(text);
     if (pct == null) return;
     if (text.includes('striking accuracy')) profile.str_acc = pct;
+    if (text.includes('striking defense')) profile.str_def = pct;
     if (text.includes('takedown accuracy')) profile.td_acc = pct;
     if (text.includes('takedown defense')) profile.td_def = pct;
   });
@@ -381,7 +444,7 @@ async function run(){
     }
 
     const number = parseUfcNumber(ev.title);
-    const [city, country] = (ev.location || '').split(',').map(s => clean(s));
+    const { city, country } = parseEventLocation(ev.location, ev.venue);
     const timezone = ev.timezone || ianaTimezoneFromVenueLocation(ev.venue, city, country, ev.location);
     const eventRow = {
       id: nextEventId++,
@@ -505,5 +568,6 @@ if (require.main === module) {
 module.exports = {
   isoDateFromTimestamp,
   isoUtcFromTimestamp,
-  ianaTimezoneFromVenueLocation
+  ianaTimezoneFromVenueLocation,
+  parseEventLocation
 };
