@@ -4843,12 +4843,19 @@ function renderPickWidget(fight){
       youTick = `<div class="pick-model__bar-tick" style="left:${Math.max(0, Math.min(100, tickPct))}%"></div>`;
     }
     const explanation = renderModelExplanation(model.explanation, fight);
+    const enrichmentBadge = model.enrichment_level === 'ensemble'
+      ? '<span class="pick-model__enrichment" title="Logistic-regression baseline + LLM reasoning">AI</span>'
+      : '';
+    const methodLine = renderModelMethodLine(model, fight);
+    const insightsHtml = renderModelInsights(model.insights);
+    const narrativeHtml = renderModelNarrative(model.narrative_text);
     modelHtml = `
       <div class="pick-model">
         <div class="pick-model__top">
           <span class="pick-model__icon">⚡</span>
           <span class="pick-model__label">Model · ${escHtml(model.version)}</span>
           ${latestBadge}
+          ${enrichmentBadge}
           <span class="pick-model__pred">${escHtml(modelWinnerName)} favored · ${pct}%</span>
           ${badge}
         </div>
@@ -4861,6 +4868,9 @@ function renderPickWidget(fight){
           <span class="pick-model__legend-red">${fighterNameWithAvatar(fightFighter(fight, 'red'), { size: 'xs', corner: 'red', compact: true })}</span>
           <span class="pick-model__legend-blue">${fighterNameWithAvatar(fightFighter(fight, 'blue'), { size: 'xs', corner: 'blue', compact: true })}</span>
         </div>
+        ${methodLine}
+        ${insightsHtml}
+        ${narrativeHtml}
         ${explanation}
       </div>`;
   } else {
@@ -5030,6 +5040,41 @@ function renderModelExplanation(explanation, fight){
       ${rows}
       ${categories ? `<div class="pick-model-why__evidence">${categories}</div>` : ''}
     </div>`;
+}
+
+function renderModelMethodLine(model, fight){
+  if (!model.predicted_method && model.method_confidence == null) return '';
+  const method = model.predicted_method || '—';
+  const round = model.predicted_round ? ` · R${model.predicted_round}` : '';
+  const conf = model.method_confidence != null
+    ? ` · ${Math.round(Number(model.method_confidence) * 100)}% conf`
+    : '';
+  return `<div class="pick-model__method">Method: ${escHtml(method)}${round}${conf}</div>`;
+}
+
+function renderModelInsights(insights){
+  if (!Array.isArray(insights) || insights.length === 0) return '';
+  const chips = insights.slice(0, 6).map(i => {
+    const sev = Number(i.severity) || 0;
+    const sevClass = sev >= 3 ? 'sev-3' : sev >= 2 ? 'sev-2' : sev >= 1 ? 'sev-1' : 'sev-0';
+    const favors = i.favors === 'red' || i.favors === 'blue' ? i.favors : 'neither';
+    const source = i.source ? ` · ${escHtml(i.source)}` : '';
+    return `<span class="pick-model__insight ${sevClass} favors-${favors}" title="${escHtml(i.label || '')}${source}">
+      <span class="pick-model__insight-sev">${sev}</span>
+      <span class="pick-model__insight-label">${escHtml(i.label || '—')}</span>
+    </span>`;
+  }).join('');
+  return `<div class="pick-model__insights">${chips}</div>`;
+}
+
+function renderModelNarrative(text){
+  if (!text || typeof text !== 'string') return '';
+  const trimmed = text.trim();
+  if (!trimmed) return '';
+  return `<details class="pick-model__narrative">
+    <summary>AI rationale</summary>
+    <p>${escHtml(trimmed)}</p>
+  </details>`;
 }
 
 function renderModelEvidenceCategory(category, fight){

@@ -3373,3 +3373,96 @@ footer{
 .tip strong{color:var(--cyan)}
 
 svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
+
+/* === LLM-enrichment additions to pick-model === */
+.pick-model__enrichment {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  background: linear-gradient(135deg, #7c5cff 0%, #4ec3ff 100%);
+  color: #fff;
+  border-radius: 3px;
+  text-transform: uppercase;
+}
+
+.pick-model__method {
+  margin-top: 6px;
+  font-size: 12px;
+  color: var(--text-muted, #aaa);
+}
+
+.pick-model__insights {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+  margin-top: 8px;
+}
+
+.pick-model__insight {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 2px 8px;
+  font-size: 11px;
+  border-radius: 12px;
+  background: rgba(255, 255, 255, 0.04);
+  border: 1px solid rgba(255, 255, 255, 0.08);
+  color: var(--text-muted, #ccc);
+  cursor: help;
+}
+
+.pick-model__insight.sev-3 { border-color: rgba(255, 90, 90, 0.65); color: #ffd0d0; }
+.pick-model__insight.sev-2 { border-color: rgba(255, 170, 70, 0.55); color: #ffe5b8; }
+.pick-model__insight.sev-1 { border-color: rgba(255, 255, 120, 0.35); color: #fff4b8; }
+.pick-model__insight.sev-0 { border-color: rgba(255, 255, 255, 0.10); }
+
+.pick-model__insight.favors-red { background: rgba(255, 80, 80, 0.08); }
+.pick-model__insight.favors-blue { background: rgba(80, 130, 255, 0.08); }
+
+.pick-model__insight-sev {
+  display: inline-flex;
+  width: 14px;
+  height: 14px;
+  align-items: center;
+  justify-content: center;
+  font-size: 10px;
+  font-weight: 700;
+  background: rgba(255, 255, 255, 0.10);
+  border-radius: 50%;
+}
+
+.pick-model__narrative {
+  margin-top: 10px;
+  font-size: 12px;
+  color: var(--text-muted, #ccc);
+  background: rgba(255, 255, 255, 0.02);
+  border: 1px solid rgba(255, 255, 255, 0.06);
+  border-radius: 6px;
+  padding: 6px 10px;
+}
+
+.pick-model__narrative > summary {
+  cursor: pointer;
+  font-weight: 600;
+  color: var(--text, #eee);
+  list-style: none;
+}
+
+.pick-model__narrative > summary::before {
+  content: '▸ ';
+  display: inline-block;
+  margin-right: 4px;
+  transition: transform 120ms;
+}
+
+.pick-model__narrative[open] > summary::before {
+  transform: rotate(90deg);
+}
+
+.pick-model__narrative > p {
+  margin: 8px 0 2px;
+  line-height: 1.5;
+}

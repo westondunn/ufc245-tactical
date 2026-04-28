@@ -2314,7 +2314,14 @@ async function getEventPickComparison(eventId) {
         blue_win_prob: pred.blue_win_prob,
         picked_fighter_id: pred.red_win_prob >= pred.blue_win_prob ? fight.red_fighter_id : fight.blue_fighter_id,
         confidence: Math.max(pred.red_win_prob, pred.blue_win_prob),
-        explanation: parsePredictionExplanation(pred.explanation_json)
+        explanation: parsePredictionExplanation(pred.explanation_json),
+        // New fields from LLM ensemble pipeline (default-safe — null when LR-only):
+        enrichment_level: pred.enrichment_level || 'lr',
+        narrative_text: pred.narrative_text || null,
+        method_confidence: pred.method_confidence != null ? Number(pred.method_confidence) : null,
+        predicted_method: pred.predicted_method || null,
+        predicted_round: pred.predicted_round != null ? Number(pred.predicted_round) : null,
+        insights: parsePredictionInsights(pred.insights)
       } : null,
       users: {
         total: agg ? agg.total : 0,
@@ -2333,6 +2340,18 @@ function parsePredictionExplanation(raw) {
   if (typeof raw === 'object') return raw;
   try { return JSON.parse(raw); }
   catch { return null; }
+}
+
+function parsePredictionInsights(raw) {
+  if (!raw) return null;
+  if (Array.isArray(raw)) return raw;
+  if (typeof raw === 'object') return raw;
+  try {
+    const parsed = JSON.parse(raw);
+    return Array.isArray(parsed) ? parsed : null;
+  } catch {
+    return null;
+  }
 }
 
 module.exports = {
