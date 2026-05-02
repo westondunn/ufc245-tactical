@@ -3410,6 +3410,7 @@ function activatePrimaryTab(target, opts = {}){
   if (target === 'fighters' && !_tabsLoaded.fighters) { loadFightersTab(); _tabsLoaded.fighters = true; }
   if (target === 'stats' && !_tabsLoaded.stats) { loadStatsTab(); _tabsLoaded.stats = true; }
   if (target === 'review' && !_tabsLoaded.review) { loadReviewTab(); _tabsLoaded.review = true; }
+  if (target === 'funfacts' && !_tabsLoaded.funfacts) { loadFunFactsTab(); _tabsLoaded.funfacts = true; }
   if (opts.persist !== false) {
     setStoredViewState({ tab: target });
     updateViewHash(target, target === 'picks' && _picksState ? _picksState.view : null);
@@ -3837,6 +3838,156 @@ async function loadStatsTab(){
     }
     grid.innerHTML = html;
   } catch(e){ grid.innerHTML = '<div style="color:var(--red)">Error loading stats</div>'; }
+}
+
+// ── Fun Facts tab ──
+//
+// Lazy-loaded; first visit hits /api/funfacts (cached server-side). Pure DOM
+// build, no third-party libs. Country bar chart uses flagFor() from flags.js.
+async function loadFunFactsTab(){
+  const body = document.getElementById('funFactsBody');
+  body.innerHTML = '<div style="color:var(--muted);font-family:var(--f-mono);font-size:11px;padding:14px 0">Loading fun facts…</div>';
+  try {
+    const res = await fetch('/api/funfacts');
+    const f = await res.json();
+    body.innerHTML = renderFunFactsHtml(f);
+  } catch (e) {
+    body.innerHTML = '<div style="color:var(--red);font-family:var(--f-mono);font-size:11px">Error loading fun facts</div>';
+  }
+}
+
+function renderFunFactsHtml(f){
+  const fmt = n => (n == null ? '—' : (typeof n === 'number' ? Number(n.toFixed(1)).toLocaleString() : String(n)));
+  const pct = v => (v == null ? '—' : (Math.round(v * 1000) / 10).toFixed(1) + '%');
+  const flag = name => (window.flagFor && name) ? (window.flagFor(name) + ' ') : '';
+
+  const fighterRow = (x, valueHtml) =>
+    '<div class="ff-fighter-row">' +
+      '<span class="ff-fighter-row__name">' + fighterNameWithAvatar(x, { size: 'xs', compact: true }) + '</span>' +
+      (x.nationality ? '<span class="ff-fighter-row__loc">' + flag(x.nationality) + escHtml(x.nationality) + '</span>' : '') +
+      '<span class="ff-fighter-row__val">' + valueHtml + '</span>' +
+    '</div>';
+
+  const tile = (label, value, sub) =>
+    '<div class="ff-tile">' +
+      '<div class="ff-tile__label">' + escHtml(label) + '</div>' +
+      '<div class="ff-tile__value">' + value + '</div>' +
+      (sub ? '<div class="ff-tile__sub">' + sub + '</div>' : '') +
+    '</div>';
+
+  // Heroes — wide tiles up top
+  const heroes =
+    '<div class="ff-tiles">' +
+      tile('Fighters', fmt(f.total.fighters), fmt(f.total.with_nationality) + ' have a country') +
+      tile('Countries', fmt(f.total.countries), 'represented in the roster') +
+      tile('Events', fmt(f.total.events), '') +
+      tile('Fights', fmt(f.total.fights), fmt(f.total.finished_fights) + ' decided') +
+      tile('Avg age', f.ages.average != null ? fmt(f.ages.average) : '—', fmt(f.total.with_dob) + ' with DOB') +
+      tile('Avg height', f.physical.avg_height_cm != null ? fmt(f.physical.avg_height_cm) + ' cm' : '—', fmt(f.total.with_height) + ' measured') +
+    '</div>';
+
+  // Country bar chart — top 20.
+  const top = f.countries.slice(0, 20);
+  const max = top.length ? top[0].count : 1;
+  const countryBars = top.map(c => {
+    const w = Math.max(2, Math.round(c.count / max * 100));
+    return '<div class="ff-bar-row">' +
+      '<span class="ff-bar-row__name">' + flag(c.country) + escHtml(c.country) + '</span>' +
+      '<div class="ff-bar-row__bar"><div class="ff-bar-row__fill" style="width:' + w + '%"></div></div>' +
+      '<span class="ff-bar-row__count">' + c.count + '</span></div>';
+  }).join('');
+
+  const countriesPanel =
+    '<div class="ff-panel">' +
+      '<h3 class="ff-h3">Where the roster comes from <span class="ff-h3__sub">· top ' + top.length + ' countries</span></h3>' +
+      '<div class="ff-bar-list">' + countryBars + '</div>' +
+    '</div>';
+
+  // Ages — youngest, oldest, by division.
+  const youngest = f.ages.youngest.map(x => fighterRow(x, x.age + '<span class="ff-unit">y</span>')).join('');
+  const oldest = f.ages.oldest.map(x => fighterRow(x, x.age + '<span class="ff-unit">y</span>')).join('');
+  const byDiv = (f.ages.by_division || []).map(d =>
+    '<tr><td>' + escHtml(d.weight_class) + '</td>' +
+    '<td style="text-align:right">' + (d.avg_age != null ? d.avg_age.toFixed(1) : '—') + '</td>' +
+    '<td style="text-align:right;color:var(--muted)">' + d.count + '</td></tr>'
+  ).join('');
+  const agePanel =
+    '<div class="ff-panel">' +
+      '<h3 class="ff-h3">Ages</h3>' +
+      '<div class="ff-two-col">' +
+        '<div><div class="ff-col-title">Youngest 5</div>' + youngest + '</div>' +
+        '<div><div class="ff-col-title">Oldest 5</div>' + oldest + '</div>' +
+      '</div>' +
+      (byDiv ? '<div class="ff-col-title" style="margin-top:18px">Average age by division</div>' +
+        '<table class="ff-table"><thead><tr><th>Division</th><th style="text-align:right">Avg</th><th style="text-align:right">N</th></tr></thead><tbody>' +
+        byDiv + '</tbody></table>' : '') +
+    '</div>';
+
+  // Physical extremes.
+  const tallH = f.physical.tallest.map(x => fighterRow(x, x.height_cm + '<span class="ff-unit">cm</span>')).join('');
+  const shortH = f.physical.shortest.map(x => fighterRow(x, x.height_cm + '<span class="ff-unit">cm</span>')).join('');
+  const longR = f.physical.longest_reach.map(x => fighterRow(x, x.reach_cm + '<span class="ff-unit">cm</span>')).join('');
+  const shortR = f.physical.shortest_reach.map(x => fighterRow(x, x.reach_cm + '<span class="ff-unit">cm</span>')).join('');
+  const physPanel =
+    '<div class="ff-panel">' +
+      '<h3 class="ff-h3">Physical extremes</h3>' +
+      '<div class="ff-grid-4">' +
+        '<div><div class="ff-col-title">Tallest</div>' + tallH + '</div>' +
+        '<div><div class="ff-col-title">Shortest</div>' + shortH + '</div>' +
+        '<div><div class="ff-col-title">Longest reach</div>' + longR + '</div>' +
+        '<div><div class="ff-col-title">Shortest reach</div>' + shortR + '</div>' +
+      '</div>' +
+    '</div>';
+
+  // Stance + method distributions (horizontal bars).
+  const stanceRows = (f.stance || []).map(s => {
+    const w = Math.max(2, Math.round(s.pct * 100));
+    return '<div class="ff-bar-row">' +
+      '<span class="ff-bar-row__name">' + escHtml(s.stance) + '</span>' +
+      '<div class="ff-bar-row__bar"><div class="ff-bar-row__fill" style="width:' + w + '%"></div></div>' +
+      '<span class="ff-bar-row__count">' + s.count + ' · ' + pct(s.pct) + '</span></div>';
+  }).join('');
+
+  const m = f.methods || { ko:0, sub:0, dec:0, other:0, total:0 };
+  const mTotal = m.total || 1;
+  const methodOrder = [
+    { k: 'ko', label: 'KO/TKO' },
+    { k: 'sub', label: 'Submission' },
+    { k: 'dec', label: 'Decision' },
+    { k: 'other', label: 'Other' },
+  ];
+  const methodRows = methodOrder.map(o => {
+    const v = m[o.k] || 0;
+    const w = Math.max(2, Math.round(v / mTotal * 100));
+    return '<div class="ff-bar-row">' +
+      '<span class="ff-bar-row__name">' + o.label + '</span>' +
+      '<div class="ff-bar-row__bar"><div class="ff-bar-row__fill" style="width:' + w + '%"></div></div>' +
+      '<span class="ff-bar-row__count">' + v.toLocaleString() + ' · ' + pct(v / mTotal) + '</span></div>';
+  }).join('');
+
+  const distPanel =
+    '<div class="ff-panel">' +
+      '<div class="ff-two-col">' +
+        '<div><h3 class="ff-h3">Stance distribution</h3><div class="ff-bar-list">' + stanceRows + '</div></div>' +
+        '<div><h3 class="ff-h3">How fights end</h3><div class="ff-bar-list">' + methodRows + '</div></div>' +
+      '</div>' +
+    '</div>';
+
+  // Birthdays today (only show if any).
+  const bds = f.birthdays_today || [];
+  const bdPanel = bds.length ? (
+    '<div class="ff-panel">' +
+      '<h3 class="ff-h3">🎂 Birthdays today <span class="ff-h3__sub">· ' + bds.length + '</span></h3>' +
+      '<div class="ff-bd-list">' +
+        bds.map(b =>
+          '<div class="ff-bd"><span class="ff-bd__name">' + fighterNameWithAvatar(b, { size: 'sm' }) + '</span>' +
+          '<span class="ff-bd__age">turns ' + b.age + '</span></div>'
+        ).join('') +
+      '</div>' +
+    '</div>'
+  ) : '';
+
+  return heroes + countriesPanel + agePanel + physPanel + distPanel + bdPanel;
 }
 
 /* -----------------------------------------------------------

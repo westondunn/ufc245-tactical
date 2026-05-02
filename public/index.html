@@ -127,6 +127,7 @@
   <button class="primary-tab" data-tab="events">Events & Fights</button>
   <button class="primary-tab" data-tab="fighters">Fighters</button>
   <button class="primary-tab" data-tab="stats">Stat Leaders</button>
+  <button class="primary-tab" data-tab="funfacts">Fun Facts</button>
   <button class="primary-tab" data-tab="review">Review</button>
   <button class="primary-tab picks-tab-btn" data-tab="picks" id="picksTabBtn" style="display:none">Picks</button>
 </nav>
@@ -303,6 +304,17 @@
     Career aggregates from fights in database. Source: UFCStats.com
   </p>
   <div class="leader-grid" id="leaderGrid"></div>
+</div>
+
+<!-- TAB: FUN FACTS -->
+<div class="tab-content" id="tab-funfacts">
+  <h2>Fun Facts</h2>
+  <p style="font-family:var(--f-mono);font-size:10px;color:var(--muted);margin-bottom:16px;letter-spacing:.1em">
+    Trivia + extremes across the entire fighter roster. Updated as the DB changes.
+  </p>
+  <div id="funFactsBody">
+    <div style="color:var(--muted);font-family:var(--f-mono);font-size:11px;padding:14px 0">Loading…</div>
+  </div>
 </div>
 
 <!-- TAB: PREDICTION REVIEW (read-only overlay; never mutates predictions) -->

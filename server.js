@@ -324,6 +324,14 @@ app.get('/api/tactical/all', apiHandler(async (req, res) => {
   res.json(result);
 }));
 
+// Fun facts — aggregated trivia (countries, ages, physical extremes, stance, methods).
+// Cached; rare changes — invalidated by the same TTL as everything else (cache.set default).
+app.get('/api/funfacts', apiHandler(async (_req, res) => {
+  let result = cache.get('funfacts:v1');
+  if (!result) { result = cache.set('funfacts:v1', await db.getFunFacts()); }
+  res.json(result);
+}));
+
 // Stat leaders
 app.get('/api/stats/leaders', apiHandler(async (req, res) => {
   const stat = req.query.stat || 'sig_strikes';

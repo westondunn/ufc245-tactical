@@ -1132,6 +1132,150 @@ async function getStatLeaders(stat, limit = 10) {
 
 async function getAllFighters(limit = 500) { return allRows('SELECT * FROM fighters ORDER BY name LIMIT ?', [limit]); }
 
+// Fun-facts aggregate. Pulls raw fighter rows + a few cheap counts, then
+// computes age/height/reach/stance/country distributions in JS so the same
+// helper works against the SQLite mirror without dialect-specific date math.
+async function getFunFacts() {
+  const fighters = await allRows(
+    'SELECT id, name, nickname, height_cm, reach_cm, stance, weight_class, ' +
+    'nationality, dob, headshot_url, body_url FROM fighters'
+  );
+  const evRow = await oneRow('SELECT COUNT(*) AS n FROM events', []);
+  const ftRow = await oneRow('SELECT COUNT(*) AS n FROM fights', []);
+  const finishedFights = await oneRow(
+    "SELECT COUNT(*) AS n FROM fights WHERE winner_id IS NOT NULL", []
+  );
+  const methodRows = await allRows(
+    "SELECT COALESCE(NULLIF(method,''), 'Unknown') AS method, COUNT(*)::int AS n " +
+    "FROM fights WHERE winner_id IS NOT NULL GROUP BY method ORDER BY n DESC", []
+  );
+
+  const today = new Date();
+  const ageOf = dob => {
+    if (!dob) return null;
+    const d = new Date(String(dob));
+    if (isNaN(d.getTime())) return null;
+    let age = today.getFullYear() - d.getFullYear();
+    const m = today.getMonth() - d.getMonth();
+    if (m < 0 || (m === 0 && today.getDate() < d.getDate())) age--;
+    return age >= 0 && age <= 80 ? age : null;
+  };
+
+  const lite = f => ({
+    id: f.id, name: f.name, nickname: f.nickname,
+    weight_class: f.weight_class, nationality: f.nationality,
+    headshot_url: f.headshot_url, body_url: f.body_url,
+  });
+
+  const ages = [];
+  const heights = [];
+  const reaches = [];
+  const stanceCt = new Map();
+  const countryCt = new Map();
+  const wcAges = new Map();   // weight_class → [ages]
+
+  for (const f of fighters) {
+    const age = ageOf(f.dob);
+    if (age != null) {
+      ages.push({ ...lite(f), dob: f.dob, age });
+      if (f.weight_class) {
+        if (!wcAges.has(f.weight_class)) wcAges.set(f.weight_class, []);
+        wcAges.get(f.weight_class).push(age);
+      }
+    }
+    if (f.height_cm) heights.push({ ...lite(f), height_cm: f.height_cm });
+    if (f.reach_cm) reaches.push({ ...lite(f), reach_cm: f.reach_cm });
+    if (f.stance) {
+      const s = String(f.stance).trim();
+      stanceCt.set(s, (stanceCt.get(s) || 0) + 1);
+    }
+    if (f.nationality) {
+      const c = String(f.nationality).trim();
+      if (c) countryCt.set(c, (countryCt.get(c) || 0) + 1);
+    }
+  }
+
+  ages.sort((a, b) => a.age - b.age);
+  heights.sort((a, b) => a.height_cm - b.height_cm);
+  reaches.sort((a, b) => a.reach_cm - b.reach_cm);
+
+  const avgAge = ages.length ? ages.reduce((s, a) => s + a.age, 0) / ages.length : null;
+  const avgHeight = heights.length ? heights.reduce((s, h) => s + h.height_cm, 0) / heights.length : null;
+  const avgReach = reaches.length ? reaches.reduce((s, h) => s + h.reach_cm, 0) / reaches.length : null;
+
+  const stanceTotal = Array.from(stanceCt.values()).reduce((a, b) => a + b, 0);
+  const stance = Array.from(stanceCt.entries())
+    .map(([k, n]) => ({ stance: k, count: n, pct: stanceTotal ? n / stanceTotal : 0 }))
+    .sort((a, b) => b.count - a.count);
+
+  const countries = Array.from(countryCt.entries())
+    .map(([country, count]) => ({ country, count }))
+    .sort((a, b) => b.count - a.count);
+
+  // Birthdays today — by month/day, ignoring year.
+  const todayMD = `${String(today.getMonth() + 1).padStart(2, '0')}-${String(today.getDate()).padStart(2, '0')}`;
+  const birthdaysToday = ages
+    .filter(a => {
+      const d = new Date(String(a.dob));
+      if (isNaN(d.getTime())) return false;
+      const md = `${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+      return md === todayMD;
+    })
+    .slice(0, 12);
+
+  const wcAgeRows = Array.from(wcAges.entries())
+    .filter(([, arr]) => arr.length >= 3)
+    .map(([wc, arr]) => ({
+      weight_class: wc,
+      avg_age: arr.reduce((s, x) => s + x, 0) / arr.length,
+      count: arr.length,
+    }))
+    .sort((a, b) => a.avg_age - b.avg_age);
+
+  // Method buckets — fold long-tail variants into KO/TKO, Submission, Decision, Other.
+  let ko = 0, sub = 0, dec = 0, other = 0;
+  for (const r of methodRows) {
+    const m = String(r.method).toLowerCase();
+    const n = Number(r.n) || 0;
+    if (m.includes('ko') || m.includes('tko') || m.includes('knockout')) ko += n;
+    else if (m.includes('sub')) sub += n;
+    else if (m.includes('dec')) dec += n;
+    else other += n;
+  }
+
+  return {
+    total: {
+      fighters: fighters.length,
+      events: Number(evRow?.n || 0),
+      fights: Number(ftRow?.n || 0),
+      finished_fights: Number(finishedFights?.n || 0),
+      countries: countries.length,
+      with_dob: ages.length,
+      with_height: heights.length,
+      with_reach: reaches.length,
+      with_nationality: fighters.filter(f => f.nationality).length,
+    },
+    ages: {
+      youngest: ages.slice(0, 5),
+      oldest: ages.slice(-5).reverse(),
+      average: avgAge,
+      by_division: wcAgeRows,
+    },
+    physical: {
+      tallest: heights.slice(-5).reverse(),
+      shortest: heights.slice(0, 5),
+      longest_reach: reaches.slice(-5).reverse(),
+      shortest_reach: reaches.slice(0, 5),
+      avg_height_cm: avgHeight,
+      avg_reach_cm: avgReach,
+    },
+    stance,
+    countries: countries.slice(0, 30),
+    birthdays_today: birthdaysToday,
+    methods: { ko, sub, dec, other, total: ko + sub + dec + other },
+  };
+}
+
 async function upsertFighter(f) {
   await run(
     `INSERT INTO fighters
@@ -2426,7 +2570,7 @@ module.exports = {
   getEventCard, getEvent, getEventByNumber, getFight, getAllEvents,
   getCareerStats, getHeadToHead, getFighterRecord,
   upsertOfficialOutcome, getOfficialOutcome, getOfficialOutcomesForEvent,
-  getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters,
+  getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters, getFunFacts,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats,
   upsertPrediction, getPredictionLockState, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy, getPredictionTrends, getModelLeaderboard, getPredictionOutcomeDetails,
   createUser, getUser, updateUser, deleteUser, claimGuestProfile,
