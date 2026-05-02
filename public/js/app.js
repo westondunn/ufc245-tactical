@@ -147,6 +147,7 @@ function rerenderActiveViewForUnits(){
     if (tab.tab === 'fighters') { if (typeof renderFighterDir === 'function' && Array.isArray(_allFightersData)) renderFighterDir(_allFightersData); }
     if (tab.tab === 'picks' && _picksState && _picksState.view === 'event') { if (typeof loadEventView === 'function') loadEventView(); }
     if (tab.tab === 'events' && typeof updateAllRecHeaders === 'function') { try { updateAllRecHeaders(); } catch {} }
+    if (tab.tab === 'funfacts') { if (typeof loadFunFactsTab === 'function') loadFunFactsTab(); }
   } catch {}
 }
 
@@ -3976,7 +3977,7 @@ function renderFunFactsHtml(f){
       tile('Events', fmt(f.total.events), '') +
       tile('Fights', fmt(f.total.fights), fmt(f.total.finished_fights) + ' decided') +
       tile('Avg age', f.ages.average != null ? fmt(f.ages.average) : '—', fmt(f.total.with_dob) + ' with DOB') +
-      tile('Avg height', f.physical.avg_height_cm != null ? fmt(f.physical.avg_height_cm) + ' cm' : '—', fmt(f.total.with_height) + ' measured') +
+      tile('Avg height', formatHeight(f.physical.avg_height_cm), fmt(f.total.with_height) + ' measured') +
     '</div>';
 
   // Country bar chart — top 20.
@@ -4020,11 +4021,11 @@ function renderFunFactsHtml(f){
         byDiv + '</tbody></table>' : '') +
     '</div>';
 
-  // Physical extremes.
-  const tallH = f.physical.tallest.map(x => fighterRow(x, x.height_cm + '<span class="ff-unit">cm</span>')).join('');
-  const shortH = f.physical.shortest.map(x => fighterRow(x, x.height_cm + '<span class="ff-unit">cm</span>')).join('');
-  const longR = f.physical.longest_reach.map(x => fighterRow(x, x.reach_cm + '<span class="ff-unit">cm</span>')).join('');
-  const shortR = f.physical.shortest_reach.map(x => fighterRow(x, x.reach_cm + '<span class="ff-unit">cm</span>')).join('');
+  // Physical extremes — formatHeight/Reach already format the unit suffix.
+  const tallH = f.physical.tallest.map(x => fighterRow(x, escHtml(formatHeight(x.height_cm)))).join('');
+  const shortH = f.physical.shortest.map(x => fighterRow(x, escHtml(formatHeight(x.height_cm)))).join('');
+  const longR = f.physical.longest_reach.map(x => fighterRow(x, escHtml(formatReach(x.reach_cm)))).join('');
+  const shortR = f.physical.shortest_reach.map(x => fighterRow(x, escHtml(formatReach(x.reach_cm)))).join('');
   const physPanel =
     '<div class="ff-panel">' +
       '<h3 class="ff-h3">Physical extremes</h3>' +
@@ -6355,6 +6356,22 @@ syncUnitsToggleUI();
 // Live-event indicator in the top bar. Polls /api/events occasionally so the
 // pill appears the moment a card flips into the live window and disappears
 // when it ends — no full reload required.
+// Returns the event most worth surfacing in the top bar, with a label for it.
+// Priority: any event currently `state==='live'`; otherwise an event that
+// ended within the same calendar UTC day (still "fresh" to the user, even
+// though it flipped to history).
+function pickTopBarFeaturedEvent(events) {
+  const list = events || [];
+  const live = list.find(e => e && e.state === 'live');
+  if (live) return { event: live, label: 'LIVE', cls: 'top-bar__live--live' };
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const ended = list
+    .filter(e => e && e.state === 'history' && String(e.date || '').slice(0, 10) === todayUtc)
+    .sort((a, b) => Date.parse(b.end_time || 0) - Date.parse(a.end_time || 0))[0];
+  if (ended) return { event: ended, label: 'RESULTS', cls: 'top-bar__live--results' };
+  return null;
+}
+
 async function updateTopBarLiveIndicator(){
   const el = document.getElementById('topBarLive');
   if (!el) return;
@@ -6362,18 +6379,37 @@ async function updateTopBarLiveIndicator(){
     const res = await fetch('/api/events');
     if (!res.ok) { el.style.display = 'none'; return; }
     const events = await res.json();
-    const live = (events || []).find(e => e && e.state === 'live');
-    if (!live) { el.style.display = 'none'; return; }
-    // Strip the leading "UFC <num>: " or "UFC Fight Night: " prefix when
-    // present so the chip is short. Falls back to the full name.
-    const short = String(live.name || '').replace(/^UFC\s+(?:\d+|Fight\s+Night)\s*[:\-]\s*/i, '').trim() || live.name;
-    el.innerHTML = `LIVE<span class="top-bar__live__name">· ${escHtml(short)}</span>`;
-    el.href = `#picks/event`;
-    el.dataset.eventId = String(live.id);
+    const featured = pickTopBarFeaturedEvent(events);
+    if (!featured) { el.style.display = 'none'; el.className = 'top-bar__live'; return; }
+    const ev = featured.event;
+    // Strip "UFC <num>: " or "UFC Fight Night: " prefix when present so the
+    // chip is short. Falls back to the full name.
+    const short = String(ev.name || '').replace(/^UFC\s+(?:\d+|Fight\s+Night)\s*[:\-]\s*/i, '').trim() || ev.name;
+    el.innerHTML = featured.label + '<span class="top-bar__live__name">· ' + escHtml(short) + '</span>';
+    el.href = '#picks/event';
+    el.dataset.eventId = String(ev.id);
+    el.className = 'top-bar__live ' + featured.cls;
     el.style.display = '';
+    // Tighter polling on event days — flip to history close to real-time.
+    rescheduleLivePoll(ev);
   } catch {
     el.style.display = 'none';
   }
+}
+
+// Adaptive cadence: if today is the date of the featured event, poll every
+// 30 s so the LIVE → RESULTS transition shows up near-real-time. Otherwise
+// fall back to the 2-minute idle cadence. Idempotent — safe to call repeatedly.
+let _livePollTimer = null;
+let _livePollMs = null;
+function rescheduleLivePoll(ev) {
+  const todayUtc = new Date().toISOString().slice(0, 10);
+  const evDate = String((ev && ev.date) || '').slice(0, 10);
+  const target = (evDate === todayUtc) ? 30 * 1000 : 2 * 60 * 1000;
+  if (target === _livePollMs) return;
+  _livePollMs = target;
+  if (_livePollTimer) clearInterval(_livePollTimer);
+  _livePollTimer = setInterval(updateTopBarLiveIndicator, target);
 }
 {
   const live = document.getElementById('topBarLive');
@@ -6389,10 +6425,8 @@ async function updateTopBarLiveIndicator(){
     });
   }
 }
+// First call schedules its own poll loop (30 s on event-day, 2 min otherwise).
 updateTopBarLiveIndicator();
-// Refresh every 2 minutes — cheap (cache hit on the server) and keeps the
-// pill honest as the live window opens / closes.
-setInterval(updateTopBarLiveIndicator, 2 * 60 * 1000);
 
 // Fetch and display version from API
 fetch('/api/version').then(r=>r.json()).then(v=>{

@@ -266,6 +266,14 @@ body::after{
   50%{box-shadow:0 0 0 4px rgba(255,77,109,.15)}
 }
 @media(max-width:600px){.top-bar__live{max-width:140px}.top-bar__live__name{display:none}}
+/* Same-day results variant — amber instead of red, no pulsing dot. */
+.top-bar__live--results{
+  color:#FFB020;border-color:rgba(255,176,32,.45);background:rgba(255,176,32,.07);
+}
+.top-bar__live--results:hover{background:rgba(255,176,32,.16);border-color:#FFB020}
+.top-bar__live--results::before{
+  background:#FFB020;box-shadow:0 0 4px rgba(255,176,32,.6);animation:none;
+}
 .units-toggle{
   appearance:none;background:transparent;border:1px solid var(--border-soft);
   border-radius:3px;padding:3px 0;
