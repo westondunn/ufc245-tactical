@@ -1626,6 +1626,12 @@ async function run() {
   const noEvent = await buildPredictionReview({ db, eventId: 99999999, officialDate: null });
   assertEq(noEvent, null, 'unknown event id returns null');
 
+  // ── Audit Schema (extension) ──
+  const auditSchemaSuite = require('./audit/schema.test');
+  const auditSchemaResult = await auditSchemaSuite.run();
+  passed += auditSchemaResult.passed;
+  failed += auditSchemaResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
