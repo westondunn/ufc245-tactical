@@ -1656,6 +1656,12 @@ async function run() {
   passed += eventScraperResult.passed;
   failed += eventScraperResult.failed;
 
+  // ── Scraper: ufcstats-fight ──
+  const fightScraperSuite = require('./scrapers/ufcstats-fight.test');
+  const fightScraperResult = await fightScraperSuite.run();
+  passed += fightScraperResult.passed;
+  failed += fightScraperResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
