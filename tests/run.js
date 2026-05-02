@@ -1632,6 +1632,12 @@ async function run() {
   passed += auditSchemaResult.passed;
   failed += auditSchemaResult.failed;
 
+  // ── Audit Scopes ──
+  const auditScopesSuite = require('./audit/scopes.test');
+  const auditScopesResult = await auditScopesSuite.run();
+  passed += auditScopesResult.passed;
+  failed += auditScopesResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
