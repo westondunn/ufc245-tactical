@@ -1644,6 +1644,12 @@ async function run() {
   passed += auditRunnerResult.passed;
   failed += auditRunnerResult.failed;
 
+  // ── Scraper: ufcstats-fighter ──
+  const fighterScraperSuite = require('./scrapers/ufcstats-fighter.test');
+  const fighterScraperResult = await fighterScraperSuite.run();
+  passed += fighterScraperResult.passed;
+  failed += fighterScraperResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
