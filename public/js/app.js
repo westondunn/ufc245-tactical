@@ -3116,7 +3116,7 @@ async function loadFighterEvents(fighterId){
       '<div style="margin-bottom:16px;padding-bottom:16px;border-bottom:1px solid var(--border-soft)">' +
         '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:8px">' +
           '<div style="font-family:var(--f-disp);font-size:16px;font-weight:600;letter-spacing:.08em;color:var(--fg)">' +
-            'UFC ' + ev.number + '</div>' +
+            escHtml(ev.number ? 'UFC ' + ev.number : (ev.name || 'UFC Fight Night')) + '</div>' +
           '<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--muted)">' +
             ev.date + ' · ' + ev.city + '</div>' +
         '</div>' +
@@ -3144,7 +3144,7 @@ async function loadFighterEvents(fighterId){
           '</div>';
         }).join('') +
         '<button class="rec-btn" onclick="loadEventCard(' + ev.event_id + ')" style="margin-top:8px;font-size:10px">' +
-          'View Full Card · UFC ' + ev.number + '</button>' +
+          'View Full Card · ' + escHtml(ev.number ? 'UFC ' + ev.number : (ev.name || 'UFC Fight Night')) + '</button>' +
       '</div>'
     ).join('');
   } catch(e){
@@ -3349,7 +3349,7 @@ function renderComparison(data){
       const w1 = f.winner_id === parseInt(_compareSlots[0].id,10);
       const winnerSlot = w1 ? _compareSlots[0] : _compareSlots[1];
       return '<div class="h2h-fight">' +
-        '<span class="h2h-fight__event">UFC ' + f.event_number + '</span>' +
+        '<span class="h2h-fight__event">' + escHtml(f.event_number ? 'UFC ' + f.event_number : (f.event_name || 'UFC Fight Night')) + '</span>' +
         '<span class="h2h-fight__result" style="color:' + (w1?'#FF5965':'#5EC2FF') + '">' +
           fighterNameWithAvatar(winnerSlot, { size: 'xs', corner: w1 ? 'red' : 'blue', compact: true }) + ' W</span>' +
         '<span class="h2h-fight__method">' + f.method + (f.method_detail ? ' · '+f.method_detail : '') + '</span>' +
@@ -3783,8 +3783,9 @@ async function showFighterProfile(fid){
     if (events.length) {
       html += '<div style="font-family:var(--f-mono);font-size:10px;color:var(--cyan);letter-spacing:.15em;margin-bottom:8px">FIGHT HISTORY (' + events.length + ' events)</div>';
       events.forEach(ev => {
+        const evLabel = ev.number ? 'UFC ' + ev.number : (ev.name || 'UFC Fight Night');
         html += '<div style="margin-bottom:8px">' +
-          '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">UFC ' + ev.number + ' · ' + escHtml(ev.date||'') + '</div>';
+          '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">' + escHtml(evLabel) + ' · ' + escHtml(ev.date||'') + '</div>';
         ev.fights.forEach(fight => {
           const won = fight.winner_id === fid;
           html += '<div style="font-family:var(--f-mono);font-size:11px;padding:3px 0;color:' + (won?'var(--green)':'var(--fg-dim)') + '">' +
@@ -5381,7 +5382,9 @@ function renderHistoryEventGroup(g){
   const pending = picks.length - reconciled.length;
   const totalPts = picks.reduce((s, p) => s + (p.points || 0), 0);
   const correctN = picks.filter(p => p.correct === 1).length;
-  const title = `UFC ${e.event_number || '—'} · ${escHtml(e.event_name || '')}`;
+  const title = e.event_number
+    ? `UFC ${e.event_number} · ${escHtml(e.event_name || '')}`
+    : escHtml(e.event_name || 'UFC Fight Night');
   const sub = e.event_date ? escHtml(e.event_date) : '';
   const score = pending === picks.length
     ? `<span class="picks-history-event__pending">${pending} pending</span>`
