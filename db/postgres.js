@@ -308,6 +308,64 @@ async function ensureSchema() {
   await run('CREATE INDEX IF NOT EXISTS idx_user_picks_fight ON user_picks(fight_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_user_picks_user_event ON user_picks(user_id, event_id)');
   await run('CREATE INDEX IF NOT EXISTS idx_pick_snapshots_pick ON pick_model_snapshots(user_pick_id)');
+
+  // ── Data audit + backfill (additive) ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS coverage_snapshots (
+      id BIGSERIAL PRIMARY KEY,
+      run_id TEXT NOT NULL,
+      ran_at TIMESTAMPTZ NOT NULL,
+      table_name TEXT NOT NULL,
+      column_name TEXT NOT NULL,
+      scope TEXT NOT NULL,
+      total_rows INTEGER NOT NULL,
+      non_null_rows INTEGER NOT NULL,
+      coverage_pct DOUBLE PRECISION NOT NULL,
+      gap_row_ids JSONB
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_coverage_run ON coverage_snapshots(run_id)');
+  await run('CREATE INDEX IF NOT EXISTS idx_coverage_table_col ON coverage_snapshots(table_name, column_name, ran_at DESC)');
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS audit_runs (
+      run_id TEXT PRIMARY KEY,
+      started_at TIMESTAMPTZ NOT NULL,
+      finished_at TIMESTAMPTZ,
+      status TEXT NOT NULL DEFAULT 'running',
+      trigger_source TEXT NOT NULL,
+      scope_input JSONB,
+      summary JSONB,
+      error_text TEXT
+    )
+  `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS pending_backfill (
+      id BIGSERIAL PRIMARY KEY,
+      table_name TEXT NOT NULL,
+      row_id TEXT NOT NULL,
+      column_name TEXT NOT NULL,
+      current_value TEXT,
+      proposed_value TEXT NOT NULL,
+      source TEXT NOT NULL,
+      source_url TEXT,
+      confidence TEXT NOT NULL,
+      reason TEXT,
+      source_diff_json JSONB,
+      status TEXT NOT NULL DEFAULT 'pending',
+      created_at TIMESTAMPTZ NOT NULL,
+      resolved_at TIMESTAMPTZ,
+      applied_at TIMESTAMPTZ,
+      audit_run_id TEXT
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_backfill(status)');
+  await run(`
+    CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_open
+    ON pending_backfill(table_name, row_id, column_name)
+    WHERE status IN ('pending', 'approved')
+  `);
 }
 
 /**

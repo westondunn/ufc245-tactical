@@ -8,6 +8,9 @@
     "start": "node server.js",
     "dev": "NODE_ENV=development node server.js",
     "test": "node tests/run.js && node tests/auth.test.js",
+    "audit": "node scripts/audit-run.js",
+    "backfill": "node scripts/backfill-run.js",
+    "backfill:review": "node scripts/backfill-review.js",
     "test:e2e": "npx playwright test",
     "test:e2e:ui": "npx playwright test --ui",
     "test:all": "npm test && npx playwright test"
@@ -21,6 +24,7 @@
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
+    "node-cron": "^3.0.3",
     "pg": "^8.20.0",
     "sql.js": "^1.14.1"
   },

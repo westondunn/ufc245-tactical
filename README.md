@@ -301,6 +301,55 @@ users without touching other data.
 
 ---
 
+## Data audit & backfill
+
+Coverage of every audited column lives in `coverage_snapshots`. A
+confidence-gated backfill executor fills safe gaps directly and queues risky
+ones for CLI review.
+
+Run an audit and read the report:
+
+```bash
+npm run audit
+curl -H "x-prediction-key: $KEY" http://localhost:3000/api/data/coverage?diff=last2
+```
+
+Run backfill against the latest audit:
+
+```bash
+npm run backfill                 # auto-fill + queue
+npm run backfill -- --dry-run    # preview only
+```
+
+Review the queue interactively:
+
+```bash
+npm run backfill:review
+npm run backfill:review -- --auto-approve-cosmetic
+```
+
+The scheduler runs automatically on server boot (disable with
+`AUDIT_SCHEDULER=off`):
+
+| Trigger        | When             | Scope                              |
+|----------------|------------------|------------------------------------|
+| Nightly sweep  | 03:00 daily      | all columns                        |
+| Pre-event      | 04:00 daily      | events 7d / 1d out                 |
+| Post-event 1h  | every 5 min      | events ending in last hour today   |
+| Post-event 24h | 05:00 daily      | events that ended yesterday        |
+
+Manual HTTP endpoints (require `x-prediction-key`):
+
+- `POST /api/data/audit/run`
+- `POST /api/data/backfill/run` body `{runId, dryRun?}`
+- `GET  /api/data/coverage` (`?run=`, `?table=&column=`, `?diff=last2`)
+- `GET  /api/data/backfill/queue?status=pending`
+
+See the design doc at `docs/superpowers/specs/2026-04-29-etl-data-gap-audit-and-backfill-design.md`
+for source precedence, gate rules, and v1 scope.
+
+---
+
 ## Data sources & credits
 
 - **Strike-by-strike stats:** [UFCStats.com official fight page](http://ufcstats.com/fight-details/82177c0f91d9618a)

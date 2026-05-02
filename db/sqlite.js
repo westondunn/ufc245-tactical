@@ -217,6 +217,56 @@ const SCHEMA = `
   CREATE INDEX IF NOT EXISTS idx_user_picks_fight ON user_picks(fight_id);
   CREATE INDEX IF NOT EXISTS idx_user_picks_user_event ON user_picks(user_id, event_id);
   CREATE INDEX IF NOT EXISTS idx_pick_snapshots_pick ON pick_model_snapshots(user_pick_id);
+
+  -- ── Data audit + backfill (additive) ──
+  CREATE TABLE IF NOT EXISTS coverage_snapshots (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    run_id TEXT NOT NULL,
+    ran_at TEXT NOT NULL,
+    table_name TEXT NOT NULL,
+    column_name TEXT NOT NULL,
+    scope TEXT NOT NULL,
+    total_rows INTEGER NOT NULL,
+    non_null_rows INTEGER NOT NULL,
+    coverage_pct REAL NOT NULL,
+    gap_row_ids TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_coverage_run ON coverage_snapshots(run_id);
+  CREATE INDEX IF NOT EXISTS idx_coverage_table_col ON coverage_snapshots(table_name, column_name, ran_at DESC);
+
+  CREATE TABLE IF NOT EXISTS audit_runs (
+    run_id TEXT PRIMARY KEY,
+    started_at TEXT NOT NULL,
+    finished_at TEXT,
+    status TEXT NOT NULL DEFAULT 'running',
+    trigger_source TEXT NOT NULL,
+    scope_input TEXT,
+    summary TEXT,
+    error_text TEXT
+  );
+
+  CREATE TABLE IF NOT EXISTS pending_backfill (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    table_name TEXT NOT NULL,
+    row_id TEXT NOT NULL,
+    column_name TEXT NOT NULL,
+    current_value TEXT,
+    proposed_value TEXT NOT NULL,
+    source TEXT NOT NULL,
+    source_url TEXT,
+    confidence TEXT NOT NULL,
+    reason TEXT,
+    source_diff_json TEXT,
+    status TEXT NOT NULL DEFAULT 'pending',
+    created_at TEXT NOT NULL,
+    resolved_at TEXT,
+    applied_at TEXT,
+    audit_run_id TEXT
+  );
+  CREATE INDEX IF NOT EXISTS idx_pending_status ON pending_backfill(status);
+  CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_open
+    ON pending_backfill(table_name, row_id, column_name)
+    WHERE status IN ('pending', 'approved');
 `;
 
 /* ── INIT ── */

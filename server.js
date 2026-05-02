@@ -644,6 +644,54 @@ app.post('/api/events/:id/official-outcomes', requirePredictionKey, apiHandler(a
 }));
 
 // ============================================================
+// DATA AUDIT API (internal, key-protected)
+// ============================================================
+const auditApi = require('./data/audit/api');
+const { runAudit: runAuditJob } = require('./data/audit/runner');
+
+app.get('/api/data/coverage', requirePredictionKey, apiHandler(async (req, res) => {
+  if (req.query.diff === 'last2') {
+    return res.json(await auditApi.getDiffLast2());
+  }
+  if (req.query.table && req.query.column) {
+    return res.json(await auditApi.getColumnHistory({
+      table: String(req.query.table).slice(0, 64),
+      column: String(req.query.column).slice(0, 64),
+      scope: req.query.scope ? String(req.query.scope).slice(0, 64) : null,
+      limit: req.query.limit,
+    }));
+  }
+  let runId = req.query.run && req.query.run !== 'latest' ? String(req.query.run).slice(0, 64) : null;
+  if (!runId) runId = await auditApi.getLatestCompleteRunId();
+  if (!runId) return res.json({ run_id: null, snapshots: [] });
+  res.json({ run_id: runId, snapshots: await auditApi.getCoverageForRun(runId) });
+}));
+
+app.post('/api/data/audit/run', requirePredictionKey, apiHandler(async (req, res) => {
+  const scope = req.body && req.body.scope ? String(req.body.scope).slice(0, 64) : null;
+  const result = await runAuditJob({ scope, triggerSource: 'http' });
+  res.json(result);
+}));
+
+const backfillApi = require('./data/backfill/api');
+const { runBackfill: runBackfillJob } = require('./data/backfill/dispatcher');
+
+app.post('/api/data/backfill/run', requirePredictionKey, apiHandler(async (req, res) => {
+  const runId = req.body && req.body.runId ? String(req.body.runId).slice(0, 64) : null;
+  const dryRun = !!(req.body && req.body.dryRun);
+  if (!runId) return res.status(400).json({ error: 'runId required' });
+  const result = await runBackfillJob({ runId, dryRun });
+  res.json(result);
+}));
+
+app.get('/api/data/backfill/queue', requirePredictionKey, apiHandler(async (req, res) => {
+  const status = req.query.status ? String(req.query.status).slice(0, 32) : 'pending';
+  const limit = parseInt(req.query.limit || '50', 10);
+  const offset = parseInt(req.query.offset || '0', 10);
+  res.json(await backfillApi.listQueue({ status, limit, offset }));
+}));
+
+// ============================================================
 // USER PICKS API (additive, flag-gated via ENABLE_PICKS)
 // ============================================================
 const validate = require('./lib/validate');
@@ -1171,6 +1219,11 @@ async function bootstrap() {
     console.log('    GET /api/biomechanics/chain?mass=&strike=');
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   });
+
+  if (process.env.NODE_ENV !== 'test' && process.env.AUDIT_SCHEDULER !== 'off') {
+    const { startScheduler } = require('./data/audit/scheduler');
+    startScheduler();
+  }
 
   ['SIGTERM', 'SIGINT'].forEach(sig => {
     process.on(sig, () => {

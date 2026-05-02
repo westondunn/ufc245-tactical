@@ -1626,6 +1626,72 @@ async function run() {
   const noEvent = await buildPredictionReview({ db, eventId: 99999999, officialDate: null });
   assertEq(noEvent, null, 'unknown event id returns null');
 
+  // ── Audit Schema (extension) ──
+  const auditSchemaSuite = require('./audit/schema.test');
+  const auditSchemaResult = await auditSchemaSuite.run();
+  passed += auditSchemaResult.passed;
+  failed += auditSchemaResult.failed;
+
+  // ── Audit Scopes ──
+  const auditScopesSuite = require('./audit/scopes.test');
+  const auditScopesResult = await auditScopesSuite.run();
+  passed += auditScopesResult.passed;
+  failed += auditScopesResult.failed;
+
+  // ── Audit Runner ──
+  const auditRunnerSuite = require('./audit/runner.test');
+  const auditRunnerResult = await auditRunnerSuite.run();
+  passed += auditRunnerResult.passed;
+  failed += auditRunnerResult.failed;
+
+  // ── Scraper: ufcstats-fighter ──
+  const fighterScraperSuite = require('./scrapers/ufcstats-fighter.test');
+  const fighterScraperResult = await fighterScraperSuite.run();
+  passed += fighterScraperResult.passed;
+  failed += fighterScraperResult.failed;
+
+  // ── Scraper: ufcstats-event ──
+  const eventScraperSuite = require('./scrapers/ufcstats-event.test');
+  const eventScraperResult = await eventScraperSuite.run();
+  passed += eventScraperResult.passed;
+  failed += eventScraperResult.failed;
+
+  // ── Scraper: ufcstats-fight ──
+  const fightScraperSuite = require('./scrapers/ufcstats-fight.test');
+  const fightScraperResult = await fightScraperSuite.run();
+  passed += fightScraperResult.passed;
+  failed += fightScraperResult.failed;
+
+  // ── Scraper: ufc-com-athlete ──
+  const athleteScraperSuite = require('./scrapers/ufc-com-athlete.test');
+  const athleteScraperResult = await athleteScraperSuite.run();
+  passed += athleteScraperResult.passed;
+  failed += athleteScraperResult.failed;
+
+  // ── Backfill Gate ──
+  const gateSuite = require('./backfill/gate.test');
+  const gateResult = await gateSuite.run();
+  passed += gateResult.passed;
+  failed += gateResult.failed;
+
+  // ── Backfill Verify ──
+  const verifySuite = require('./backfill/verify.test');
+  const verifyResult = await verifySuite.run();
+  passed += verifyResult.passed;
+  failed += verifyResult.failed;
+
+  // ── Backfill Dispatcher ──
+  const dispatcherSuite = require('./backfill/dispatcher.test');
+  const dispatcherResult = await dispatcherSuite.run();
+  passed += dispatcherResult.passed;
+  failed += dispatcherResult.failed;
+
+  // ── Audit + Backfill End-to-End ──
+  const integrationSuite = require('./audit/integration.test');
+  const integrationResult = await integrationSuite.run();
+  passed += integrationResult.passed;
+  failed += integrationResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
