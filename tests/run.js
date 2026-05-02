@@ -1686,6 +1686,12 @@ async function run() {
   passed += dispatcherResult.passed;
   failed += dispatcherResult.failed;
 
+  // ── Audit + Backfill End-to-End ──
+  const integrationSuite = require('./audit/integration.test');
+  const integrationResult = await integrationSuite.run();
+  passed += integrationResult.passed;
+  failed += integrationResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
