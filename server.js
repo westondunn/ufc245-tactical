@@ -673,6 +673,24 @@ app.post('/api/data/audit/run', requirePredictionKey, apiHandler(async (req, res
   res.json(result);
 }));
 
+const backfillApi = require('./data/backfill/api');
+const { runBackfill: runBackfillJob } = require('./data/backfill/dispatcher');
+
+app.post('/api/data/backfill/run', requirePredictionKey, apiHandler(async (req, res) => {
+  const runId = req.body && req.body.runId ? String(req.body.runId).slice(0, 64) : null;
+  const dryRun = !!(req.body && req.body.dryRun);
+  if (!runId) return res.status(400).json({ error: 'runId required' });
+  const result = await runBackfillJob({ runId, dryRun });
+  res.json(result);
+}));
+
+app.get('/api/data/backfill/queue', requirePredictionKey, apiHandler(async (req, res) => {
+  const status = req.query.status ? String(req.query.status).slice(0, 32) : 'pending';
+  const limit = parseInt(req.query.limit || '50', 10);
+  const offset = parseInt(req.query.offset || '0', 10);
+  res.json(await backfillApi.listQueue({ status, limit, offset }));
+}));
+
 // ============================================================
 // USER PICKS API (additive, flag-gated via ENABLE_PICKS)
 // ============================================================
