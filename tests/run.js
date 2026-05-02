@@ -1668,6 +1668,18 @@ async function run() {
   passed += athleteScraperResult.passed;
   failed += athleteScraperResult.failed;
 
+  // ── Backfill Gate ──
+  const gateSuite = require('./backfill/gate.test');
+  const gateResult = await gateSuite.run();
+  passed += gateResult.passed;
+  failed += gateResult.failed;
+
+  // ── Backfill Verify ──
+  const verifySuite = require('./backfill/verify.test');
+  const verifyResult = await verifySuite.run();
+  passed += verifyResult.passed;
+  failed += verifyResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
