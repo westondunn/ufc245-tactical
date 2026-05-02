@@ -1,6 +1,12 @@
-# UFC 245 · Usman vs. Covington · Tactical Dashboard
+# Octagon Tactical · UFC analysis dashboard
 
-Interactive broadcast-style tactical analysis for the UFC 245 welterweight title fight (14 Dec 2019). Built from official UFCStats.com round-by-round data, ESPN corner audio, NSAC medical documentation, and peer-reviewed striking biomechanics literature.
+Interactive broadcast-style tactical analysis across the UFC card. Browse any
+event, make picks, watch live results reconcile, and dive into curated
+frame-level breakdowns. Built from official UFCStats.com round-by-round data,
+ESPN corner audio, NSAC medical documentation, and peer-reviewed striking
+biomechanics literature. The repo is named `ufc245-tactical` for historical
+reasons — the original deep-dive was UFC 245 Usman vs Covington I, and that
+fight remains the reference example for the frame-level analysis layer.
 
 **Live demo · run locally:** `npm install && npm start` → `http://localhost:3000`
 
