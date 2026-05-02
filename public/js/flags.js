@@ -76,19 +76,21 @@
     return String.fromCodePoint(BASE + c1) + String.fromCodePoint(BASE + c2);
   }
 
-  /**
-   * flagFor(countryName) → '<span class="flag" title="Country" aria-label="...">🇨🇴</span>'
-   * Returns '' when the country name can't be mapped.
-   */
+  // SVG flags via flagcdn.com — emoji approach failed on Windows Chrome,
+  // which lacks color glyphs for regional-indicator codepoints. flagcdn
+  // serves PNG flags reliably across every OS.
   function flagFor(name) {
     var iso = iso2For(name);
     if (!iso) return '';
-    var emoji = flagEmoji(iso);
-    if (!emoji) return '';
     var safe = String(name).replace(/[&<>"']/g, function (c) {
       return ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' })[c];
     });
-    return '<span class="flag" title="' + safe + '" aria-label="' + safe + '">' + emoji + '</span>';
+    var lo = iso.toLowerCase();
+    var url = 'https://flagcdn.com/w20/' + lo + '.png';
+    var url2x = 'https://flagcdn.com/w40/' + lo + '.png';
+    return '<img class="flag" src="' + url + '" srcset="' + url2x + ' 2x"' +
+           ' width="20" height="15" loading="lazy" decoding="async"' +
+           ' alt="" title="' + safe + '" aria-label="' + safe + '">';
   }
 
   window.flagFor = flagFor;
