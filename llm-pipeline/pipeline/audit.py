@@ -25,8 +25,55 @@ def _winner_side(red_prob, blue_prob) -> str | None:
     return "red" if red >= blue else "blue"
 
 
-def audit_prediction(payload: dict) -> dict:
-    """Return a compact publishability audit for a single ensemble payload."""
+def _rationale_disagrees_with_pick(narrative: str, red_name: str, blue_name: str,
+                                   ensemble_winner: str) -> bool:
+    """Heuristic: scan the rationale for a 'disagree → pick X' phrase that names
+    the loser of the structured prediction. Returns True if the rationale's
+    direction looks inverted relative to predicted_winner.
+
+    Only fires when both names are present and a clear disagree-marker appears
+    near the loser's name; conservative on purpose — false positives would be
+    worse than a missed flag here.
+    """
+    if not narrative or not red_name or not blue_name or ensemble_winner not in {"red", "blue"}:
+        return False
+    text = narrative.lower()
+    red_l = red_name.lower()
+    blue_l = blue_name.lower()
+    if red_l not in text or blue_l not in text:
+        return False
+
+    loser_name = blue_l if ensemble_winner == "red" else red_l
+    # Look for "i disagree" / "but ... <loser>" patterns where the rationale
+    # leans toward the structured loser. These markers are the LLM's own
+    # phrasing in the reason.md prompt's expected output.
+    disagree_markers = [
+        "i disagree",
+        "i would pick",
+        "favors",
+        "advantage",
+        "advantages",
+        "edge",
+    ]
+    # Find the position of "disagree" or similar pivot, then check whether the
+    # *loser's* name appears within ~120 chars after it.
+    for marker in ("i disagree", "but upon", "however"):
+        idx = text.find(marker)
+        if idx == -1:
+            continue
+        window = text[idx:idx + 200]
+        if loser_name in window and any(m in window for m in disagree_markers):
+            return True
+    return False
+
+
+def audit_prediction(payload: dict, *, fighter_names: tuple[str, str] | None = None) -> dict:
+    """Return a compact publishability audit for a single ensemble payload.
+
+    fighter_names is (red_name, blue_name); when supplied it enables the
+    rationale-vs-pick consistency heuristic. Optional so existing callers and
+    summarize_audits can re-audit DB rows without those fields.
+    """
     blockers: list[str] = []
     warnings: list[str] = []
     insights = payload.get("insights") if isinstance(payload.get("insights"), list) else []
@@ -73,6 +120,26 @@ def audit_prediction(payload: dict) -> dict:
     winner_flip = bool(lr_winner and ensemble_winner and lr_winner != ensemble_winner)
     if winner_flip and strong_signal_count == 0:
         blockers.append("winner_flip_without_strong_signal")
+
+    # agreement_with_lr is the LLM's self-reported relationship to the LR
+    # baseline. If it says "disagrees" but both pick the same side, the LLM is
+    # being inconsistent with itself.
+    agreement = explanation.get("agreement_with_lr")
+    if (
+        agreement == "disagrees"
+        and lr_winner is not None
+        and ensemble_winner is not None
+        and lr_winner == ensemble_winner
+    ):
+        blockers.append("agreement_with_lr_inconsistent")
+
+    # Rationale text vs. structured pick: catches LLM payloads where the
+    # narrative argues for the loser but predicted_winner stayed put.
+    red_name, blue_name = (fighter_names or ("", ""))
+    if ensemble_winner and _rationale_disagrees_with_pick(
+        narrative, red_name, blue_name, ensemble_winner,
+    ):
+        blockers.append("rationale_pick_mismatch")
 
     method_conf = payload.get("method_confidence")
     try:
