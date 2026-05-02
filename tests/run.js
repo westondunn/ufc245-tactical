@@ -1680,6 +1680,12 @@ async function run() {
   passed += verifyResult.passed;
   failed += verifyResult.failed;
 
+  // ── Backfill Dispatcher ──
+  const dispatcherSuite = require('./backfill/dispatcher.test');
+  const dispatcherResult = await dispatcherSuite.run();
+  passed += dispatcherResult.passed;
+  failed += dispatcherResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
