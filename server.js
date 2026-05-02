@@ -1220,6 +1220,11 @@ async function bootstrap() {
     console.log('━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━');
   });
 
+  if (process.env.NODE_ENV !== 'test' && process.env.AUDIT_SCHEDULER !== 'off') {
+    const { startScheduler } = require('./data/audit/scheduler');
+    startScheduler();
+  }
+
   ['SIGTERM', 'SIGINT'].forEach(sig => {
     process.on(sig, () => {
       console.log(`[${sig}] shutting down…`);
