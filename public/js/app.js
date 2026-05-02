@@ -3050,13 +3050,13 @@ async function selectDbFight(fightId, chipEl){
     setHtml('heroRedNick', f.red_nickname ? '&ldquo;' + escHtml(f.red_nickname) + '&rdquo;' : '');
     setHtml('heroRedName', fighterNameWithAvatar(redFighter, { size: 'lg', corner: 'red', align: 'end', className: 'hero-fighter__name-avatar' }));
     setHtml('heroRedRecord', (f.red_height ? formatHeight(f.red_height) : '') + (f.red_reach ? ' · ' + formatReach(f.red_reach) + ' reach' : ''));
-    setHtml('heroRedStyle', f.red_stance ? escHtml(f.red_stance) + (f.red_nationality ? ' · ' + escHtml(f.red_nationality) : '') : '');
+    setHtml('heroRedStyle', f.red_stance ? escHtml(f.red_stance) + (f.red_nationality ? ' · ' + (window.flagFor ? window.flagFor(f.red_nationality) + ' ' : '') + escHtml(f.red_nationality) : '') : '');
 
     setHtml('heroBlueTag', '<span class="dot"></span> Blue Corner');
     setHtml('heroBlueNick', f.blue_nickname ? '&ldquo;' + escHtml(f.blue_nickname) + '&rdquo;' : '');
     setHtml('heroBlueName', fighterNameWithAvatar(blueFighter, { size: 'lg', corner: 'blue', className: 'hero-fighter__name-avatar' }));
     setHtml('heroBlueRecord', (f.blue_height ? formatHeight(f.blue_height) : '') + (f.blue_reach ? ' · ' + formatReach(f.blue_reach) + ' reach' : ''));
-    setHtml('heroBlueStyle', f.blue_stance ? escHtml(f.blue_stance) + (f.blue_nationality ? ' · ' + escHtml(f.blue_nationality) : '') : '');
+    setHtml('heroBlueStyle', f.blue_stance ? escHtml(f.blue_stance) + (f.blue_nationality ? ' · ' + (window.flagFor ? window.flagFor(f.blue_nationality) + ' ' : '') + escHtml(f.blue_nationality) : '') : '');
     setHeroMeta(
       [f.event_date, f.venue, f.city].filter(Boolean).join(' · '),
       [
@@ -3463,7 +3463,7 @@ function renderEventsTable(events){
     '<td class="evt-num">' + (e.number||'—') + '</td>' +
     '<td class="evt-title">' + escHtml(e.name) + '</td>' +
     '<td>' + escHtml(e.date||'') + '</td>' +
-    '<td>' + escHtml((e.city||'') + (e.country ? ', '+e.country : '')) + '</td>' +
+    '<td>' + (e.country && window.flagFor ? window.flagFor(e.country) + ' ' : '') + escHtml((e.city||'') + (e.country ? ', '+e.country : '')) + '</td>' +
     '</tr>'
   ).join('');
 }
@@ -3513,6 +3513,7 @@ async function toggleEventCard(eventId, eventNum, rowEl){
     let html = '<div class="evt-card-header">' +
       '<div class="evt-card-header__title">' + escHtml(data.event.name) + '</div>' +
       '<div class="evt-card-header__meta">' + escHtml(data.event.date||'') + ' · ' +
+        (data.event.country && window.flagFor ? window.flagFor(data.event.country) + ' ' : '') +
         escHtml((data.event.city||'') + (data.event.country ? ', '+data.event.country : '')) + '</div></div>';
 
     if (!data.card.length) {
@@ -4427,7 +4428,8 @@ function renderPicksEventInfo(event, card){
   if (!event) { el.style.display = 'none'; el.innerHTML = ''; return; }
   const main = (card || []).find(f => f.is_main === 1) || (card || [])[0];
   const venue = event.venue ? escHtml(event.venue) : '';
-  const cityCountry = [event.city, event.country].filter(Boolean).map(escHtml).join(', ');
+  const flag = (event.country && window.flagFor) ? window.flagFor(event.country) : '';
+  const cityCountry = (flag ? flag + ' ' : '') + [event.city, event.country].filter(Boolean).map(escHtml).join(', ');
   const wc = main && main.weight_class ? escHtml(main.weight_class) : '';
   const when = escHtml(formatEventStartDisplay(event));
   const parts = [];
@@ -5947,6 +5949,7 @@ function renderReviewPayload(data){
     '<div><div class="section-tag">Prediction Review</div>' +
     '<h3 style="margin:4px 0 0 0;font-size:22px">' + escHtml(ev.name || '') + '</h3>' +
     '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted);letter-spacing:.1em">' +
+      (ev.country && window.flagFor ? window.flagFor(ev.country) + ' ' : '') +
       escHtml((ev.venue || '') + (ev.city ? ' · ' + ev.city : '') + (ev.country ? ' · ' + ev.country : '')) + '</div></div>' +
     '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);letter-spacing:.12em;text-align:right">PRE-FIGHT MODEL · LIVE OBSERVATIONS NOT PERSISTED</div>' +
     '</div>';

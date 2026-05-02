@@ -3466,3 +3466,17 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
   margin: 8px 0 2px;
   line-height: 1.5;
 }
+
+/* Country flags — rendered inline next to fighter nationality + event country.
+   Emoji glyphs vary in width across platforms; nudge to a consistent size + a
+   subtle line-up with adjacent text. Avoids new dependencies. */
+.flag {
+  display: inline-block;
+  font-style: normal;
+  font-size: 1.05em;
+  line-height: 1;
+  vertical-align: -0.05em;
+  margin-right: 2px;
+  /* Keep emoji rendering crisp on Windows where the default font may scale awkwardly. */
+  font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
+}
