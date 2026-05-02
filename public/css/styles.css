@@ -3480,3 +3480,72 @@ svg text{font-family:var(--f-mono);fill:var(--fg-dim)}
   /* Keep emoji rendering crisp on Windows where the default font may scale awkwardly. */
   font-family: "Segoe UI Emoji", "Apple Color Emoji", "Noto Color Emoji", sans-serif;
 }
+
+/* ── Actual-winner highlights on the picks UI ──
+   Applied once a fight has a winner_id. Two visual layers:
+     - .pick-fight__corner.is-winner  → gold ring + brighter background on the
+       corner card. The opposing corner gets .is-loser → dimmed.
+     - .pick-fighter.is-actual-winner → gold border + WINNER chip on the
+       Pick button. The button keeps its existing .selected styling if the
+       user picked the same fighter.
+*/
+.pick-fight__corner.is-winner {
+  outline: 2px solid var(--amber, #FFB020);
+  outline-offset: -2px;
+  box-shadow: 0 0 0 1px rgba(255,176,32,.18) inset, 0 4px 18px -8px rgba(255,176,32,.55);
+  background: linear-gradient(180deg, rgba(255,176,32,.06), rgba(255,176,32,0));
+  position: relative;
+}
+.pick-fight__corner.is-winner .pick-fight__tag {
+  color: var(--amber, #FFB020);
+  letter-spacing: .14em;
+  font-weight: 600;
+}
+.pick-fight__corner.is-loser {
+  opacity: .55;
+  filter: saturate(.65);
+}
+
+.pick-fighter.is-actual-winner {
+  border-color: var(--amber, #FFB020) !important;
+  box-shadow: 0 0 0 1px rgba(255,176,32,.25) inset, 0 0 14px -2px rgba(255,176,32,.35);
+}
+.pick-fighter.is-actual-winner.selected {
+  /* user picked the actual winner — keep the selected colour but stack the
+     gold ring on top so it reads as "you got it right" without losing the
+     selected state. */
+  box-shadow: 0 0 0 2px var(--amber, #FFB020) inset, 0 0 16px -2px rgba(255,176,32,.5);
+}
+.pick-fighter__winner-tag {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 1px 6px;
+  font-family: var(--f-mono);
+  font-size: 9px;
+  letter-spacing: .14em;
+  border: 1px solid var(--amber, #FFB020);
+  color: var(--amber, #FFB020);
+  border-radius: 2px;
+  vertical-align: 1px;
+}
+
+/* Picks-card-summary row (the per-event "my locked card" list) gets the same
+   treatment but compact — winner is bold + 🏆, loser is muted. A row where
+   the user picked the winner gets a soft green border-left; wrong gets red. */
+.picks-card-summary__row.is-correct {
+  border-left: 3px solid var(--green, #4DDB7A);
+  padding-left: 8px;
+}
+.picks-card-summary__row.is-wrong {
+  border-left: 3px solid var(--red, #FF5965);
+  padding-left: 8px;
+}
+.picks-card-summary__winner {
+  color: var(--amber, #FFB020);
+  font-weight: 600;
+}
+.picks-card-summary__loser {
+  color: var(--muted, #6f7888);
+  text-decoration: line-through;
+  text-decoration-color: rgba(255,89,101,.4);
+}

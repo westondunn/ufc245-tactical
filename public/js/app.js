@@ -4630,16 +4630,25 @@ function renderPicksCardSummary(openFights, opts = {}){
     const pickedName = pickedRed ? f.red_name : (pickedBlue ? f.blue_name : '—');
     const corner = pickedRed ? 'red' : (pickedBlue ? 'blue' : '');
     const pickedFighter = pickedRed ? fightFighter(f, 'red') : (pickedBlue ? fightFighter(f, 'blue') : { name: pickedName });
+    const winnerRed = f.winner_id != null && f.winner_id === f.red_fighter_id;
+    const winnerBlue = f.winner_id != null && f.winner_id === f.blue_fighter_id;
     const extras = [
       pick.method_pick ? pick.method_pick : null,
       pick.round_pick ? 'R' + pick.round_pick : null
     ].filter(Boolean).join(' · ');
+    // Decorate the matchup line so the actual winner is visually obvious in
+    // the summary card too. winnerRed / winnerBlue → underline + 🏆 prefix.
+    const redHtml = fighterNameWithAvatar(fightFighter(f, 'red'), { size: 'xs', corner: 'red', compact: true });
+    const blueHtml = fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'xs', corner: 'blue', compact: true });
+    const redCell = winnerRed ? `<span class="picks-card-summary__winner">🏆 ${redHtml}</span>` : (winnerBlue ? `<span class="picks-card-summary__loser">${redHtml}</span>` : redHtml);
+    const blueCell = winnerBlue ? `<span class="picks-card-summary__winner">🏆 ${blueHtml}</span>` : (winnerRed ? `<span class="picks-card-summary__loser">${blueHtml}</span>` : blueHtml);
+    const correctClass = pick && pick.correct === 1 ? ' is-correct' : (pick && pick.correct === 0 ? ' is-wrong' : '');
     return `
-      <div class="picks-card-summary__row">
+      <div class="picks-card-summary__row${correctClass}">
         <div class="picks-card-summary__matchup">
-          ${fighterNameWithAvatar(fightFighter(f, 'red'), { size: 'xs', corner: 'red', compact: true })}
+          ${redCell}
           <span>vs</span>
-          ${fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'xs', corner: 'blue', compact: true })}
+          ${blueCell}
         </div>
         <div class="picks-card-summary__pick ${corner}">
           <strong>${fighterNameWithAvatar(pickedFighter, { size: 'xs', corner, compact: true })}</strong>
@@ -4800,6 +4809,11 @@ function renderPickWidget(fight){
 
   const pickedRed  = pick && pick.picked_fighter_id === fight.red_fighter_id;
   const pickedBlue = pick && pick.picked_fighter_id === fight.blue_fighter_id;
+  // Once the fight is decided, mark which corner actually won. Used to apply
+  // is-winner styling on the corner header + the Pick button + a small WINNER
+  // badge so you can read the result at a glance even when scrolling past.
+  const winnerRed  = fight.winner_id != null && fight.winner_id === fight.red_fighter_id;
+  const winnerBlue = fight.winner_id != null && fight.winner_id === fight.blue_fighter_id;
   const conf = pick ? pick.confidence : 50;
   const methodVal = pick && pick.method_pick || '';
   const roundVal = pick && pick.round_pick || '';
@@ -4921,9 +4935,9 @@ function renderPickWidget(fight){
   return `
     <div class="pick-fight${mainClass}${lockedClass}" data-fight-id="${fight.id}">
       <div class="pick-fight__head">
-        <div class="pick-fight__corner pick-fight__corner--red">
+        <div class="pick-fight__corner pick-fight__corner--red${winnerRed ? ' is-winner' : ''}${winnerBlue ? ' is-loser' : ''}">
           <div class="pick-fight__corner-copy">
-            <div class="pick-fight__tag">Red corner</div>
+            <div class="pick-fight__tag">Red corner${winnerRed ? ' · WINNER' : ''}</div>
             <div class="pick-fight__name-row">
               ${redRecordBadge}
               ${redDebutBadge}
@@ -4934,10 +4948,10 @@ function renderPickWidget(fight){
           ${fighterAvatar({ name: fight.red_name, headshot_url: fight.red_headshot_url, body_url: fight.red_body_url }, { size: 'md', corner: 'red' })}
         </div>
         <div class="pick-fight__vs">VS</div>
-        <div class="pick-fight__corner pick-fight__corner--blue">
+        <div class="pick-fight__corner pick-fight__corner--blue${winnerBlue ? ' is-winner' : ''}${winnerRed ? ' is-loser' : ''}">
           ${fighterAvatar({ name: fight.blue_name, headshot_url: fight.blue_headshot_url, body_url: fight.blue_body_url }, { size: 'md', corner: 'blue' })}
           <div class="pick-fight__corner-copy">
-            <div class="pick-fight__tag">Blue corner</div>
+            <div class="pick-fight__tag">Blue corner${winnerBlue ? ' · WINNER' : ''}</div>
             <div class="pick-fight__name-row">
               <div class="pick-fight__name">${escHtml(fight.blue_name || '—')}</div>
               ${blueDebutBadge}
@@ -4949,11 +4963,11 @@ function renderPickWidget(fight){
       </div>
 
       <div class="pick-fighters">
-        <button class="pick-fighter${pickedRed ? ' selected' : ''}" data-corner="red" data-fighter-id="${fight.red_fighter_id}" ${disabled}>
-          ${pickedRed ? '✓ ' : ''}Pick ${fighterNameWithAvatar(fightFighter(fight, 'red'), { size: 'xs', corner: 'red', compact: true, className: 'pick-fighter__label' })}
+        <button class="pick-fighter${pickedRed ? ' selected' : ''}${winnerRed ? ' is-actual-winner' : ''}" data-corner="red" data-fighter-id="${fight.red_fighter_id}" ${disabled}>
+          ${winnerRed ? '🏆 ' : (pickedRed ? '✓ ' : '')}Pick ${fighterNameWithAvatar(fightFighter(fight, 'red'), { size: 'xs', corner: 'red', compact: true, className: 'pick-fighter__label' })}${winnerRed ? ' <span class="pick-fighter__winner-tag">WINNER</span>' : ''}
         </button>
-        <button class="pick-fighter${pickedBlue ? ' selected' : ''}" data-corner="blue" data-fighter-id="${fight.blue_fighter_id}" ${disabled}>
-          ${pickedBlue ? '✓ ' : ''}Pick ${fighterNameWithAvatar(fightFighter(fight, 'blue'), { size: 'xs', corner: 'blue', compact: true, className: 'pick-fighter__label' })}
+        <button class="pick-fighter${pickedBlue ? ' selected' : ''}${winnerBlue ? ' is-actual-winner' : ''}" data-corner="blue" data-fighter-id="${fight.blue_fighter_id}" ${disabled}>
+          ${winnerBlue ? '🏆 ' : (pickedBlue ? '✓ ' : '')}Pick ${fighterNameWithAvatar(fightFighter(fight, 'blue'), { size: 'xs', corner: 'blue', compact: true, className: 'pick-fighter__label' })}${winnerBlue ? ' <span class="pick-fighter__winner-tag">WINNER</span>' : ''}
         </button>
       </div>
 
