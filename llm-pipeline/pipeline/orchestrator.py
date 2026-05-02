@@ -200,7 +200,10 @@ class Orchestrator:
                     "agreement_with_lr": decision["agreement_with_lr"],
                 },
             }
-            payload["audit"] = audit_prediction(payload)
+            payload["audit"] = audit_prediction(
+                payload,
+                fighter_names=(bout.get("red_name") or "", bout.get("blue_name") or ""),
+            )
             if dry_run:
                 logger.info("[dry-run] would post: fight=%s winner=%s prob=%.2f method=%s",
                             bout["id"], winner, wp, decision["predicted_method"])
