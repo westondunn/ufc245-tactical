@@ -43,3 +43,4 @@ llm-pipeline/data/
 llm-pipeline/.pytest_cache/
 llm-pipeline/__pycache__/
 llm-pipeline/**/__pycache__/
+tmp-world.geojson

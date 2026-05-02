@@ -3851,9 +3851,102 @@ async function loadFunFactsTab(){
     const res = await fetch('/api/funfacts');
     const f = await res.json();
     body.innerHTML = renderFunFactsHtml(f);
+    renderFunFactsWorldMap(f.countries).catch(() => {/* map is decorative; bars always render */});
   } catch (e) {
     body.innerHTML = '<div style="color:var(--red);font-family:var(--f-mono);font-size:11px">Error loading fun facts</div>';
   }
+}
+
+// Country-name → SVG-path-`data-name` aliases. The SVG uses Natural Earth
+// names; our DB uses everyday short names. Only entries that actually
+// disagree need to live here; exact matches are handled by the loop.
+const FF_MAP_ALIASES = {
+  'usa': 'united states of america',
+  'us': 'united states of america',
+  'united states': 'united states of america',
+  'uk': 'united kingdom',
+  'great britain': 'united kingdom',
+  'england': 'united kingdom',
+  'scotland': 'united kingdom',
+  'wales': 'united kingdom',
+  'northern ireland': 'united kingdom',
+  'south korea': 'south korea',
+  'korea': 'south korea',
+  'czech republic': 'czechia',
+  'czechia': 'czechia',
+  'russia': 'russia',
+  'bosnia and herzegovina': 'bosnia and herz.',
+  'dominican republic': 'dominican rep.',
+  'tanzania': 'united republic of tanzania',
+};
+
+function ffNormCountryName(s) {
+  return String(s || '').toLowerCase().replace(/[^a-z]+/g, ' ').replace(/\s+/g, ' ').trim();
+}
+
+async function renderFunFactsWorldMap(countries) {
+  const host = document.getElementById('ffWorldMap');
+  if (!host) return;
+  // Show shimmer while we fetch the SVG.
+  host.innerHTML = '<div class="ff-map__loading">Loading world map…</div>';
+  let svgText;
+  try {
+    const r = await fetch('/img/world-map.svg', { cache: 'force-cache' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    svgText = await r.text();
+  } catch (e) {
+    host.innerHTML = '<div class="ff-map__err" style="color:var(--muted);font-family:var(--f-mono);font-size:10px">Map unavailable.</div>';
+    return;
+  }
+  host.innerHTML = svgText;
+
+  // Build name → count, accounting for aliases.
+  const counts = new Map();
+  for (const c of countries) {
+    const k = FF_MAP_ALIASES[ffNormCountryName(c.country)] || ffNormCountryName(c.country);
+    counts.set(k, (counts.get(k) || 0) + c.count);
+  }
+
+  const max = Math.max(1, ...Array.from(counts.values()));
+  const logMax = Math.log10(max + 1);
+  const colorFor = n => {
+    if (!n) return null;
+    const t = Math.log10(n + 1) / logMax;     // 0..1 in log space
+    // Cyan → magenta gradient over the project's accent palette.
+    const r = Math.round(0x4D + (0xE5 - 0x4D) * t);
+    const g = Math.round(0xD0 + (0x40 - 0xD0) * t);
+    const b = Math.round(0xE1 + (0xA0 - 0xE1) * t);
+    return 'rgb(' + r + ',' + g + ',' + b + ')';
+  };
+
+  const tip = document.getElementById('ffMapTip');
+  const paths = host.querySelectorAll('path[data-name]');
+  let matched = 0;
+  paths.forEach(p => {
+    const name = p.getAttribute('data-name') || '';
+    const norm = ffNormCountryName(name);
+    const count = counts.get(norm) || 0;
+    if (count > 0) {
+      const c = colorFor(count);
+      if (c) { p.setAttribute('fill', c); matched++; }
+      p.setAttribute('data-count', String(count));
+      p.classList.add('ff-map__has-data');
+    }
+    p.addEventListener('mouseenter', evt => {
+      if (!tip) return;
+      const n = parseInt(p.getAttribute('data-count') || '0', 10);
+      tip.textContent = n > 0 ? (name + ' · ' + n + ' fighter' + (n === 1 ? '' : 's')) : name;
+      tip.hidden = false;
+    });
+    p.addEventListener('mousemove', evt => {
+      if (!tip) return;
+      const rect = host.getBoundingClientRect();
+      tip.style.left = (evt.clientX - rect.left + 12) + 'px';
+      tip.style.top = (evt.clientY - rect.top + 12) + 'px';
+    });
+    p.addEventListener('mouseleave', () => { if (tip) tip.hidden = true; });
+  });
+  if (window.console) console.debug('[funfacts] world map: ' + matched + '/' + paths.length + ' countries shaded');
 }
 
 function renderFunFactsHtml(f){
@@ -3900,6 +3993,10 @@ function renderFunFactsHtml(f){
   const countriesPanel =
     '<div class="ff-panel">' +
       '<h3 class="ff-h3">Where the roster comes from <span class="ff-h3__sub">· top ' + top.length + ' countries</span></h3>' +
+      '<div class="ff-map-wrap">' +
+        '<div class="ff-map" id="ffWorldMap" aria-label="World map of fighter origins"></div>' +
+        '<div class="ff-map-tip" id="ffMapTip" hidden></div>' +
+      '</div>' +
       '<div class="ff-bar-list">' + countryBars + '</div>' +
     '</div>';
 

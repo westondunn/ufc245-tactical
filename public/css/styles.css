@@ -3715,3 +3715,57 @@ img.flag {
   letter-spacing: .12em;
   color: var(--amber, #FFB020);
 }
+
+/* World map (choropleth) inside the Fun Facts country panel. */
+.ff-map-wrap {
+  position: relative;
+  margin: 0 0 22px;
+  border: 1px solid var(--border-soft);
+  border-radius: 4px;
+  background: rgba(255,255,255,0.012);
+  overflow: hidden;
+}
+.ff-map {
+  width: 100%;
+  aspect-ratio: 2 / 1;
+  display: block;
+  min-height: 200px;
+}
+.ff-map svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  background: #0A0C14;
+}
+.ff-map svg path {
+  transition: fill 120ms ease, stroke 120ms ease;
+  cursor: default;
+}
+.ff-map svg path.ff-map__has-data {
+  cursor: pointer;
+}
+.ff-map svg path:hover {
+  stroke: #FFB020;
+  stroke-width: 0.8;
+}
+.ff-map__loading {
+  padding: 30px 20px;
+  color: var(--muted);
+  font-family: var(--f-mono);
+  font-size: 11px;
+  text-align: center;
+}
+.ff-map-tip {
+  position: absolute;
+  pointer-events: none;
+  background: rgba(10,12,20,0.95);
+  border: 1px solid var(--border-soft);
+  border-radius: 3px;
+  padding: 5px 9px;
+  font-family: var(--f-mono);
+  font-size: 11px;
+  color: var(--fg);
+  letter-spacing: .04em;
+  z-index: 5;
+  white-space: nowrap;
+}
