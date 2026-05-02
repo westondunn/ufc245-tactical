@@ -56,13 +56,14 @@ test.describe('Page Load', () => {
   test('renders all primary tab buttons', async ({ page }) => {
     await page.goto('/');
     const tabs = page.locator('.primary-tab');
-    await expect(tabs).toHaveCount(6);
+    await expect(tabs).toHaveCount(7);
     await expect(tabs.nth(0)).toContainText('Dashboard');
     await expect(tabs.nth(1)).toContainText('Events');
     await expect(tabs.nth(2)).toContainText('Fighters');
     await expect(tabs.nth(3)).toContainText('Stat Leaders');
-    await expect(tabs.nth(4)).toContainText('Review');
-    await expect(tabs.nth(5)).toContainText('Picks');
+    await expect(tabs.nth(4)).toContainText('Fun Facts');
+    await expect(tabs.nth(5)).toContainText('Review');
+    await expect(tabs.nth(6)).toContainText('Picks');
   });
 
   test('Dashboard tab is active by default', async ({ page }) => {
