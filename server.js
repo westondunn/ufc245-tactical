@@ -644,6 +644,36 @@ app.post('/api/events/:id/official-outcomes', requirePredictionKey, apiHandler(a
 }));
 
 // ============================================================
+// DATA AUDIT API (internal, key-protected)
+// ============================================================
+const auditApi = require('./data/audit/api');
+const { runAudit: runAuditJob } = require('./data/audit/runner');
+
+app.get('/api/data/coverage', requirePredictionKey, apiHandler(async (req, res) => {
+  if (req.query.diff === 'last2') {
+    return res.json(await auditApi.getDiffLast2());
+  }
+  if (req.query.table && req.query.column) {
+    return res.json(await auditApi.getColumnHistory({
+      table: String(req.query.table).slice(0, 64),
+      column: String(req.query.column).slice(0, 64),
+      scope: req.query.scope ? String(req.query.scope).slice(0, 64) : null,
+      limit: req.query.limit,
+    }));
+  }
+  let runId = req.query.run && req.query.run !== 'latest' ? String(req.query.run).slice(0, 64) : null;
+  if (!runId) runId = await auditApi.getLatestCompleteRunId();
+  if (!runId) return res.json({ run_id: null, snapshots: [] });
+  res.json({ run_id: runId, snapshots: await auditApi.getCoverageForRun(runId) });
+}));
+
+app.post('/api/data/audit/run', requirePredictionKey, apiHandler(async (req, res) => {
+  const scope = req.body && req.body.scope ? String(req.body.scope).slice(0, 64) : null;
+  const result = await runAuditJob({ scope, triggerSource: 'http' });
+  res.json(result);
+}));
+
+// ============================================================
 // USER PICKS API (additive, flag-gated via ENABLE_PICKS)
 // ============================================================
 const validate = require('./lib/validate');
