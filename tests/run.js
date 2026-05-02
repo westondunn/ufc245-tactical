@@ -1638,6 +1638,12 @@ async function run() {
   passed += auditScopesResult.passed;
   failed += auditScopesResult.failed;
 
+  // ── Audit Runner ──
+  const auditRunnerSuite = require('./audit/runner.test');
+  const auditRunnerResult = await auditRunnerSuite.run();
+  passed += auditRunnerResult.passed;
+  failed += auditRunnerResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
