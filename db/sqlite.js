@@ -1090,9 +1090,25 @@ function getFunFacts() {
     return age >= 0 && age <= 80 ? age : null;
   };
 
+  const COUNTRY_CANON = {
+    'usa': 'United States', 'u.s.a.': 'United States', 'us': 'United States',
+    'united states of america': 'United States',
+    'uk': 'United Kingdom', 'great britain': 'United Kingdom', 'britain': 'United Kingdom',
+    'england': 'United Kingdom', 'scotland': 'United Kingdom',
+    'wales': 'United Kingdom', 'northern ireland': 'United Kingdom',
+    'czech republic': 'Czechia',
+    'south korea': 'South Korea', 'korea': 'South Korea',
+    'türkiye': 'Turkey', 'turkiye': 'Turkey',
+  };
+  const canonCountry = raw => {
+    const s = String(raw || '').trim();
+    if (!s) return null;
+    return COUNTRY_CANON[s.toLowerCase()] || s;
+  };
+
   const lite = f => ({
     id: f.id, name: f.name, nickname: f.nickname,
-    weight_class: f.weight_class, nationality: f.nationality,
+    weight_class: f.weight_class, nationality: canonCountry(f.nationality),
     headshot_url: f.headshot_url, body_url: f.body_url,
   });
 
@@ -1118,10 +1134,8 @@ function getFunFacts() {
       const s = String(f.stance).trim();
       stanceCt.set(s, (stanceCt.get(s) || 0) + 1);
     }
-    if (f.nationality) {
-      const c = String(f.nationality).trim();
-      if (c) countryCt.set(c, (countryCt.get(c) || 0) + 1);
-    }
+    const c = canonCountry(f.nationality);
+    if (c) countryCt.set(c, (countryCt.get(c) || 0) + 1);
   }
 
   ages.sort((a, b) => a.age - b.age);
