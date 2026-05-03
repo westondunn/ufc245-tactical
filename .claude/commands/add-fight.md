@@ -1,33 +1,26 @@
 # Add Fight
 
-Add a new UFC fight to the database.
+Add or correct UFC fight data using the `data-etl` skill.
 
-## Usage
+Project invariants: Node.js 22+, CommonJS main app, Express 5, sql.js/SQLite fallback, PostgreSQL when `DATABASE_URL` is set, dynamic `better-auth/node` import only, `apiHandler()` for API routes, parameterized DB queries, `escHtml()` for API-sourced `innerHTML`, credible fight data sources only, dense dashboard UI, targeted tests before broad tests.
 
-Tell me the details of the fight and I'll add it to `data/generate_seed.py` and regenerate the seed.
+## Required Inputs
 
-## Required Information
+- Event number, name, date, venue, city, and country when available.
+- Red and blue fighter profile fields: name, nickname, height, reach, stance, weight class, nationality, and DOB when available.
+- Result fields: method, detail, round, time, referee, winner, title/main status, and card position.
+- Source URLs or citations for every new fact.
 
-- UFC event number (e.g., 310)
-- Event name, date, venue, city
-- Red corner fighter: name, nickname, height (cm), reach (cm), stance, weight class, nationality
-- Blue corner fighter: same fields
-- Result: method, detail, round, time, winner
-- Whether it's a title fight and/or main event
+## Workflow
 
-## Steps
+1. Search existing fighters/events/fights before adding duplicates.
+2. Edit `data/generate_seed.py` when source seed data changes.
+3. Regenerate with `python data/generate_seed.py`.
+4. Run targeted integrity checks, then `npm test`.
+5. Keep DB/API rules from `AGENTS.md`: parameterized queries, `apiHandler()`, escaped frontend rendering.
 
-1. Add fighters using `F()` in `data/generate_seed.py` (skip if already exists)
-2. Add event using `E()` (skip if already exists)
-3. Add fight using `FIGHT()`
-4. Optionally add stats using `STATS()`
-5. Run `python3 data/generate_seed.py` to regenerate seed.json
-6. Run `node tests/run.js` to verify integrity
-7. Commit with message: `feat: add UFC {number} data`
+## Source Rules
 
-## Data Sources
-
-- Results: UFCStats.com (official)
-- Fighter profiles: UFC.com
-- Detailed stats: UFCStats.com fight detail page
-- Never fabricate data
+- Prefer UFCStats.com for official results and fight stats.
+- Use UFC.com or other credible references for fighter profiles.
+- Never fabricate missing stats, profile values, or outcomes.

@@ -27,12 +27,12 @@
 - [ ] Added fighter(s): <!-- names -->
 - [ ] Added event(s): <!-- UFC numbers -->
 - [ ] Added fight(s): <!-- count -->
-- [ ] Ran `npm run seed` to regenerate seed.json
+- [ ] Ran `python data/generate_seed.py` to regenerate seed.json
 - [ ] Fight stats sourced from: <!-- UFCStats.com / ESPN / other -->
 
 ## Quality Checklist
 
-- [ ] `node tests/run.js` passes locally
+- [ ] `npm test` passes locally
 - [ ] No hardcoded secrets, tokens, or API keys
 - [ ] HTML escaping applied to any user/API-sourced data in innerHTML
 - [ ] API routes wrapped in `apiHandler()` error wrapper

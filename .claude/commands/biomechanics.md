@@ -1,60 +1,21 @@
 # Biomechanics Analysis
 
-Generate a biomechanics breakdown for a specific fighter and strike type.
+Use this command for force estimates, kinetic chain output, and strike damage analysis.
 
-## Usage
+Project invariants: Node.js 22+, CommonJS main app, Express 5, sql.js/SQLite fallback, PostgreSQL when `DATABASE_URL` is set, dynamic `better-auth/node` import only, `apiHandler()` for API routes, parameterized DB queries, `escHtml()` for API-sourced `innerHTML`, credible fight data sources only, dense dashboard UI, targeted tests before broad tests.
 
-Tell me the fighter name and strike type, and I'll use the biomechanics framework to generate force estimates, kinetic chain data, and injury threshold analysis.
+## Workflow
 
-## Available Strike Types
+1. Inspect `lib/biomechanics.js` before changing formulas or strike types.
+2. Preserve public endpoints in `server.js` unless the task explicitly changes the API:
+   - `GET /api/biomechanics/estimate`
+   - `GET /api/biomechanics/chain`
+   - `GET /api/biomechanics/strikes`
+3. Keep API safety rules from `AGENTS.md`: use reviewed route handling, parameterized data access where relevant, and escaped frontend rendering.
+4. Run `npm test` after changing biomechanics behavior.
 
-- `right_cross` — straight right hand
-- `left_hook` — lead hook
-- `jab` — lead straight
-- `uppercut` — rear uppercut
-- `body_kick` — roundhouse to body
-- `head_kick` — roundhouse to head
-- `leg_kick` — low kick to thigh/calf
-- `front_kick` — teep/push kick
-- `knee` — clinch knee
-- `elbow` — short elbow strike
-- `hammerfist` — ground and pound
+## Citation Rules
 
-## Framework Usage
-
-```javascript
-const bio = require('./lib/biomechanics');
-
-// Estimate force for a specific strike
-const result = bio.estimateStrikeForce({
-  bodyMassKg: 77,        // fighter weight in kg
-  strikeType: 'right_cross',
-  gloveOz: 4             // 4oz MMA, 10oz boxing, 16oz training
-});
-
-// Generate full kinetic chain
-const chain = bio.kineticChain('right_cross', { bodyMassKg: 77 });
-
-// Damage assessment against specific target
-const damage = bio.damageAssessment({
-  bodyMassKg: 77,
-  strikeType: 'right_cross',
-  target: 'head'  // head, body, nose
-});
-```
-
-## API Endpoints
-
-```
-GET /api/biomechanics/estimate?mass=77&strike=right_cross&target=head
-GET /api/biomechanics/chain?mass=77&strike=body_kick
-GET /api/biomechanics/strikes   (list all available types + thresholds)
-```
-
-## Citation Requirements
-
-Every force estimate must reference its source:
-- Walilko, Viano & Bir (2005) — Olympic boxer punch force (Br J Sports Med)
-- Kacprzak et al. (2025) — Effective mass scaling exponent
-- Dunn et al. (2023) — Elite amateur striker forces (PLOS ONE)
-- Corcoran et al. (2024) — Kick biomechanics meta-review
+- Every force estimate must cite credible biomechanics literature.
+- Do not invent thresholds, strike forces, or injury claims.
+- Existing cited sources include Walilko/Viano/Bir, Kacprzak et al., Dunn et al., and Corcoran et al.; verify before adding new claims.

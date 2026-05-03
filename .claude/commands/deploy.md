@@ -1,52 +1,30 @@
 # Deploy
 
-Deploy the UFC Tactical Dashboard to Railway.
+Use this command for Railway deployment checks and release readiness.
 
-## Automatic Deployment (recommended)
+Project invariants: Node.js 22+, CommonJS main app, Express 5, sql.js/SQLite fallback, PostgreSQL when `DATABASE_URL` is set, dynamic `better-auth/node` import only, `apiHandler()` for API routes, parameterized DB queries, `escHtml()` for API-sourced `innerHTML`, credible fight data sources only, dense dashboard UI, targeted tests before broad tests.
 
-Railway auto-deploys when code is pushed to `main`. The CI pipeline runs quality gates on every PR:
+## CI Gates
 
-1. Create a branch: `git checkout -b feat/my-changes`
-2. Make changes
-3. Run tests: `node tests/run.js`
-4. Push and open a PR
-5. CI runs quality gates automatically
-6. After review + merge → Railway auto-deploys
-7. Version auto-bumps based on commit message prefix
+- Main app: `npm test`
+- E2E: `npm run test:e2e`
+- Prediction service:
+  - `python ufc245-predictions/tests/test_model.py`
+  - `python ufc245-predictions/tests/test_jobs.py`
+  - `python ufc245-predictions/tests/test_app.py`
+- Server boot smoke and security header checks run in `.github/workflows/ci.yml`.
 
-## Version Bumping
+## Version Bump Rules
 
-Handled automatically by `.github/workflows/deploy.yml`:
+`.github/workflows/deploy.yml` bumps versions from the first commit subject:
 
-- `feat:` or `add:` → minor bump (2.1.0 → 2.2.0)
-- `fix:` → patch bump (2.1.0 → 2.1.1)
-- `BREAKING:` → major bump (2.1.0 → 3.0.0)
-- Other → patch bump
+- `feat:` or `feat(scope):` -> minor
+- `fix:` and other non-breaking changes -> patch
+- `BREAKING CHANGE:` trailer or `type!:` subject -> major
+- `[skip-version]` skips the bump loop.
 
-## Manual Deploy (if needed)
+## Deployment Notes
 
-```bash
-npm install -g @railway/cli
-railway login
-railway up
-```
-
-## Verify Deployment
-
-```bash
-# Check health
-curl https://YOUR-APP.up.railway.app/healthz
-
-# Check version
-curl https://YOUR-APP.up.railway.app/api/version
-
-# Test search
-curl "https://YOUR-APP.up.railway.app/api/fighters/search?q=usman"
-```
-
-## Rollback
-
-Railway supports instant rollback in the dashboard:
-1. Go to your Railway project → Deployments
-2. Click the previous deployment
-3. Click "Rollback to this deployment"
+- Railway deploys from `main` through the GitHub integration.
+- Preserve `RAILWAY_WEB_URL`, `RAILWAY_PREDICTIONS_URL`, and `PREDICTION_SERVICE_KEY` verification behavior.
+- Do not change auth startup, CSP, or health contracts without matching CI and deploy verification updates.
