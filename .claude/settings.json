@@ -5,9 +5,9 @@
     "repository": "https://github.com/westondunn/ufc245-tactical"
   },
   "conventions": {
-    "language": "JavaScript (Node.js 20+, ES2022)",
-    "framework": "Express 4 + vanilla frontend (single HTML file)",
-    "database": "SQLite via sql.js (WASM, in-memory, seeded from JSON)",
+    "language": "JavaScript (Node.js 22+, ES2022)",
+    "framework": "Express 5 + vanilla frontend assets",
+    "database": "PostgreSQL when DATABASE_URL is set; otherwise SQLite via sql.js",
     "3d": "Three.js r128 via CDN",
     "testing": "Custom runner (tests/run.js), no framework",
     "style": {
@@ -29,9 +29,9 @@
     ]
   },
   "commands": {
-    "test": "node tests/run.js",
+    "test": "node tests/run.js && node tests/auth.test.js",
     "dev": "npm run dev",
-    "seed": "cd data && python3 generate_seed.py",
+    "seed": "python data/generate_seed.py",
     "start": "npm start"
   }
 }
