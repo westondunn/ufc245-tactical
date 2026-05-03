@@ -446,6 +446,7 @@ body::after{
   font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--muted);margin-top:4px;
 }
 .compare-slot__clear{
+  background: none;border: 0;padding: 0;
   font-family:var(--f-mono);font-size:9px;color:var(--muted-dim);cursor:pointer;
   margin-top:8px;text-decoration:underline;
 }
@@ -3801,4 +3802,14 @@ img.flag {
   letter-spacing: .04em;
   z-index: 5;
   white-space: nowrap;
+}
+
+.search-result:hover,
+.event-fight-row:hover,
+[data-load-fighter-events]:hover {
+  background: rgba(45,220,255,.04);
+}
+
+.search-result:hover {
+  background: rgba(45,220,255,.06);
 }

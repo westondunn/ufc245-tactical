@@ -46,7 +46,6 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const fs = require('fs');
-const crypto = require('crypto');
 const db = require('./db');
 const { buildAuth } = require('./auth');
 // `auth` is populated inside the async bootstrap by awaiting buildAuth().
@@ -58,6 +57,12 @@ const tactical = require('./lib/tactical');
 const ver = require('./lib/version');
 const cache = require('./lib/cache');
 const { buildPredictionReview } = require('./lib/predictionReview');
+const rateLimit = require('./lib/rate-limit');
+const {
+  asSingleHeader,
+  timingSafeEqualSecret,
+  secretStrengthError,
+} = require('./lib/secure-secrets');
 
 const app = express();
 const PORT = process.env.PORT || 3000;
@@ -112,7 +117,7 @@ app.use((req, res, next) => {
     "default-src 'self'; " +
     "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
     "font-src 'self' https://fonts.gstatic.com; " +
-    "script-src 'self' 'unsafe-inline' https://cdnjs.cloudflare.com; " +
+    "script-src 'self'; " +
     "img-src 'self' data: https://ufc.com https://www.ufc.com https://*.ufc.com https://flagcdn.com; " +
     "connect-src 'self'"
   );
@@ -460,11 +465,24 @@ app.get('/api/biomechanics/strikes', (_req, res) => {
 // PREDICTIONS API (communicates with prediction microservice)
 // ============================================================
 const PREDICTION_SERVICE_KEY = process.env.PREDICTION_SERVICE_KEY || null;
+const PREDICTION_AUTH_WINDOW_MS = 5 * 60 * 1000;
+const PREDICTION_AUTH_MAX_FAILURES = 30;
+
+function clientRateKey(req, prefix) {
+  return prefix + ':' + String(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').replace(/^::ffff:/, '');
+}
 
 function requirePredictionKey(req, res, next) {
   if (!PREDICTION_SERVICE_KEY) return res.status(503).json({ error: 'predictions_disabled', message: 'Set PREDICTION_SERVICE_KEY env var to enable' });
-  const key = req.headers['x-prediction-key'];
-  if (key !== PREDICTION_SERVICE_KEY) return res.status(401).json({ error: 'unauthorized' });
+  const key = asSingleHeader(req.headers['x-prediction-key']);
+  if (!timingSafeEqualSecret(key, PREDICTION_SERVICE_KEY)) {
+    const rateKey = clientRateKey(req, 'prediction-key');
+    if (!rateLimit.consume(rateKey, PREDICTION_AUTH_MAX_FAILURES, PREDICTION_AUTH_WINDOW_MS)) {
+      return res.status(429).json({ error: 'too_many_attempts' });
+    }
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  res.setHeader('Cache-Control', 'private, no-store');
   next();
 }
 
@@ -715,14 +733,15 @@ app.get('/api/data/backfill/queue', requirePredictionKey, apiHandler(async (req,
 // USER PICKS API (additive, flag-gated via ENABLE_PICKS)
 // ============================================================
 const validate = require('./lib/validate');
-const rateLimit = require('./lib/rate-limit');
 const ENABLE_PICKS = /^(1|true|yes|on)$/i.test(String(process.env.ENABLE_PICKS || ''));
 const CREATE_USER_PER_HOUR = Math.max(1, parseInt(process.env.PICKS_RATE_LIMIT_CREATE_USER || '5', 10) || 5);
 const PICK_WRITES_PER_MIN = Math.max(1, parseInt(process.env.PICKS_RATE_LIMIT_PER_MIN || '60', 10) || 60);
 // Transition flag: while flipped on, requireUser still accepts the legacy
 // `x-user-id` header so the existing frontend keeps working before the auth UI
 // ships. Remove in Phase 10 once the frontend is fully cookie-based.
-const LEGACY_HEADER_AUTH = /^(1|true|yes|on)$/i.test(String(process.env.LEGACY_HEADER_AUTH || '1'));
+const LEGACY_HEADER_AUTH = /^(1|true|yes|on)$/i.test(String(
+  process.env.LEGACY_HEADER_AUTH || (IS_PRODUCTION ? '' : '1')
+));
 
 function requirePicksFlag(_req, res, next) {
   if (!ENABLE_PICKS) return res.status(503).json({ error: 'picks_disabled', message: 'Set ENABLE_PICKS=true to enable' });
@@ -785,6 +804,7 @@ app.post('/api/users', requirePicksFlag, apiHandler(async (req, res) => {
 // Public (unauthenticated) — knowing the id was already the auth token in the
 // guest-only era, so leaking the count is consistent with that model.
 app.get('/api/picks/guest-count/:guestId', requirePicksFlag, apiHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'private, no-store');
   const id = req.params.guestId;
   const inUsers = await db.getUser(id);
   const inLegacy = inUsers ? null : await db.oneRow('SELECT id FROM users_legacy WHERE id = ?', [id]);
@@ -812,6 +832,7 @@ app.post('/api/picks/claim-guest', requirePicksFlag, requireUser, apiHandler(asy
 app.get('/api/users/:id', requirePicksFlag, apiHandler(async (req, res) => {
   const user = await db.getUser(req.params.id);
   if (!user) return res.status(404).json({ error: 'user_not_found' });
+  res.setHeader('Cache-Control', 'private, no-store');
   res.json({ user });
 }));
 
@@ -834,6 +855,7 @@ app.get('/api/users/:id/picks', requirePicksFlag, apiHandler(async (req, res) =>
   if (req.query.event_id) opts.event_id = parseInt(req.query.event_id, 10);
   if (req.query.reconciled === '1') opts.reconciled = true;
   if (req.query.reconciled === '0') opts.reconciled = false;
+  res.setHeader('Cache-Control', 'private, no-store');
   res.json({ picks: await db.getPicksForUser(req.params.id, opts) });
 }));
 
@@ -841,6 +863,7 @@ app.get('/api/users/:id/picks', requirePicksFlag, apiHandler(async (req, res) =>
 app.get('/api/users/:id/stats', requirePicksFlag, apiHandler(async (req, res) => {
   const user = await db.getUser(req.params.id);
   if (!user) return res.status(404).json({ error: 'user_not_found' });
+  res.setHeader('Cache-Control', 'private, no-store');
   res.json({
     user: { id: user.id, display_name: user.display_name, avatar_key: user.avatar_key },
     stats: await db.getUserStats(req.params.id)
@@ -935,6 +958,9 @@ app.use(express.static(path.join(__dirname, 'public'), {
     if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
   }
 }));
+app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'three', 'build'), {
+  etag: true, lastModified: true, maxAge: '30d',
+}));
 
 app.get('/healthz', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
@@ -991,11 +1017,7 @@ function requireLocalAdminPortal(req, res, next) {
   next();
 }
 function timingSafeAdminKey(input) {
-  if (!ADMIN_KEY || typeof input !== 'string') return false;
-  const expected = Buffer.from(ADMIN_KEY);
-  const actual = Buffer.from(input);
-  if (expected.length !== actual.length) return false;
-  return crypto.timingSafeEqual(expected, actual);
+  return timingSafeEqualSecret(input, ADMIN_KEY);
 }
 function adminRateKey(req) {
   return String(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').replace(/^::ffff:/, '');
@@ -1026,8 +1048,8 @@ function clearAdminFailures(req) {
 function requireAdmin(req, res, next) {
   if (!ADMIN_KEY) return res.status(503).json({ error: 'admin_disabled', message: 'Set ADMIN_KEY env var to enable' });
   if (tooManyAdminFailures(req)) return res.status(429).json({ error: 'too_many_attempts' });
-  const key = req.headers['x-admin-key'];
-  if (!timingSafeAdminKey(typeof key === 'string' ? key : '')) {
+  const key = asSingleHeader(req.headers['x-admin-key']);
+  if (!timingSafeAdminKey(key)) {
     recordAdminFailure(req);
     return res.status(401).json({ error: 'unauthorized' });
   }
@@ -1073,6 +1095,31 @@ const adminIssues = require('./data/admin/issues');
 const adminRegistry = require('./data/admin/registry');
 const adminActions = require('./data/admin/actions');
 const backfillReview = require('./data/backfill/review');
+
+function validateProductionSecurityConfig() {
+  if (!IS_PRODUCTION) return;
+  const errors = [];
+  const betterAuthError = secretStrengthError('BETTER_AUTH_SECRET', process.env.BETTER_AUTH_SECRET);
+  if (betterAuthError) errors.push(betterAuthError);
+  if (!process.env.BETTER_AUTH_URL) errors.push('BETTER_AUTH_URL is required in production');
+  if (PREDICTION_SERVICE_KEY) {
+    const predictionError = secretStrengthError('PREDICTION_SERVICE_KEY', PREDICTION_SERVICE_KEY);
+    if (predictionError) errors.push(predictionError);
+  }
+  if (ADMIN_KEY) {
+    const adminError = secretStrengthError('ADMIN_KEY', ADMIN_KEY);
+    if (adminError) errors.push(adminError);
+  }
+  if (ADMIN_KEY && PREDICTION_SERVICE_KEY && ADMIN_KEY === PREDICTION_SERVICE_KEY) {
+    errors.push('ADMIN_KEY and PREDICTION_SERVICE_KEY must be different secrets');
+  }
+  if (ENABLE_LOCAL_ADMIN && !ALLOW_PROD_ADMIN) {
+    errors.push('ENABLE_LOCAL_ADMIN is ignored in production unless ALLOW_PROD_ADMIN=true');
+  }
+  if (errors.length) {
+    throw new Error('Production security config failed: ' + errors.join('; '));
+  }
+}
 
 app.get('/api/admin/data/overview', requireLocalAdminPortal, requireAdmin, apiHandler(async (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
@@ -1383,6 +1430,8 @@ function startCronTasks() {
 // START (async for db init)
 // ============================================================
 async function bootstrap() {
+  validateProductionSecurityConfig();
+
   // ── Load better-auth/node via dynamic import ──────────────────────────────
   // See the comment block at the top of this file for the full explanation.
   // Short version: better-auth/node is ESM-only (.mjs); require() throws

@@ -1457,7 +1457,7 @@ async function run() {
   console.log('\nHTML:');
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   assert(html.includes('<!DOCTYPE html>'), 'HTML has doctype');
-  assert(html.includes('three.min.js'), 'Three.js CDN included');
+  assert(html.includes('/vendor/three/three.min.js'), 'self-hosted Three.js included');
   assert(html.includes('appVersion'), 'version display element present');
   assert(html.includes('comparePanel'), 'comparison panel present');
   assert(html.includes('fighterSearch'), 'fighter search input present');
@@ -1477,6 +1477,8 @@ async function run() {
   assert(serverJs.includes('X-App-Version'), 'version header set');
   assert(serverJs.includes('apiHandler'), 'error handling wrapper present');
   assert(serverJs.includes('Content-Security-Policy'), 'CSP header set');
+  assert(!serverJs.includes("script-src 'self' 'unsafe-inline'"), 'CSP script-src blocks inline script execution');
+  assert(serverJs.includes("process.env.LEGACY_HEADER_AUTH || (IS_PRODUCTION ? '' : '1')"), 'legacy header auth defaults off in production');
   assert(serverJs.includes('X-Content-Type-Options'), 'nosniff header set');
   assert(serverJs.includes('SIGTERM'), 'graceful shutdown handler');
   assert(serverJs.includes('fighterMassKg'), 'weight-class mass lookup present');
@@ -1484,6 +1486,11 @@ async function run() {
   assert(serverJs.includes('Referrer-Policy'), 'Referrer-Policy header set');
   assert(serverJs.includes('Permissions-Policy'), 'Permissions-Policy header set');
   assert(serverJs.includes('parameterized') || serverJs.includes('?'), 'parameterized queries used');
+
+  const secrets = require('../lib/secure-secrets');
+  assert(secrets.timingSafeEqualSecret('a'.repeat(24), 'a'.repeat(24)), 'secure secret helper accepts matching strong secrets');
+  assert(!secrets.timingSafeEqualSecret('short', 'short'), 'secure secret helper rejects short secrets');
+  assert(!secrets.timingSafeEqualSecret('a'.repeat(24), 'b'.repeat(24)), 'secure secret helper rejects mismatched secrets');
 
   // ── railway.json ──
   console.log('\nRailway Config:');

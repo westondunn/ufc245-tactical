@@ -172,6 +172,7 @@ jobs:
       RAILWAY_WEB_URL: ${{ secrets.RAILWAY_WEB_URL }}
       RAILWAY_PREDICTIONS_URL: ${{ secrets.RAILWAY_PREDICTIONS_URL }}
       PREDICTION_SERVICE_KEY: ${{ secrets.PREDICTION_SERVICE_KEY }}
+      RUN_LIVE_PREDICTION_TRIGGERS: ${{ vars.RUN_LIVE_PREDICTION_TRIGGERS }}
     steps:
       - name: Check deploy-verification secrets
         id: check_secrets
@@ -217,7 +218,7 @@ jobs:
           check_health "$RAILWAY_WEB_URL" "web"
           check_health "$RAILWAY_PREDICTIONS_URL" "predictions"
 
-      - name: Verify predictions contract + authenticated triggers
+      - name: Verify predictions contract
         if: steps.check_secrets.outputs.missing == '0'
         run: |
           set -euo pipefail
@@ -233,6 +234,10 @@ jobs:
             });
           "
 
+      - name: Verify authenticated prediction triggers
+        if: steps.check_secrets.outputs.missing == '0' && env.RUN_LIVE_PREDICTION_TRIGGERS == 'true'
+        run: |
+          set -euo pipefail
           for route in retrain predict; do
             code=$(curl -s -o /tmp/${route}.json -w "%{http_code}" \
               -X POST "$RAILWAY_PREDICTIONS_URL/trigger/$route" \
@@ -263,4 +268,3 @@ jobs:
               console.log('main app predictions contract OK; rows=' + j.length);
             });
           "
-

@@ -13,15 +13,33 @@ const fs = require('fs');
 const path = require('path');
 
 const MAIL_DIR = path.join(__dirname, '..', 'tmp', 'mail');
+const NODE_ENV = process.env.NODE_ENV || 'production';
+const MAIL_PROVIDER = String(process.env.MAIL_PROVIDER || '').toLowerCase();
+
+if (NODE_ENV === 'production' && MAIL_PROVIDER !== 'webhook' && process.env.ALLOW_FILE_MAIL_IN_PRODUCTION !== 'true') {
+  throw new Error('MAIL_PROVIDER=webhook is required in production for verification/reset email flows');
+}
+if (MAIL_PROVIDER === 'webhook' && !process.env.MAIL_WEBHOOK_URL) {
+  throw new Error('MAIL_WEBHOOK_URL is required when MAIL_PROVIDER=webhook');
+}
 
 function safePart(s) {
   return String(s || 'unknown').replace(/[^a-z0-9._-]/gi, '_').slice(0, 60);
 }
 
 async function sendMail({ to, subject, html, text }) {
-  // TODO: when wiring a real provider, branch on process.env.MAIL_PROVIDER:
-  //   if ('resend') { await resend.emails.send({...}); return; }
-  // The dev stub below stays as the fallback when the env var is unset.
+  if (MAIL_PROVIDER === 'webhook') {
+    const headers = { 'content-type': 'application/json' };
+    if (process.env.MAIL_WEBHOOK_TOKEN) headers.authorization = `Bearer ${process.env.MAIL_WEBHOOK_TOKEN}`;
+    const response = await fetch(process.env.MAIL_WEBHOOK_URL, {
+      method: 'POST',
+      headers,
+      body: JSON.stringify({ to, subject, html, text }),
+    });
+    if (!response.ok) throw new Error(`mail webhook failed: HTTP ${response.status}`);
+    return { ok: true, provider: 'webhook' };
+  }
+
   fs.mkdirSync(MAIL_DIR, { recursive: true });
   const stamp = new Date().toISOString().replace(/[:.]/g, '-');
   const file = path.join(MAIL_DIR, `${stamp}-${safePart(to)}.txt`);

@@ -36,7 +36,6 @@ jobs:
 
       - name: Dependency audit
         run: npm audit --audit-level=high
-        continue-on-error: true
 
       - name: Check for known vulnerabilities
         run: |
@@ -45,8 +44,8 @@ jobs:
           CRITICAL=$(node -e "const a=require('/tmp/audit.json');console.log(a.metadata?.vulnerabilities?.critical||0)")
           HIGH=$(node -e "const a=require('/tmp/audit.json');console.log(a.metadata?.vulnerabilities?.high||0)")
           echo "Critical: $CRITICAL, High: $HIGH"
-          if [ "$CRITICAL" -gt 0 ]; then
-            echo "::error::Critical vulnerabilities found"
+          if [ "$CRITICAL" -gt 0 ] || [ "$HIGH" -gt 0 ]; then
+            echo "::error::High or critical vulnerabilities found"
             exit 1
           fi
           echo "::endgroup::"
@@ -84,7 +83,10 @@ jobs:
           python-version: '3.12'
 
       - name: Install prediction service dependencies
-        run: pip install -r ufc245-predictions/requirements.txt
+        run: pip install -r ufc245-predictions/requirements.txt pip-audit
+
+      - name: Audit Python dependencies
+        run: pip-audit -r ufc245-predictions/requirements.txt
 
       - name: Run prediction service tests
         run: |
@@ -98,7 +100,7 @@ jobs:
             const fs = require('fs');
             const html = fs.readFileSync('public/index.html','utf8');
             const htmlRequired = [
-              'comparePanel', 'fighterSearch', 'three.min.js', 'appVersion',
+              'comparePanel', 'fighterSearch', '/vendor/three/three.min.js', 'appVersion',
               '/css/styles.css', '/js/app.js'
             ];
             const appJs = fs.readFileSync('public/js/app.js','utf8');

@@ -30,6 +30,7 @@ const FAIL_WINDOW_MS = 15 * 60 * 1000;
 const NODE_ENV = process.env.NODE_ENV || 'production';
 const SECRET = process.env.BETTER_AUTH_SECRET;
 const BASE_URL = process.env.BETTER_AUTH_URL || `http://localhost:${process.env.PORT || 3000}`;
+const REQUIRE_EMAIL_VERIFICATION = /^(1|true|yes|on)$/i.test(String(process.env.REQUIRE_EMAIL_VERIFICATION || ''));
 
 if (!SECRET && NODE_ENV === 'production') {
   throw new Error('BETTER_AUTH_SECRET is required when NODE_ENV=production');
@@ -115,9 +116,9 @@ async function buildAuth() {
       enabled: true,
       minPasswordLength: 8,
       maxPasswordLength: 128,
-      // Non-blocking: verification email is sent on signup but users can sign in
-      // immediately. Flip to true once auth/email.js is wired to a real provider.
-      requireEmailVerification: false,
+      // Default remains non-blocking for existing accounts. Set
+      // REQUIRE_EMAIL_VERIFICATION=true once production email delivery is live.
+      requireEmailVerification: REQUIRE_EMAIL_VERIFICATION,
       sendResetPassword: async ({ user, url }) => {
         await sendMail({
           to: user.email,

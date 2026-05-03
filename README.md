@@ -204,8 +204,10 @@ returns `503 picks_disabled`. Existing endpoints are unchanged.
 | Var | Required | Default | Purpose |
 |---|---|---|---|
 | `ENABLE_PICKS` | yes | `false` | Master flag. Set to `true` to expose the Picks tab + API. |
-| `ADMIN_KEY` | for admin ops | — | Shared secret for `POST /api/admin/events/:id/lock-picks`, `/reconcile-picks`, `/api/admin/reconcile-all-picks`. |
-| `PREDICTION_SERVICE_KEY` | to ingest model preds | — | Existing key for the prediction microservice. The snapshots layer reads whichever predictions it has. |
+| `ADMIN_KEY` | for admin ops | — | Strong secret for admin operations. Keep different from `PREDICTION_SERVICE_KEY`; `/admin` also requires `ENABLE_LOCAL_ADMIN=true` and localhost access. |
+| `PREDICTION_SERVICE_KEY` | to ingest model preds | — | Strong service-to-service key for prediction/data job routes. Use at least 24 random characters in production. |
+| `LEGACY_HEADER_AUTH` | no | prod: `false`, dev/test: `true` | Temporary migration flag for old `X-User-Id` writes. Do not enable in production. |
+| `MAIL_PROVIDER` / `MAIL_WEBHOOK_URL` | prod auth email | — | Production auth email requires `MAIL_PROVIDER=webhook` plus `MAIL_WEBHOOK_URL`; local dev falls back to `tmp/mail`. |
 | `DATABASE_URL` | for Postgres | — | If set, picks persist there. Otherwise sqlite (see next row). |
 | `DB_PATH` | sqlite only | — | With the sqlite backend, set this to a writable path so picks + users survive restarts. Without it everything is in-memory. |
 | `PICKS_RATE_LIMIT_CREATE_USER` | no | `5` | Max new profiles per IP per hour. |
@@ -241,7 +243,8 @@ point totals.
    model-comparison in parallel.
 4. For each fight, users pick a winner, move the confidence slider
    (0–100), optionally select method / round, and write notes up to
-   280 chars. Save → `POST /api/picks` with `X-User-Id` header.
+   280 chars. Save → `POST /api/picks` with the better-auth session
+   cookie. `X-User-Id` is local/dev migration-only.
 5. After event results land (`fights.winner_id` set), admin runs
    `POST /api/admin/events/:id/reconcile-picks` or
    `POST /api/admin/reconcile-all-picks` for the whole DB.
@@ -250,17 +253,18 @@ point totals.
 
 ### Key API endpoints
 
-All gated by `ENABLE_PICKS`. Writes need an `X-User-Id` header.
+All gated by `ENABLE_PICKS`. Writes require the authenticated session cookie
+unless `LEGACY_HEADER_AUTH=true` is explicitly enabled for local migration.
 
 | Method | Path | Protection |
 |---|---|---|
 | POST | `/api/users` | rate-limited per IP |
 | GET | `/api/users/:id` | none |
-| PATCH | `/api/users/:id` | `X-User-Id` must match `:id` |
+| PATCH | `/api/users/:id` | authenticated user must match `:id` |
 | GET | `/api/users/:id/picks` | none (query: `event_id`, `reconciled=0|1`) |
 | GET | `/api/users/:id/stats` | none |
-| POST | `/api/picks` | `X-User-Id` + rate limit |
-| DELETE | `/api/picks/:pickId` | `X-User-Id` must own pick |
+| POST | `/api/picks` | session auth + rate limit |
+| DELETE | `/api/picks/:pickId` | session user must own pick |
 | GET | `/api/leaderboard` | none |
 | GET | `/api/events/:id/picks/leaderboard` | none |
 | GET | `/api/events/:id/picks/model-comparison` | none |
@@ -276,7 +280,7 @@ with realistic data during local dev, use the seeder script:
 ```bash
 DB_PATH=/tmp/ufc-picks-demo.db node scripts/seed-demo-picks.js
 DB_PATH=/tmp/ufc-picks-demo.db \
-  ENABLE_PICKS=true ADMIN_KEY=test PORT=3100 node server.js
+  NODE_ENV=development ENABLE_PICKS=true ADMIN_KEY=test-admin-key PORT=3100 node server.js
 ```
 
 The script creates 4 demo users (Weston / Friend A / Friend B /
@@ -292,15 +296,17 @@ users without touching other data.
 1. Confirm `DATABASE_URL` is already set (predictions feature). If
    on sqlite, set `DB_PATH=/data/ufc.db` or similar to a mounted
    volume so picks + users persist.
-2. Set `ADMIN_KEY` to a strong random value.
+2. Set `ADMIN_KEY` and `PREDICTION_SERVICE_KEY` to different strong random values.
 3. Flip the feature flag: `ENABLE_PICKS=true`.
-4. Deploy. After rollout, verify:
+4. Keep `LEGACY_HEADER_AUTH` unset in production. If auth email is enabled,
+   configure `MAIL_PROVIDER=webhook` and `MAIL_WEBHOOK_URL`.
+5. Deploy. After rollout, verify:
    - `GET /healthz` reports `features.picks: true`
    - `GET /api/version` reports `features.picks: true`
    - Loading the app shows the **Picks** tab
    - Creating a profile returns 200 (watch for 429 if rate limits
      are too tight — tune `PICKS_RATE_LIMIT_*` if needed)
-5. Feature can be rolled back instantly by unsetting
+6. Feature can be rolled back instantly by unsetting
    `ENABLE_PICKS`. No schema migration is needed — all four new
    tables (`users`, `user_picks`, `pick_model_snapshots`) are
    additive and left alone when the flag is off.

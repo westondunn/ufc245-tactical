@@ -19,18 +19,24 @@ function pOneRow(sql, params) {
 const FIELD_TYPES = {
   text: v => {
     if (v === '' || v === null || v === undefined) return null;
-    return String(v).trim();
+    const s = String(v).trim();
+    if (s.length > 5000) throw new Error('text is too long');
+    return s;
   },
   int: v => {
     if (v === '' || v === null || v === undefined) return null;
     const n = Number(v);
     if (!Number.isInteger(n)) throw new Error('expected integer');
+    if (n < 0) throw new Error('expected non-negative integer');
+    if (n > 1000000) throw new Error('integer out of range');
     return n;
   },
   number: v => {
     if (v === '' || v === null || v === undefined) return null;
     const n = Number(v);
     if (!Number.isFinite(n)) throw new Error('expected number');
+    if (n < 0) throw new Error('expected non-negative number');
+    if (n > 1000000) throw new Error('number out of range');
     return n;
   },
   bool: v => {
@@ -43,6 +49,7 @@ const FIELD_TYPES = {
     if (v === '' || v === null || v === undefined) return null;
     const s = String(v).trim();
     if (!/^\d{4}-\d{2}-\d{2}$/.test(s)) throw new Error('expected YYYY-MM-DD');
+    if (Number.isNaN(Date.parse(`${s}T00:00:00Z`))) throw new Error('invalid date');
     return s;
   },
   datetime: v => {
@@ -60,9 +67,10 @@ const FIELD_TYPES = {
   url: v => {
     if (v === '' || v === null || v === undefined) return null;
     const s = String(v).trim();
+    if (s.length > 2048) throw new Error('URL is too long');
     let u;
     try { u = new URL(s); } catch { throw new Error('expected URL'); }
-    if (!['http:', 'https:'].includes(u.protocol)) throw new Error('expected http/https URL');
+    if (u.protocol !== 'https:') throw new Error('expected https URL');
     return s;
   },
   outcomeStatus: v => {

@@ -321,7 +321,11 @@ test.describe('API Endpoints', () => {
     expect(res.headers()['x-content-type-options']).toBe('nosniff');
     expect(res.headers()['x-frame-options']).toBe('DENY');
     expect(res.headers()['referrer-policy']).toBeTruthy();
-    expect(res.headers()['content-security-policy']).toBeTruthy();
+    const csp = res.headers()['content-security-policy'];
+    expect(csp).toBeTruthy();
+    expect(csp).toContain("script-src 'self'");
+    expect(csp).not.toContain("script-src 'self' 'unsafe-inline'");
+    expect(csp).not.toContain('cdnjs.cloudflare.com');
   });
 
   test('admin endpoints require key', async ({ request }) => {
@@ -365,6 +369,16 @@ test.describe('API Endpoints', () => {
   test('/api/version has no-cache header', async ({ request }) => {
     const res = await request.get('/api/version');
     expect(res.headers()['cache-control']).toContain('no-cache');
+  });
+
+  test('user-specific profile GETs are private no-store', async ({ request }) => {
+    const created = await request.post('/api/users', { data: { display_name: 'Cache Test', avatar_key: 'a1' } });
+    expect(created.ok()).toBeTruthy();
+    const user = (await created.json()).user;
+    const res = await request.get(`/api/users/${user.id}`);
+    const cc = res.headers()['cache-control'];
+    expect(cc).toContain('private');
+    expect(cc).toContain('no-store');
   });
 
   test('biomechanics endpoints have long cache', async ({ request }) => {
@@ -500,6 +514,16 @@ test.describe('Predictions API', () => {
       data: { predictions: [] }
     });
     expect(res.status()).toBe(401);
+  });
+
+  test('protected data GETs are private no-store', async ({ request }) => {
+    const res = await request.get('/api/data/backfill/queue', {
+      headers: { 'x-prediction-key': PREDICTION_KEY }
+    });
+    expect(res.status()).toBe(200);
+    const cc = res.headers()['cache-control'];
+    expect(cc).toContain('private');
+    expect(cc).toContain('no-store');
   });
 
   test('POST /api/predictions/ingest rejects non-array body', async ({ request }) => {

@@ -32,6 +32,12 @@ async function run() {
   let badColumnRejected = false;
   try { validateField('fighters', 'made_up_column', 'x'); } catch { badColumnRejected = true; }
   assert(badColumnRejected, 'whitelist rejects unknown column');
+  let badNumberRejected = false;
+  try { validateField('fighters', 'reach_cm', '-1'); } catch { badNumberRejected = true; }
+  assert(badNumberRejected, 'numeric validator rejects negative values');
+  let badUrlRejected = false;
+  try { validateField('fighters', 'headshot_url', 'javascript:alert(1)'); } catch { badUrlRejected = true; }
+  assert(badUrlRejected, 'URL validator rejects non-https URLs');
 
   const fid = 991001;
   await pRun(`INSERT OR REPLACE INTO fighters (id, name, reach_cm, nationality) VALUES (?, ?, NULL, ?)`,
@@ -78,9 +84,23 @@ async function run() {
   const conflict = await approveBackfill(conflictQueue.id, { actor: 'test' });
   assert(conflict.status === 'superseded', 'approveBackfill supersedes stale queued proposal');
 
-  await pRun(`DELETE FROM pending_backfill WHERE row_id IN (?, ?)`, [String(fid), String(conflictId)]);
-  await pRun(`DELETE FROM admin_action_log WHERE target_key IN (?, ?)`, [String(fid), String(conflictId)]);
-  await pRun(`DELETE FROM fighters WHERE id IN (?, ?)`, [fid, conflictId]);
+  const invalidColumnId = 991003;
+  await pRun(`INSERT OR REPLACE INTO fighters (id, name, reach_cm) VALUES (?, ?, NULL)`,
+    [invalidColumnId, 'AdminPortalBadColumn']);
+  await pRun(`
+    INSERT INTO pending_backfill
+      (table_name, row_id, column_name, current_value, proposed_value, source,
+       confidence, status, created_at)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, ['fighters', String(invalidColumnId), 'name; DROP TABLE fighters; --', null, JSON.stringify('bad'), 'unit-test', 'review', 'pending', now]);
+  const invalidColumnQueue = await pOneRow(`SELECT * FROM pending_backfill WHERE table_name='fighters' AND row_id=?`, [String(invalidColumnId)]);
+  let invalidColumnRejected = false;
+  try { await approveBackfill(invalidColumnQueue.id, { actor: 'test' }); } catch (e) { invalidColumnRejected = e && e.code === 'invalid_column'; }
+  assert(invalidColumnRejected, 'approveBackfill rejects queued invalid columns before SQL');
+
+  await pRun(`DELETE FROM pending_backfill WHERE row_id IN (?, ?, ?)`, [String(fid), String(conflictId), String(invalidColumnId)]);
+  await pRun(`DELETE FROM admin_action_log WHERE target_key IN (?, ?, ?)`, [String(fid), String(conflictId), String(invalidColumnId)]);
+  await pRun(`DELETE FROM fighters WHERE id IN (?, ?, ?)`, [fid, conflictId, invalidColumnId]);
 
   return results;
 }

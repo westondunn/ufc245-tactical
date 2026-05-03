@@ -2763,8 +2763,7 @@ function setupFightSelector(){
             '<div class="search-result" data-fid="' + f.id + '" style="padding:8px 14px;cursor:pointer;' +
             'font-family:var(--f-mono);font-size:11px;letter-spacing:.1em;color:var(--fg-dim);' +
             'border-bottom:1px solid var(--border-soft);transition:background .15s;display:flex;align-items:center"' +
-            ' onmouseover="this.style.background=\'rgba(45,220,255,.06)\'"' +
-            ' onmouseout="this.style.background=\'none\'">' +
+            '>' +
             '<div style="flex:1">' +
             '<strong style="color:var(--fg)">' + fighterNameWithAvatar(f, { size: 'xs', compact: true }) + '</strong>' +
             (f.nickname ? ' <span style="color:var(--muted)">"' + escHtml(f.nickname) + '"</span>' : '') +
@@ -2773,7 +2772,7 @@ function setupFightSelector(){
             '<button class="add-compare-btn" data-cfid="' + f.id + '" data-cfname="' + escHtml(f.name) +
             '" data-cfnick="' + escHtml(f.nickname||'') + '" data-cfwc="' + escHtml(f.weight_class) +
             '" data-cfhead="' + escHtml(f.headshot_url || '') + '" data-cfbody="' + escHtml(f.body_url || '') +
-            '" onclick="event.stopPropagation();addToCompare(this.dataset)">⊕</button>' +
+            '" data-action="add-compare">⊕</button>' +
             '</div>'
           ).join('');
         }
@@ -2785,6 +2784,12 @@ function setupFightSelector(){
             results.style.display = 'none';
             input.value = (el.querySelector('.fighter-name-with-avatar__text') || el.querySelector('strong')).textContent;
             loadFighterEvents(fid);
+          });
+        });
+        results.querySelectorAll('[data-action="add-compare"]').forEach(btn => {
+          btn.addEventListener('click', evt => {
+            evt.stopPropagation();
+            addToCompare(btn.dataset);
           });
         });
       } catch(e){ console.error('search error', e); }
@@ -2829,7 +2834,7 @@ async function loadEventFightStrip(eventId){
           fighterNameWithAvatar(loserFighter, { size: 'xs', corner: isWR ? 'blue' : 'red', compact: true });
       }
       const mainAttr = (i === 0 && f.is_main) ? ' data-main="1"' : '';
-      return '<button class="fight-chip" data-dbfight="' + f.id + '" data-event="' + (data.event.number || '') + '"' + mainAttr + ' onclick="selectDbFight(' + f.id + ',this)">' +
+      return '<button class="fight-chip" data-dbfight="' + f.id + '" data-event="' + (data.event.number || '') + '"' + mainAttr + '>' +
         label +
         '<br><span style="font-size:8px;color:var(--muted)">' + escHtml(method) + (isDraw ? '' : ' R' + (f.round||'')) + '</span>' +
         '</button>';
@@ -2837,6 +2842,9 @@ async function loadEventFightStrip(eventId){
 
     // Auto-select the main event chip (or first chip if no main)
     const mainChip = strip.querySelector('.fight-chip[data-main="1"]') || strip.querySelector('.fight-chip');
+    strip.querySelectorAll('.fight-chip').forEach(chip => {
+      chip.addEventListener('click', () => selectDbFight(parseInt(chip.dataset.dbfight, 10), chip));
+    });
     if (mainChip) mainChip.click();
     updateFightStripScrollState(strip);
   } catch(e){
@@ -3128,11 +3136,9 @@ async function loadFighterEvents(fighterId){
           const isRedCorner = f.red_id === parseInt(fighterId, 10);
           const redName = fighterNameWithAvatar(fightFighter(f, 'red'), { size: 'xs', corner: 'red', compact: true });
           const blueName = fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'xs', corner: 'blue', compact: true });
-          return '<div class="event-fight-row" data-eid="' + ev.event_id + '" style="display:flex;align-items:center;gap:12px;' +
+          return '<div class="event-fight-row" data-eid="' + ev.event_id + '" data-open-event-card="' + ev.event_id + '" style="display:flex;align-items:center;gap:12px;' +
             'padding:8px 12px;cursor:pointer;transition:background .15s;margin-bottom:2px;' +
-            'border-left:3px solid ' + (won ? 'var(--green)' : 'var(--red)') + '"' +
-            ' onmouseover="this.style.background=\'rgba(45,220,255,.04)\'"' +
-            ' onmouseout="this.style.background=\'none\'">' +
+            'border-left:3px solid ' + (won ? 'var(--green)' : 'var(--red)') + '">' +
             '<span style="font-family:var(--f-mono);font-size:9px;color:' + (won ? 'var(--green)' : 'var(--red)') +
               ';font-weight:700;min-width:14px">' + (won ? 'W' : 'L') + '</span>' +
             '<span style="font-family:var(--f-mono);font-size:11px;color:var(--fg);flex:1">' +
@@ -3144,10 +3150,16 @@ async function loadFighterEvents(fighterId){
               escHtml(f.method||'') + ' R' + (f.round||'') + ' ' + escHtml(f.time||'') + '</span>' +
           '</div>';
         }).join('') +
-        '<button class="rec-btn" onclick="loadEventCard(' + ev.event_id + ')" style="margin-top:8px;font-size:10px">' +
+        '<button class="rec-btn" data-open-event-card="' + ev.event_id + '" style="margin-top:8px;font-size:10px">' +
           'View Full Card · ' + escHtml(ev.number ? 'UFC ' + ev.number : (ev.name || 'UFC Fight Night')) + '</button>' +
       '</div>'
     ).join('');
+    body.querySelectorAll('[data-open-event-card]').forEach(el => {
+      el.addEventListener('click', evt => {
+        evt.stopPropagation();
+        loadEventCard(parseInt(el.dataset.openEventCard, 10));
+      });
+    });
   } catch(e){
     body.innerHTML = '<div style="color:var(--red)">Error loading fighter data</div>';
     console.error(e);
@@ -3169,11 +3181,9 @@ async function loadEventCard(eventId){
     body.innerHTML = '<div style="font-family:var(--f-mono);font-size:9px;letter-spacing:.18em;color:var(--muted);margin-bottom:14px;text-transform:uppercase">' +
       'Full Card · ' + data.card.length + ' fights</div>' +
       data.card.map((f, i) =>
-        '<div style="display:flex;align-items:center;gap:14px;padding:10px 14px;' +
+        '<div data-load-fighter-events="' + f.red_id + '" style="display:flex;align-items:center;gap:14px;padding:10px 14px;' +
           'border-bottom:1px solid var(--border-soft);cursor:pointer;transition:background .15s"' +
-          ' onmouseover="this.style.background=\'rgba(45,220,255,.04)\'"' +
-          ' onmouseout="this.style.background=\'none\'"' +
-          ' onclick="loadFighterEvents(' + f.red_id + ')">' +
+          '>' +
           '<span style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim);min-width:20px">' + (i+1) + '</span>' +
           '<div style="flex:1">' +
             '<div style="font-family:var(--f-mono);font-size:12px;letter-spacing:.08em">' +
@@ -3192,6 +3202,9 @@ async function loadEventCard(eventId){
           '</div>' +
         '</div>'
       ).join('');
+    body.querySelectorAll('[data-load-fighter-events]').forEach(el => {
+      el.addEventListener('click', () => loadFighterEvents(parseInt(el.dataset.loadFighterEvents, 10)));
+    });
   } catch(e){
     body.innerHTML = '<div style="color:var(--red)">Error loading event card</div>';
     console.error(e);
@@ -3241,11 +3254,13 @@ function renderCompareSlots(){
         '</div>' +
         (f.nickname ? '<div class="compare-slot__meta">"' + escHtml(f.nickname) + '"</div>' : '') +
         '<div class="compare-slot__meta">' + escHtml(f.weight_class||'') + '</div>' +
-        '<div class="compare-slot__clear" onclick="clearCompareSlot(' + i + ')">Remove ×</div>';
+        '<button type="button" class="compare-slot__clear" data-clear-compare-slot="' + i + '">Remove ×</button>';
     } else {
       slot.classList.remove('filled');
       slot.innerHTML = '<div class="compare-slot__empty">Search + click ⊕ to add</div>';
     }
+    const clear = slot.querySelector('[data-clear-compare-slot]');
+    if (clear) clear.addEventListener('click', () => clearCompareSlot(parseInt(clear.dataset.clearCompareSlot, 10)));
   });
 }
 
@@ -3460,7 +3475,7 @@ function renderEventsTable(events){
   _openEventId = null;
   _openFightId = null;
   tbody.innerHTML = events.map(e =>
-    '<tr class="evt-row" data-eid="' + e.id + '" data-enum="' + e.number + '" onclick="toggleEventCard(' + e.id + ',' + e.number + ',this)">' +
+    '<tr class="evt-row" data-eid="' + e.id + '" data-enum="' + e.number + '">' +
     '<td><span class="evt-arrow">▸</span></td>' +
     '<td class="evt-num">' + (e.number||'—') + '</td>' +
     '<td class="evt-title">' + escHtml(e.name) + '</td>' +
@@ -3468,6 +3483,11 @@ function renderEventsTable(events){
     '<td>' + (e.country && window.flagFor ? window.flagFor(e.country) + ' ' : '') + escHtml((e.city||'') + (e.country ? ', '+e.country : '')) + '</td>' +
     '</tr>'
   ).join('');
+  tbody.querySelectorAll('.evt-row').forEach(row => {
+    row.addEventListener('click', () => {
+      toggleEventCard(parseInt(row.dataset.eid, 10), parseInt(row.dataset.enum || '0', 10), row);
+    });
+  });
 }
 
 async function toggleEventCard(eventId, eventNum, rowEl){
@@ -3526,7 +3546,7 @@ async function toggleEventCard(eventId, eventNum, rowEl){
         const isWB = f.winner_id === f.blue_id;
         const redFighter = fightFighter(f, 'red');
         const blueFighter = fightFighter(f, 'blue');
-        return '<div class="fight-row" id="frow-' + f.id + '" onclick="event.stopPropagation();toggleFightDetail(' + f.id + ',this)">' +
+        return '<div class="fight-row" id="frow-' + f.id + '" data-fight-row-id="' + f.id + '">' +
           '<div class="fight-row__pos">' + (i+1) + '</div>' +
           '<div class="fight-row__names">' +
             (f.is_title ? '<span class="fight-row__title-badge">TITLE</span>' : '') +
@@ -3541,6 +3561,12 @@ async function toggleEventCard(eventId, eventNum, rowEl){
       }).join('');
     }
     inner.innerHTML = html;
+    inner.querySelectorAll('[data-fight-row-id]').forEach(row => {
+      row.addEventListener('click', evt => {
+        evt.stopPropagation();
+        toggleFightDetail(parseInt(row.dataset.fightRowId, 10), row);
+      });
+    });
   } catch(e){
     const inner = document.getElementById('card-' + eventId);
     if (inner) inner.innerHTML = '<div style="color:var(--red);padding:8px">Error loading card</div>';
@@ -3750,7 +3776,7 @@ function renderFighterDir(fighters){
     const nickHtml = '<div class="fighter-card__nick">' +
       (f.nickname ? '"' + escHtml(f.nickname) + '"' : '\u00A0') +
       '</div>';
-    return '<div class="fighter-card" onclick="showFighterProfile(' + f.id + ')">' +
+    return '<div class="fighter-card" data-show-fighter-profile="' + f.id + '">' +
       '<div class="fighter-card__head">' +
         fighterAvatar(f, { size: 'sm' }) +
         '<div class="fighter-card__head-text">' +
@@ -3761,6 +3787,9 @@ function renderFighterDir(fighters){
       metaHtml +
     '</div>';
   }).join('');
+  dir.querySelectorAll('[data-show-fighter-profile]').forEach(card => {
+    card.addEventListener('click', () => showFighterProfile(parseInt(card.dataset.showFighterProfile, 10)));
+  });
 }
 
 async function showFighterProfile(fid){
@@ -3801,7 +3830,9 @@ async function showFighterProfile(fid){
       });
     }
     const dir = document.getElementById('fighterDir');
-    dir.innerHTML = '<div style="margin-bottom:12px"><button class="rec-btn" onclick="renderFighterDir(_allFightersData)" style="font-size:10px">← Back to Directory</button></div>' + html;
+    dir.innerHTML = '<div style="margin-bottom:12px"><button class="rec-btn" data-render-fighter-dir="1" style="font-size:10px">← Back to Directory</button></div>' + html;
+    const back = dir.querySelector('[data-render-fighter-dir]');
+    if (back) back.addEventListener('click', () => renderFighterDir(_allFightersData));
   } catch(e){ console.error(e); }
 }
 
@@ -6205,6 +6236,7 @@ async function fetchAndRenderReview(eventId, officialDate){
     }
     const data = await res.json();
     body.innerHTML = renderReviewPayload(data);
+    bindReviewPayloadControls(body);
   } catch (e) {
     body.innerHTML = '<div style="color:var(--red);font-family:var(--f-mono);font-size:11px">Error loading review: ' + escHtml(String(e && e.message || e)) + '</div>';
   }
@@ -6290,7 +6322,7 @@ function renderReviewPayload(data){
       '<td>' + explanationCell + '</td>' +
       '<td><span style="color:' + trustColor + ';font-weight:600">' + escHtml(c.trust_grade) + '</span>' + warning + '</td>' +
       '<td><span style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">' + escHtml(completeness) + '</span></td>' +
-      '<td><button class="rec-btn" style="font-size:9px;padding:4px 8px" onclick="showReviewChecklist(' + c.fight_id + ')">Checklist</button></td>' +
+      '<td><button class="rec-btn" style="font-size:9px;padding:4px 8px" data-review-checklist="' + c.fight_id + '">Checklist</button></td>' +
       '</tr>';
   }).join('');
 
@@ -6324,6 +6356,13 @@ function renderReviewPayload(data){
   window._lastReview = data;
 
   return head + mismatch + table + auditBlock + sourcesBlock + checklistAnchor;
+}
+
+function bindReviewPayloadControls(root){
+  if (!root) return;
+  root.querySelectorAll('[data-review-checklist]').forEach(btn => {
+    btn.addEventListener('click', () => showReviewChecklist(parseInt(btn.dataset.reviewChecklist, 10)));
+  });
 }
 
 function _renderAuditCol(title, items, color){

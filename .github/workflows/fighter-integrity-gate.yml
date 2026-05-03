@@ -27,13 +27,13 @@ jobs:
         with:
           fetch-depth: 1
 
-      - name: Skip if DATABASE_URL not configured
+      - name: Skip if read-only DB URL not configured
         id: precheck
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.FIGHTER_INTEGRITY_DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
-            echo "::warning::DATABASE_URL secret not set — skipping integrity gate. Add the secret to enable."
+            echo "::warning::FIGHTER_INTEGRITY_DATABASE_URL secret not set — skipping integrity gate. Use a read-only/scoped database credential."
             echo "skip=true" >> "$GITHUB_OUTPUT"
           else
             echo "skip=false" >> "$GITHUB_OUTPUT"
@@ -61,6 +61,6 @@ jobs:
       - name: Run fighter-integrity gate
         if: steps.precheck.outputs.skip == 'false'
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.FIGHTER_INTEGRITY_DATABASE_URL }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: node scripts/_fighter-integrity-gate.js

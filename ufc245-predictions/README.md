@@ -66,7 +66,9 @@ curl -X POST http://localhost:8000/trigger/outcomes \
 | Variable | Required | Description |
 |----------|----------|-------------|
 | `MAIN_APP_URL` | Yes | URL of the main Express app |
-| `PREDICTION_SERVICE_KEY` | Yes | Shared auth key (must match main app) |
+| `PREDICTION_SERVICE_KEY` | Yes | Strong auth key, 24+ random characters, matching the main app prediction key |
+| `PREDICTION_AUTH_MAX_FAILURES` | No | Bad-key attempts per client per window before `429` (default: 30) |
+| `PREDICTION_AUTH_WINDOW_SECONDS` | No | Bad-key rate-limit window (default: 300) |
 | `PORT` | No | Web server port (default: 8000) |
 | `PREDICTIONS_DB_PATH` | No | SQLite path (default: predictions.db) |
 | `MODEL_DIR` | No | Model blob directory (default: model_store) |

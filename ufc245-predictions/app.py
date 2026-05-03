@@ -1,9 +1,11 @@
 """UFC Tactical Predictions — FastAPI web process + in-process scheduler."""
 import os
 import logging
+import hmac
+import time
 
 from apscheduler.schedulers.background import BackgroundScheduler
-from fastapi import FastAPI, HTTPException, Header
+from fastapi import FastAPI, HTTPException, Header, Request
 
 from db import init_db, get_latest_model, get_unsynced_predictions
 from jobs import daily_maintenance, daily_predict, refresh_near, daily_reconcile, weekly_retrain, sync_unsynced, capture_official_outcomes
@@ -18,6 +20,40 @@ MAIN_APP_URL = os.getenv("MAIN_APP_URL", "http://localhost:3000")
 ENABLE_SCHEDULER = os.getenv("ENABLE_SCHEDULER", "1").lower() not in {"0", "false", "no"}
 DEPLOYMENT_MODE = os.getenv("DEPLOYMENT_MODE", "single")
 scheduler: BackgroundScheduler | None = None
+AUTH_FAILURES: dict[str, tuple[float, int]] = {}
+AUTH_WINDOW_SECONDS = int(os.getenv("PREDICTION_AUTH_WINDOW_SECONDS", "300"))
+AUTH_MAX_FAILURES = int(os.getenv("PREDICTION_AUTH_MAX_FAILURES", "30"))
+MIN_KEY_LENGTH = int(os.getenv("PREDICTION_MIN_KEY_LENGTH", "24"))
+
+
+def _auth_rate_key(request: Request) -> str:
+    forwarded = request.headers.get("x-forwarded-for", "").split(",", 1)[0].strip()
+    host = forwarded or (request.client.host if request.client else "unknown")
+    return host
+
+
+def _record_auth_failure(request: Request):
+    now = time.time()
+    key = _auth_rate_key(request)
+    first, count = AUTH_FAILURES.get(key, (now, 0))
+    if now - first > AUTH_WINDOW_SECONDS:
+        AUTH_FAILURES[key] = (now, 1)
+    else:
+        AUTH_FAILURES[key] = (first, count + 1)
+
+
+def _too_many_auth_failures(request: Request) -> bool:
+    now = time.time()
+    key = _auth_rate_key(request)
+    first, count = AUTH_FAILURES.get(key, (now, 0))
+    if now - first > AUTH_WINDOW_SECONDS:
+        AUTH_FAILURES.pop(key, None)
+        return False
+    return count >= AUTH_MAX_FAILURES
+
+
+def _clear_auth_failures(request: Request):
+    AUTH_FAILURES.pop(_auth_rate_key(request), None)
 
 
 def _configure_scheduler() -> BackgroundScheduler:
@@ -39,11 +75,17 @@ def _configure_scheduler() -> BackgroundScheduler:
     return scheduler
 
 
-def _require_key(x_prediction_key: str = Header(default="")):
+def _require_key(request: Request, x_prediction_key: str = Header(default="")):
     if not PREDICTION_SERVICE_KEY:
         raise HTTPException(503, "PREDICTION_SERVICE_KEY not set")
-    if x_prediction_key != PREDICTION_SERVICE_KEY:
+    if len(PREDICTION_SERVICE_KEY) < MIN_KEY_LENGTH:
+        raise HTTPException(503, "PREDICTION_SERVICE_KEY is too short")
+    if _too_many_auth_failures(request):
+        raise HTTPException(429, "too many attempts")
+    if len(x_prediction_key or "") < MIN_KEY_LENGTH or not hmac.compare_digest(x_prediction_key, PREDICTION_SERVICE_KEY):
+        _record_auth_failure(request)
         raise HTTPException(401, "unauthorized")
+    _clear_auth_failures(request)
 
 
 @app.on_event("startup")
@@ -96,44 +138,44 @@ def shutdown():
 
 
 @app.post("/trigger/predict")
-def trigger_predict(x_prediction_key: str = Header(default="")):
-    _require_key(x_prediction_key)
+def trigger_predict(request: Request, x_prediction_key: str = Header(default="")):
+    _require_key(request, x_prediction_key)
     return daily_predict()
 
 
 @app.post("/trigger/maintenance")
-def trigger_maintenance(x_prediction_key: str = Header(default="")):
-    _require_key(x_prediction_key)
+def trigger_maintenance(request: Request, x_prediction_key: str = Header(default="")):
+    _require_key(request, x_prediction_key)
     return daily_maintenance()
 
 
 @app.post("/trigger/refresh")
-def trigger_refresh(x_prediction_key: str = Header(default="")):
-    _require_key(x_prediction_key)
+def trigger_refresh(request: Request, x_prediction_key: str = Header(default="")):
+    _require_key(request, x_prediction_key)
     return refresh_near()
 
 
 @app.post("/trigger/reconcile")
-def trigger_reconcile(x_prediction_key: str = Header(default="")):
-    _require_key(x_prediction_key)
+def trigger_reconcile(request: Request, x_prediction_key: str = Header(default="")):
+    _require_key(request, x_prediction_key)
     return daily_reconcile()
 
 
 @app.post("/trigger/outcomes")
-def trigger_outcomes(x_prediction_key: str = Header(default="")):
-    _require_key(x_prediction_key)
+def trigger_outcomes(request: Request, x_prediction_key: str = Header(default="")):
+    _require_key(request, x_prediction_key)
     return capture_official_outcomes(days_back=1, days_forward=2, source="manual_trigger")
 
 
 @app.post("/trigger/retrain")
-def trigger_retrain(x_prediction_key: str = Header(default="")):
-    _require_key(x_prediction_key)
+def trigger_retrain(request: Request, x_prediction_key: str = Header(default="")):
+    _require_key(request, x_prediction_key)
     return weekly_retrain()
 
 
 @app.post("/trigger/sync")
-def trigger_sync(x_prediction_key: str = Header(default="")):
-    _require_key(x_prediction_key)
+def trigger_sync(request: Request, x_prediction_key: str = Header(default="")):
+    _require_key(request, x_prediction_key)
     synced = sync_unsynced(limit=1000)
     return {
         "status": "ok",

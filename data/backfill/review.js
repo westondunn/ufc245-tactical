@@ -4,7 +4,7 @@
  * Shared approval/rejection logic for queued backfill proposals.
  */
 const db = require('../../db');
-const { parseKey } = require('../admin/registry');
+const { parseKey, validateField } = require('../admin/registry');
 const { logAction } = require('../admin/actions');
 
 function pRun(sql, params) {
@@ -40,12 +40,13 @@ async function approveBackfill(id, { reason = null, actor = 'local-admin', ip = 
     throw Object.assign(new Error('queue row is not pending'), { status: 409, code: 'invalid_status' });
   }
 
-  const proposed = parseValue(row.proposed_value);
+  const proposed = validateField(row.table_name, row.column_name, parseValue(row.proposed_value));
   const expected = parseValue(row.current_value);
   const parsed = parseKey(row.table_name, row.row_id);
+  const column = row.column_name;
   const where = whereFromParsed(parsed);
   const current = await pOneRow(
-    `SELECT ${row.column_name} AS v FROM ${row.table_name} WHERE ${where.sql}`,
+    `SELECT ${column} AS v FROM ${row.table_name} WHERE ${where.sql}`,
     where.params
   );
 
@@ -62,13 +63,13 @@ async function approveBackfill(id, { reason = null, actor = 'local-admin', ip = 
   }
 
   const updateWhere = currentValue == null
-    ? `${where.sql} AND ${row.column_name} IS NULL`
-    : `${where.sql} AND ${row.column_name} = ?`;
+    ? `${where.sql} AND ${column} IS NULL`
+    : `${where.sql} AND ${column} = ?`;
   const updateParams = currentValue == null
     ? [proposed, ...where.params]
     : [proposed, ...where.params, currentValue];
 
-  await pRun(`UPDATE ${row.table_name} SET ${row.column_name} = ? WHERE ${updateWhere}`, updateParams);
+  await pRun(`UPDATE ${row.table_name} SET ${column} = ? WHERE ${updateWhere}`, updateParams);
   const now = new Date().toISOString();
   await pRun(`UPDATE pending_backfill SET status='applied', applied_at=?, resolved_at=? WHERE id=?`, [now, now, row.id]);
   await logAction({
