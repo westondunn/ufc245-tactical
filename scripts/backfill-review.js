@@ -11,6 +11,7 @@
  */
 const readline = require('readline');
 const db = require('../db');
+const { approveBackfill, rejectBackfill, parseValue } = require('../data/backfill/review');
 
 function parseArgs(argv) {
   const out = { autoApproveCosmetic: false };
@@ -37,45 +38,6 @@ function prompt(rl, q) {
   return new Promise(resolve => rl.question(q, ans => resolve(ans.trim().toLowerCase())));
 }
 
-function parseValue(jsonStr) {
-  if (jsonStr === null || jsonStr === undefined) return null;
-  try { return JSON.parse(jsonStr); } catch { return jsonStr; }
-}
-
-async function applyApproved(row) {
-  const proposed = parseValue(row.proposed_value);
-  const expected = parseValue(row.current_value);
-
-  const r = await pOneRow(
-    `SELECT ${row.column_name} AS v FROM ${row.table_name} WHERE id = ?`,
-    [row.row_id]
-  );
-  if (!r) {
-    await pRun(`UPDATE pending_backfill SET status='superseded', resolved_at=? WHERE id=?`,
-      [new Date().toISOString(), row.id]);
-    return { applied: false, reason: 'row no longer exists' };
-  }
-  const cur = r.v;
-  const expectedNorm = expected == null ? null : expected;
-  const curNorm = cur == null ? null : cur;
-  if (expectedNorm !== curNorm) {
-    await pRun(`UPDATE pending_backfill SET status='superseded', resolved_at=? WHERE id=?`,
-      [new Date().toISOString(), row.id]);
-    return { applied: false, reason: 'current value changed since queue entry' };
-  }
-
-  if (cur === null || cur === undefined) {
-    await pRun(`UPDATE ${row.table_name} SET ${row.column_name} = ? WHERE id = ? AND ${row.column_name} IS NULL`,
-      [proposed, row.row_id]);
-  } else {
-    await pRun(`UPDATE ${row.table_name} SET ${row.column_name} = ? WHERE id = ? AND ${row.column_name} = ?`,
-      [proposed, row.row_id, cur]);
-  }
-  await pRun(`UPDATE pending_backfill SET status='applied', applied_at=?, resolved_at=? WHERE id=?`,
-    [new Date().toISOString(), new Date().toISOString(), row.id]);
-  return { applied: true };
-}
-
 async function main() {
   const args = parseArgs(process.argv);
   await db.init();
@@ -90,7 +52,7 @@ async function main() {
     for (const r of rows) {
       const cosmetic = r.source === 'ufc-com-athlete' && /_url$/.test(r.column_name);
       if (!cosmetic) { skipped++; continue; }
-      const res = await applyApproved(r);
+      const res = await approveBackfill(r.id, { actor: 'cli' });
       if (res.applied) applied++;
       else console.log(`  skip: ${r.table_name}.${r.column_name} id=${r.row_id} (${res.reason})`);
     }
@@ -115,12 +77,11 @@ async function main() {
       continue;
     }
     if (ans === 'a') {
-      const res = await applyApproved(r);
+      const res = await approveBackfill(r.id, { actor: 'cli' });
       console.log(res.applied ? '  ✓ applied' : `  ✗ ${res.reason}`);
     }
     if (ans === 'r') {
-      await pRun(`UPDATE pending_backfill SET status='rejected', resolved_at=? WHERE id=?`,
-        [new Date().toISOString(), r.id]);
+      await rejectBackfill(r.id, { actor: 'cli' });
       console.log('  ✗ rejected');
     }
   }

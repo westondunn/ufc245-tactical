@@ -1686,6 +1686,12 @@ async function run() {
   passed += dispatcherResult.passed;
   failed += dispatcherResult.failed;
 
+  // ── Admin Portal Modules ──
+  const adminPortalSuite = require('./admin/portal.test');
+  const adminPortalResult = await adminPortalSuite.run();
+  passed += adminPortalResult.passed;
+  failed += adminPortalResult.failed;
+
   // ── Audit + Backfill End-to-End ──
   const integrationSuite = require('./audit/integration.test');
   const integrationResult = await integrationSuite.run();

@@ -46,6 +46,7 @@ const compression = require('compression');
 const cookieParser = require('cookie-parser');
 const path = require('path');
 const fs = require('fs');
+const crypto = require('crypto');
 const db = require('./db');
 const { buildAuth } = require('./auth');
 // `auth` is populated inside the async bootstrap by awaiting buildAuth().
@@ -61,6 +62,7 @@ const { buildPredictionReview } = require('./lib/predictionReview');
 const app = express();
 const PORT = process.env.PORT || 3000;
 const NODE_ENV = process.env.NODE_ENV || 'production';
+const IS_PRODUCTION = NODE_ENV === 'production';
 
 app.set('trust proxy', 1);
 app.use(compression());
@@ -915,6 +917,18 @@ app.get('/api/events/:id/picks/model-comparison', requirePicksFlag, apiHandler(a
 // STATIC + HEALTH + FALLBACK
 // ============================================================
 
+app.use((req, res, next) => {
+  if (
+    req.path === '/admin' ||
+    req.path === '/admin.html' ||
+    req.path === '/js/admin.js' ||
+    req.path === '/css/admin.css'
+  ) {
+    return requireLocalAdminPortal(req, res, next);
+  }
+  next();
+});
+
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: true, lastModified: true, maxAge: '1d',
   setHeaders: (res, filePath) => {
@@ -943,12 +957,231 @@ app.get('/api/version', (_req, res) => {
 
 // ── ADMIN ENDPOINTS (protected by ADMIN_KEY) ──
 const ADMIN_KEY = process.env.ADMIN_KEY || null;
-function requireAdmin(req, res, next) {
-  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin_disabled', message: 'Set ADMIN_KEY env var to enable' });
-  const key = req.headers['x-admin-key'] || req.query.key;
-  if (key !== ADMIN_KEY) return res.status(401).json({ error: 'unauthorized' });
+const ENABLE_LOCAL_ADMIN = /^(1|true|yes|on)$/i.test(String(process.env.ENABLE_LOCAL_ADMIN || ''));
+const ALLOW_PROD_ADMIN = /^(1|true|yes|on)$/i.test(String(process.env.ALLOW_PROD_ADMIN || ''));
+const ADMIN_AUTH_WINDOW_MS = 5 * 60 * 1000;
+const ADMIN_AUTH_MAX_FAILURES = 20;
+const adminAuthFailures = new Map();
+
+function isLocalRequest(req) {
+  const candidates = [
+    req.ip,
+    req.socket && req.socket.remoteAddress,
+    req.connection && req.connection.remoteAddress,
+  ].filter(Boolean).map(v => String(v).replace(/^::ffff:/, ''));
+  return candidates.some(ip => (
+    ip === '127.0.0.1' ||
+    ip === '::1' ||
+    ip === 'localhost' ||
+    ip === '0.0.0.0'
+  ));
+}
+function isLocalAdminEnabled() {
+  if (!ENABLE_LOCAL_ADMIN) return false;
+  if (IS_PRODUCTION && !ALLOW_PROD_ADMIN) return false;
+  return true;
+}
+function requireLocalAdminPortal(req, res, next) {
+  if (!isLocalAdminEnabled()) {
+    return res.status(404).json({ error: 'not_found' });
+  }
+  if (!isLocalRequest(req)) {
+    return res.status(403).json({ error: 'local_only', message: 'The admin portal is only available from localhost.' });
+  }
   next();
 }
+function timingSafeAdminKey(input) {
+  if (!ADMIN_KEY || typeof input !== 'string') return false;
+  const expected = Buffer.from(ADMIN_KEY);
+  const actual = Buffer.from(input);
+  if (expected.length !== actual.length) return false;
+  return crypto.timingSafeEqual(expected, actual);
+}
+function adminRateKey(req) {
+  return String(req.ip || (req.socket && req.socket.remoteAddress) || 'unknown').replace(/^::ffff:/, '');
+}
+function tooManyAdminFailures(req) {
+  const key = adminRateKey(req);
+  const now = Date.now();
+  const rec = adminAuthFailures.get(key);
+  if (!rec || now - rec.firstAt > ADMIN_AUTH_WINDOW_MS) {
+    adminAuthFailures.delete(key);
+    return false;
+  }
+  return rec.count >= ADMIN_AUTH_MAX_FAILURES;
+}
+function recordAdminFailure(req) {
+  const key = adminRateKey(req);
+  const now = Date.now();
+  const rec = adminAuthFailures.get(key);
+  if (!rec || now - rec.firstAt > ADMIN_AUTH_WINDOW_MS) {
+    adminAuthFailures.set(key, { firstAt: now, count: 1 });
+  } else {
+    rec.count += 1;
+  }
+}
+function clearAdminFailures(req) {
+  adminAuthFailures.delete(adminRateKey(req));
+}
+function requireAdmin(req, res, next) {
+  if (!ADMIN_KEY) return res.status(503).json({ error: 'admin_disabled', message: 'Set ADMIN_KEY env var to enable' });
+  if (tooManyAdminFailures(req)) return res.status(429).json({ error: 'too_many_attempts' });
+  const key = req.headers['x-admin-key'];
+  if (!timingSafeAdminKey(typeof key === 'string' ? key : '')) {
+    recordAdminFailure(req);
+    return res.status(401).json({ error: 'unauthorized' });
+  }
+  clearAdminFailures(req);
+  next();
+}
+
+function requireAdminSameOrigin(req, res, next) {
+  if (!['POST', 'PUT', 'PATCH', 'DELETE'].includes(req.method)) return next();
+  const origin = req.headers.origin;
+  const referer = req.headers.referer;
+  const host = req.headers.host;
+  if (!host) return res.status(403).json({ error: 'origin_required' });
+  const allowed = new Set([`http://${host}`, `https://${host}`]);
+  if (origin && !allowed.has(origin)) return res.status(403).json({ error: 'bad_origin' });
+  if (!origin && referer) {
+    let refOrigin = null;
+    try { refOrigin = new URL(referer).origin; } catch {}
+    if (!allowed.has(refOrigin)) return res.status(403).json({ error: 'bad_origin' });
+  }
+  next();
+}
+
+function adminActor(req) {
+  return req.headers['x-admin-actor'] ? String(req.headers['x-admin-actor']).slice(0, 80) : 'local-admin';
+}
+
+app.use('/api/admin', requireAdminSameOrigin);
+
+async function persistAdminMutation({ warm = true } = {}) {
+  const ok = await db.save();
+  cache.invalidateAll();
+  if (warm) await warmCache();
+  return ok;
+}
+
+app.get('/admin', requireLocalAdminPortal, (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.sendFile(path.join(__dirname, 'public', 'admin.html'));
+});
+
+const adminIssues = require('./data/admin/issues');
+const adminRegistry = require('./data/admin/registry');
+const adminActions = require('./data/admin/actions');
+const backfillReview = require('./data/backfill/review');
+
+app.get('/api/admin/data/overview', requireLocalAdminPortal, requireAdmin, apiHandler(async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json({
+    ...(await adminIssues.getOverview()),
+    editable: adminRegistry.editableTables(),
+  });
+}));
+
+app.get('/api/admin/data/issues', requireLocalAdminPortal, requireAdmin, apiHandler(async (_req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json(await adminIssues.getIssues());
+}));
+
+app.get('/api/admin/data/audit-runs', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json(await adminIssues.getAuditRuns({ limit: req.query.limit }));
+}));
+
+app.post('/api/admin/data/audit/run', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  const scope = req.body && req.body.scope ? String(req.body.scope).slice(0, 64) : null;
+  const result = await runAuditJob({ scope, triggerSource: 'admin-portal' });
+  await adminActions.logAction({
+    action: 'audit_run',
+    status: result.status,
+    reason: scope ? `scope=${scope}` : null,
+    metadata: { run_id: result.run_id, entries: result.summary.length, errors: result.errors.length },
+    actor: adminActor(req),
+    ip: req.ip,
+  });
+  res.json(result);
+}));
+
+app.post('/api/admin/data/backfill/run', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  let runId = req.body && req.body.runId ? String(req.body.runId).slice(0, 64) : null;
+  if (!runId) runId = await auditApi.getLatestCompleteRunId();
+  if (!runId) return res.status(400).json({ error: 'runId required' });
+  const dryRun = !!(req.body && req.body.dryRun);
+  const result = await runBackfillJob({ runId, dryRun });
+  await adminActions.logAction({
+    action: dryRun ? 'backfill_dry_run' : 'backfill_run',
+    status: result.errors && result.errors.length ? 'partial' : 'ok',
+    metadata: { run_id: runId, ...result },
+    actor: adminActor(req),
+    ip: req.ip,
+  });
+  if (!dryRun) await persistAdminMutation({ warm: true });
+  res.json(result);
+}));
+
+app.get('/api/admin/data/backfill/queue', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  const status = req.query.status ? String(req.query.status).slice(0, 32) : 'pending';
+  const limit = parseInt(req.query.limit || '100', 10);
+  const offset = parseInt(req.query.offset || '0', 10);
+  res.json(await backfillApi.listQueue({ status, limit, offset }));
+}));
+
+app.post('/api/admin/data/backfill/:id/approve', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' });
+  const result = await backfillReview.approveBackfill(id, {
+    reason: req.body && req.body.reason ? String(req.body.reason).slice(0, 500) : null,
+    actor: adminActor(req),
+    ip: req.ip,
+  });
+  await persistAdminMutation({ warm: true });
+  res.json(result);
+}));
+
+app.post('/api/admin/data/backfill/:id/reject', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isInteger(id)) return res.status(400).json({ error: 'invalid_id' });
+  const result = await backfillReview.rejectBackfill(id, {
+    reason: req.body && req.body.reason ? String(req.body.reason).slice(0, 500) : null,
+    actor: adminActor(req),
+    ip: req.ip,
+  });
+  await persistAdminMutation({ warm: false });
+  res.json(result);
+}));
+
+app.get('/api/admin/data/entity', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  const table = String(req.query.table || '');
+  const id = String(req.query.id || '');
+  const row = await adminRegistry.getEntity(table, id);
+  if (!row) return res.status(404).json({ error: 'not_found' });
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json({ table, id, row, editable: adminRegistry.editableTables()[table] });
+}));
+
+app.patch('/api/admin/data/entity', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  const body = req.body || {};
+  const result = await adminRegistry.updateEntity({
+    table: String(body.table || ''),
+    id: String(body.id || ''),
+    changes: body.changes,
+    reason: body.reason,
+    actor: adminActor(req),
+    ip: req.ip,
+  });
+  await persistAdminMutation({ warm: true });
+  res.json({ status: 'ok', ...result });
+}));
+
+app.get('/api/admin/data/actions', requireLocalAdminPortal, requireAdmin, apiHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-cache');
+  res.json(await adminActions.listActions({ limit: req.query.limit, offset: req.query.offset }));
+}));
 
 // DB statistics — shows current state, persistence info
 app.get('/api/admin/db-stats', requireAdmin, apiHandler(async (_req, res) => {

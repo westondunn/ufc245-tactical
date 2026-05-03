@@ -21,6 +21,7 @@ module.exports = defineConfig({
       NODE_ENV: 'test',
       BETTER_AUTH_SECRET: 'test-better-auth-secret',
       ENABLE_PICKS: 'true',
+      ENABLE_LOCAL_ADMIN: 'true',
       ADMIN_KEY: 'test-admin-key',
       PREDICTION_SERVICE_KEY: 'test-prediction-key',
       // Relax rate limits for test traffic (many profiles created in quick succession)

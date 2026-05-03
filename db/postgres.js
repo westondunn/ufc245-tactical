@@ -366,6 +366,26 @@ async function ensureSchema() {
     ON pending_backfill(table_name, row_id, column_name)
     WHERE status IN ('pending', 'approved')
   `);
+
+  await run(`
+    CREATE TABLE IF NOT EXISTS admin_action_log (
+      id BIGSERIAL PRIMARY KEY,
+      action TEXT NOT NULL,
+      target_table TEXT,
+      target_key TEXT,
+      target_column TEXT,
+      before_json JSONB,
+      after_json JSONB,
+      status TEXT NOT NULL,
+      reason TEXT,
+      metadata_json JSONB,
+      actor TEXT,
+      ip TEXT,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_admin_action_log_created ON admin_action_log(created_at DESC)');
+  await run('CREATE INDEX IF NOT EXISTS idx_admin_action_log_target ON admin_action_log(target_table, target_key)');
 }
 
 /**

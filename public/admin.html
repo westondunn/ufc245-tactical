@@ -1,0 +1,134 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>UFC Tactical · Local Admin</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="/css/admin.css">
+</head>
+<body>
+<header class="admin-top">
+  <div>
+    <div class="admin-kicker">Local Admin</div>
+    <h1>Data Operations</h1>
+  </div>
+  <div class="admin-lock" id="lockState">Locked</div>
+</header>
+
+<main class="admin-shell">
+  <section class="key-panel" id="keyPanel">
+    <label for="adminKey">Admin key</label>
+    <div class="key-row">
+      <input id="adminKey" type="password" autocomplete="off" placeholder="ADMIN_KEY">
+      <button id="saveKeyBtn" type="button">Unlock</button>
+      <button id="clearKeyBtn" type="button">Clear</button>
+    </div>
+    <div class="hint">This portal is local-only. The key is stored in this browser session only.</div>
+  </section>
+
+  <section class="status-strip" id="statusStrip"></section>
+
+  <nav class="admin-tabs">
+    <button class="active" data-view="overview" type="button">Overview</button>
+    <button data-view="issues" type="button">Issues</button>
+    <button data-view="queue" type="button">Queue</button>
+    <button data-view="editor" type="button">Editor</button>
+    <button data-view="ops" type="button">Operations</button>
+    <button data-view="history" type="button">History</button>
+  </nav>
+
+  <section class="view active" id="view-overview">
+    <div class="grid two">
+      <div class="panel">
+        <div class="panel-head"><h2>Worst Coverage</h2><button data-action="refresh" type="button">Refresh</button></div>
+        <div id="worstCoverage"></div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Regressions</h2></div>
+        <div id="regressions"></div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-issues">
+    <div class="panel">
+      <div class="panel-head"><h2>Issue Groups</h2><button data-action="loadIssues" type="button">Reload</button></div>
+      <div id="issuesBody"></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-queue">
+    <div class="panel">
+      <div class="panel-head">
+        <h2>Backfill Queue</h2>
+        <div class="inline-controls">
+          <select id="queueStatus">
+            <option value="pending">Pending</option>
+            <option value="applied">Applied</option>
+            <option value="rejected">Rejected</option>
+            <option value="superseded">Superseded</option>
+          </select>
+          <button data-action="loadQueue" type="button">Reload</button>
+        </div>
+      </div>
+      <div id="queueBody"></div>
+    </div>
+  </section>
+
+  <section class="view" id="view-editor">
+    <div class="grid editor-grid">
+      <div class="panel">
+        <div class="panel-head"><h2>Entity Lookup</h2></div>
+        <div class="form-stack">
+          <label>Table<select id="entityTable"></select></label>
+          <label>Key<input id="entityId" type="text" placeholder="id or composite key"></label>
+          <button id="loadEntityBtn" type="button">Load Entity</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Whitelisted Edit</h2></div>
+        <div id="entityBody" class="muted">Load an entity to edit approved fields.</div>
+      </div>
+    </div>
+  </section>
+
+  <section class="view" id="view-ops">
+    <div class="grid two">
+      <div class="panel">
+        <div class="panel-head"><h2>Audit & Backfill</h2></div>
+        <div class="form-stack">
+          <label>Audit scope<input id="auditScope" type="text" placeholder="blank, all, event:123"></label>
+          <button data-action="runAudit" type="button">Run Audit</button>
+          <button data-action="runBackfillDry" type="button">Backfill Dry Run</button>
+          <button data-action="runBackfillApply" type="button">Backfill Apply</button>
+        </div>
+      </div>
+      <div class="panel">
+        <div class="panel-head"><h2>Maintenance</h2></div>
+        <div class="form-stack">
+          <button data-action="saveDb" type="button">Save DB</button>
+          <button data-action="importSeed" type="button">Import Seed</button>
+          <label>Event ID<input id="reconcileEventId" type="number" placeholder="event id"></label>
+          <button data-action="reconcileEvent" type="button">Reconcile Event Picks</button>
+          <button data-action="reconcileAll" type="button">Reconcile All Picks</button>
+        </div>
+      </div>
+    </div>
+    <pre class="log-box" id="opsOutput"></pre>
+  </section>
+
+  <section class="view" id="view-history">
+    <div class="panel">
+      <div class="panel-head"><h2>Action Log</h2><button data-action="loadActions" type="button">Reload</button></div>
+      <div id="actionsBody"></div>
+    </div>
+  </section>
+</main>
+
+<div class="toast" id="toast" hidden></div>
+<script src="/js/admin.js"></script>
+</body>
+</html>

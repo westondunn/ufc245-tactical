@@ -267,6 +267,24 @@ const SCHEMA = `
   CREATE UNIQUE INDEX IF NOT EXISTS uq_pending_open
     ON pending_backfill(table_name, row_id, column_name)
     WHERE status IN ('pending', 'approved');
+
+  CREATE TABLE IF NOT EXISTS admin_action_log (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    action TEXT NOT NULL,
+    target_table TEXT,
+    target_key TEXT,
+    target_column TEXT,
+    before_json TEXT,
+    after_json TEXT,
+    status TEXT NOT NULL,
+    reason TEXT,
+    metadata_json TEXT,
+    actor TEXT,
+    ip TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_admin_action_log_created ON admin_action_log(created_at DESC);
+  CREATE INDEX IF NOT EXISTS idx_admin_action_log_target ON admin_action_log(target_table, target_key);
 `;
 
 /* ── INIT ── */
