@@ -325,10 +325,20 @@ app.get('/api/tactical/all', apiHandler(async (req, res) => {
 }));
 
 // Fun facts — aggregated trivia (countries, ages, physical extremes, stance, methods).
-// Cached; rare changes — invalidated by the same TTL as everything else (cache.set default).
+// Soft-TTL of 60 s: lib/cache.js has no built-in TTL, but direct DB writes
+// from backfill scripts (nationality / DOB) don't call cache.invalidateAll(),
+// so a stale entry would otherwise hang around until the next admin save or
+// server restart. 60 s is short enough to feel responsive after a backfill,
+// long enough to absorb a burst of polled requests.
+const FUNFACTS_TTL_MS = 60 * 1000;
+let _funfactsAt = 0;
 app.get('/api/funfacts', apiHandler(async (_req, res) => {
   let result = cache.get('funfacts:v1');
-  if (!result) { result = cache.set('funfacts:v1', await db.getFunFacts()); }
+  const ageMs = Date.now() - _funfactsAt;
+  if (!result || ageMs > FUNFACTS_TTL_MS) {
+    result = cache.set('funfacts:v1', await db.getFunFacts());
+    _funfactsAt = Date.now();
+  }
   res.json(result);
 }));
 
