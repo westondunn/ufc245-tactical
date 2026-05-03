@@ -3119,10 +3119,10 @@ async function loadFighterEvents(fighterId){
           '<div style="font-family:var(--f-disp);font-size:16px;font-weight:600;letter-spacing:.08em;color:var(--fg)">' +
             escHtml(ev.number ? 'UFC ' + ev.number : (ev.name || 'UFC Fight Night')) + '</div>' +
           '<div style="font-family:var(--f-mono);font-size:10px;letter-spacing:.12em;color:var(--muted)">' +
-            ev.date + ' · ' + ev.city + '</div>' +
+            escHtml(ev.date||'') + ' · ' + escHtml(ev.city||'') + '</div>' +
         '</div>' +
         '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted-dim);margin-bottom:10px;letter-spacing:.1em">' +
-          ev.name + ' · ' + ev.venue + '</div>' +
+          escHtml(ev.name||'') + ' · ' + escHtml(ev.venue||'') + '</div>' +
         ev.fights.map(f => {
           const won = f.winner_id === parseInt(fighterId, 10);
           const isRedCorner = f.red_id === parseInt(fighterId, 10);
@@ -3141,7 +3141,7 @@ async function loadFighterEvents(fighterId){
             '</span>' +
             (f.is_title ? '<span style="font-size:8px;border:1px solid var(--amber);color:var(--amber);padding:1px 5px;font-family:var(--f-mono);letter-spacing:.12em">TITLE</span>' : '') +
             '<span style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">' +
-              f.method + ' R' + f.round + ' ' + f.time + '</span>' +
+              escHtml(f.method||'') + ' R' + (f.round||'') + ' ' + escHtml(f.time||'') + '</span>' +
           '</div>';
         }).join('') +
         '<button class="rec-btn" onclick="loadEventCard(' + ev.event_id + ')" style="margin-top:8px;font-size:10px">' +
@@ -3163,8 +3163,8 @@ async function loadEventCard(eventId){
     const res = await fetch('/api/events/' + eventId + '/card');
     const data = await res.json();
 
-    title.innerHTML = data.event.name +
-      ' <span style="color:var(--muted);font-weight:400;font-size:12px">' + data.event.date + ' · ' + data.event.venue + '</span>';
+    title.innerHTML = escHtml(data.event.name||'') +
+      ' <span style="color:var(--muted);font-weight:400;font-size:12px">' + escHtml(data.event.date||'') + ' · ' + escHtml(data.event.venue||'') + '</span>';
 
     body.innerHTML = '<div style="font-family:var(--f-mono);font-size:9px;letter-spacing:.18em;color:var(--muted);margin-bottom:14px;text-transform:uppercase">' +
       'Full Card · ' + data.card.length + ' fights</div>' +
@@ -3777,7 +3777,7 @@ async function showFighterProfile(fid){
         '<div class="fighter-profile-hero__text">' +
           '<h2 class="fighter-profile-hero__name">' + escHtml(f.name) + (f.nickname ? ' <span class="fighter-profile-hero__nick">"' + escHtml(f.nickname) + '"</span>' : '') + '</h2>' +
           '<div class="fighter-profile-hero__meta">' +
-            (f.weight_class||'') + ' · ' + (f.height_cm ? formatHeight(f.height_cm) : '?') + ' · ' + (f.reach_cm ? formatReach(f.reach_cm) + ' reach' : '?') + ' · ' + (f.stance||'?') +
+            escHtml(f.weight_class||'') + ' · ' + (f.height_cm ? formatHeight(f.height_cm) : '?') + ' · ' + (f.reach_cm ? formatReach(f.reach_cm) + ' reach' : '?') + ' · ' + escHtml(f.stance||'?') +
             ' · Record: ' + (r.wins||0) + 'W-' + (r.losses||0) + 'L' + (r.draws ? '-' + r.draws + 'D' : '') +
           '</div>' +
         '</div>' +
