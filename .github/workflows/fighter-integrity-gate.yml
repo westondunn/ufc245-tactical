@@ -1,0 +1,66 @@
+name: Fighter Integrity Gate
+
+on:
+  schedule:
+    # Hourly at :17 to avoid the top-of-hour runner spike. Drift is fine —
+    # the gate is read-only against the DB and idempotent against issues.
+    - cron: '17 * * * *'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: fighter-integrity-gate
+  cancel-in-progress: false
+
+jobs:
+  gate:
+    name: Run integrity gate
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+
+      - name: Skip if DATABASE_URL not configured
+        id: precheck
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::warning::DATABASE_URL secret not set — skipping integrity gate. Add the secret to enable."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Setup Node.js
+        if: steps.precheck.outputs.skip == 'false'
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        if: steps.precheck.outputs.skip == 'false'
+        run: npm ci
+
+      - name: Ensure issue labels exist
+        if: steps.precheck.outputs.skip == 'false'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh label create data-integrity --color BFD4F2 --description "Data integrity / fighter profile gaps" --force
+          gh label create urgent --color B60205 --description "Block-severity issue requiring immediate action" --force
+
+      - name: Run fighter-integrity gate
+        if: steps.precheck.outputs.skip == 'false'
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: node scripts/_fighter-integrity-gate.js
