@@ -3182,13 +3182,13 @@ async function loadEventCard(eventId){
               '<span style="color:#5EC2FF;font-weight:600">' + fighterNameWithAvatar(fightFighter(f, 'blue'), { size: 'xs', corner: 'blue', compact: true }) + '</span>' +
             '</div>' +
             '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);margin-top:3px;letter-spacing:.1em">' +
-              f.weight_class + (f.is_title ? ' · TITLE FIGHT' : '') + '</div>' +
+              escHtml(f.weight_class||'') + (f.is_title ? ' · TITLE FIGHT' : '') + '</div>' +
           '</div>' +
           '<div style="text-align:right">' +
             '<div style="font-family:var(--f-mono);font-size:11px;color:var(--fg);letter-spacing:.1em">' +
-              f.method + '</div>' +
+              escHtml(f.method||'') + '</div>' +
             '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);letter-spacing:.1em">' +
-              'R' + f.round + ' ' + f.time + '</div>' +
+              'R' + (f.round||'') + ' ' + escHtml(f.time||'') + '</div>' +
           '</div>' +
         '</div>'
       ).join('');
@@ -3292,9 +3292,9 @@ function renderComparison(data){
   html += compRow('Height', formatHeight(f1.height_cm), formatHeight(f2.height_cm), 210);
   html += compRow('Reach', formatReach(f1.reach_cm), formatReach(f2.reach_cm), 210);
   html += '<div class="compare-row">' +
-    '<div class="compare-val compare-val--left">' + f1.stance + '</div>' +
+    '<div class="compare-val compare-val--left">' + escHtml(f1.stance||'') + '</div>' +
     '<div class="compare-label">Stance</div>' +
-    '<div class="compare-val compare-val--right">' + f2.stance + '</div></div>';
+    '<div class="compare-val compare-val--right">' + escHtml(f2.stance||'') + '</div></div>';
   html += compRow('Reach Adv.', formatReachDelta(f1.reach_cm - f2.reach_cm), formatReachDelta(f2.reach_cm - f1.reach_cm), 20);
 
   // Record
@@ -3534,7 +3534,7 @@ async function toggleEventCard(eventId, eventNum, rowEl){
             ' <span style="color:var(--muted-dim)">vs</span> ' +
             '<span' + (isWB?' class="fight-row__winner"':'') + '>' + fighterNameWithAvatar(blueFighter, { size: 'xs', corner: 'blue', compact: true }) + '</span>' +
           '</div>' +
-          '<div class="fight-row__wc">' + escHtml(f.weight_class||'').replace("Women's ",'W-') + '</div>' +
+          '<div class="fight-row__wc">' + escHtml(f.weight_class||'') + '</div>' +
           '<div class="fight-row__result">' + escHtml(f.method||'') + ' R' + (f.round||'') + ' ' + escHtml(f.time||'') + '</div>' +
         '</div>' +
         '<div class="fight-detail-drop" id="fdrop-' + f.id + '"></div>';
