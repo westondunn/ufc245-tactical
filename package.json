@@ -7,6 +7,7 @@
   "scripts": {
     "start": "node server.js",
     "dev": "node -e \"process.env.NODE_ENV='development'; require('./server')\"",
+    "dev:prod-db": "node --env-file=.env server.js",
     "test": "node tests/run.js && node tests/auth.test.js",
     "audit": "node scripts/audit-run.js",
     "backfill": "node scripts/backfill-run.js",
