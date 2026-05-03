@@ -6357,16 +6357,17 @@ syncUnitsToggleUI();
 // pill appears the moment a card flips into the live window and disappears
 // when it ends — no full reload required.
 // Returns the event most worth surfacing in the top bar, with a label for it.
-// Priority: any event currently `state==='live'`; otherwise an event that
-// ended within the same calendar UTC day (still "fresh" to the user, even
-// though it flipped to history).
+// Priority: any event currently `state==='live'`; otherwise the most recent
+// event that ended in the last 24 hours (so the RESULTS pill survives the
+// UTC-midnight rollover for non-UTC viewers — Perth events end at ~15 UTC,
+// which is still "today" for a US viewer at 10am local).
 function pickTopBarFeaturedEvent(events) {
   const list = events || [];
   const live = list.find(e => e && e.state === 'live');
   if (live) return { event: live, label: 'LIVE', cls: 'top-bar__live--live' };
-  const todayUtc = new Date().toISOString().slice(0, 10);
+  const cutoff = Date.now() - 24 * 60 * 60 * 1000;
   const ended = list
-    .filter(e => e && e.state === 'history' && String(e.date || '').slice(0, 10) === todayUtc)
+    .filter(e => e && e.state === 'history' && Date.parse(e.end_time || 0) >= cutoff)
     .sort((a, b) => Date.parse(b.end_time || 0) - Date.parse(a.end_time || 0))[0];
   if (ended) return { event: ended, label: 'RESULTS', cls: 'top-bar__live--results' };
   return null;
