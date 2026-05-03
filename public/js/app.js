@@ -3853,6 +3853,24 @@ async function loadFunFactsTab(){
     const f = await res.json();
     body.innerHTML = renderFunFactsHtml(f);
     renderFunFactsWorldMap(f.countries).catch(() => {/* map is decorative; bars always render */});
+    // One delegated click handler covers every fighter row + birthday tile.
+    // showFighterProfile() writes into the Fighters tab pane, so:
+    //   1. ensure that pane has finished its initial load (otherwise its
+    //      late directory write would clobber the profile we're rendering),
+    //   2. activate the fighters tab so the profile is visible,
+    //   3. then render the profile.
+    body.addEventListener('click', async evt => {
+      const btn = evt.target.closest('[data-fighter-id]');
+      if (!btn) return;
+      const fid = parseInt(btn.getAttribute('data-fighter-id') || '', 10);
+      if (!Number.isFinite(fid)) return;
+      if (!_tabsLoaded.fighters && typeof loadFightersTab === 'function') {
+        await loadFightersTab();
+        _tabsLoaded.fighters = true;
+      }
+      if (typeof activatePrimaryTab === 'function') activatePrimaryTab('fighters');
+      if (typeof window.showFighterProfile === 'function') await window.showFighterProfile(fid);
+    });
   } catch (e) {
     body.innerHTML = '<div style="color:var(--red);font-family:var(--f-mono);font-size:11px">Error loading fun facts</div>';
   }
@@ -3955,12 +3973,14 @@ function renderFunFactsHtml(f){
   const pct = v => (v == null ? '—' : (Math.round(v * 1000) / 10).toFixed(1) + '%');
   const flag = name => (window.flagFor && name) ? (window.flagFor(name) + ' ') : '';
 
+  // Each row is a button so it's keyboard-focusable and announces as
+  // interactive. Click handler delegated from the panel root in loadFunFactsTab.
   const fighterRow = (x, valueHtml) =>
-    '<div class="ff-fighter-row">' +
+    '<button type="button" class="ff-fighter-row" data-fighter-id="' + (x.id != null ? x.id : '') + '">' +
       '<span class="ff-fighter-row__name">' + fighterNameWithAvatar(x, { size: 'xs', compact: true }) + '</span>' +
       (x.nationality ? '<span class="ff-fighter-row__loc">' + flag(x.nationality) + escHtml(x.nationality) + '</span>' : '') +
       '<span class="ff-fighter-row__val">' + valueHtml + '</span>' +
-    '</div>';
+    '</button>';
 
   const tile = (label, value, sub) =>
     '<div class="ff-tile">' +
@@ -4078,8 +4098,9 @@ function renderFunFactsHtml(f){
       '<h3 class="ff-h3">🎂 Birthdays today <span class="ff-h3__sub">· ' + bds.length + '</span></h3>' +
       '<div class="ff-bd-list">' +
         bds.map(b =>
-          '<div class="ff-bd"><span class="ff-bd__name">' + fighterNameWithAvatar(b, { size: 'sm' }) + '</span>' +
-          '<span class="ff-bd__age">turns ' + b.age + '</span></div>'
+          '<button type="button" class="ff-bd" data-fighter-id="' + (b.id != null ? b.id : '') + '">' +
+          '<span class="ff-bd__name">' + fighterNameWithAvatar(b, { size: 'sm' }) + '</span>' +
+          '<span class="ff-bd__age">turns ' + b.age + '</span></button>'
         ).join('') +
       '</div>' +
     '</div>'

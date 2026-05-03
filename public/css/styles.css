@@ -3634,11 +3634,25 @@ img.flag {
   grid-template-columns: minmax(0,1fr) auto auto;
   gap: 10px;
   align-items: center;
-  padding: 6px 0;
+  padding: 6px 4px;
+  border: none;
   border-bottom: 1px dashed rgba(255,255,255,0.05);
+  background: transparent;
+  color: inherit;
   font-size: 12px;
+  font-family: inherit;
+  text-align: left;
+  cursor: pointer;
+  border-radius: 3px;
+  transition: background 120ms ease;
+  width: 100%;
 }
 .ff-fighter-row:last-child { border-bottom: none; }
+.ff-fighter-row:hover { background: rgba(77,208,225,0.06); }
+.ff-fighter-row:focus-visible {
+  outline: 1px solid var(--cyan, #4DD0E1);
+  outline-offset: 1px;
+}
 .ff-fighter-row__name { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ff-fighter-row__loc {
   font-family: var(--f-mono);
@@ -3716,6 +3730,17 @@ img.flag {
   padding: 8px 12px;
   border: 1px solid var(--border-soft);
   border-radius: 4px;
+  background: transparent;
+  color: inherit;
+  font-family: inherit;
+  font-size: inherit;
+  cursor: pointer;
+  transition: background 120ms ease, border-color 120ms ease;
+}
+.ff-bd:hover { background: rgba(255,176,32,0.07); border-color: rgba(255,176,32,0.45); }
+.ff-bd:focus-visible {
+  outline: 1px solid var(--amber, #FFB020);
+  outline-offset: 1px;
 }
 .ff-bd__age {
   font-family: var(--f-mono);
