@@ -4143,7 +4143,7 @@ function parseViewHash(){
   if (!raw) return {};
   const parts = raw.split('/').filter(Boolean);
   const tab = parts[0];
-  if (!['dashboard','events','fighters','stats','review','picks'].includes(tab)) return {};
+  if (!['dashboard','events','fighters','stats','funfacts','review','picks'].includes(tab)) return {};
   const out = { tab };
   if (tab === 'picks' && ['event','history','trends','leaderboard'].includes(parts[1])) out.picksView = parts[1];
   // Backwards compat: legacy /#picks/upcoming bookmarks now resolve to /#picks/event.
@@ -4180,7 +4180,7 @@ function restoreStoredView(){
   if (Number.isFinite(parseInt(target.picksEventId, 10)) && _picksState) {
     _picksState.eventId = parseInt(target.picksEventId, 10);
   }
-  if (target.tab && ['dashboard','events','fighters','stats','review','picks'].includes(target.tab)) {
+  if (target.tab && ['dashboard','events','fighters','stats','funfacts','review','picks'].includes(target.tab)) {
     activatePrimaryTab(target.tab, { persist:false });
   }
 }
