@@ -1,0 +1,266 @@
+#!/usr/bin/env node
+/**
+ * Fighter-integrity gate (hourly routine).
+ * READ-ONLY against DB. Only side-effects: GitHub issues/comments via gh CLI.
+ */
+'use strict';
+const { Pool } = require('pg');
+const { execSync, execFileSync } = require('child_process');
+
+const NOW_UTC   = new Date();
+const WINDOW_MS = 36 * 60 * 60 * 1000; // 36 hours
+const CUTOFF    = new Date(NOW_UTC.getTime() + WINDOW_MS);
+
+// Core stats used for core_missing check (must be ALL NULL to count as missing)
+const CORE_FIELDS   = ['height_cm','reach_cm','stance','slpm','str_acc','str_def','td_avg','td_def'];
+// Broader set for completely_empty: >= 6 of these NULL
+const BROAD_FIELDS  = ['height_cm','reach_cm','stance','slpm','str_acc','sapm','str_def','td_avg','td_acc','td_def','sub_avg'];
+const EMPTY_THRESH  = 6;
+
+function die(msg, code = 1) { console.error(msg); process.exit(code); }
+
+// ── DB ────────────────────────────────────────────────────────────────────────
+
+async function getPool() {
+  const url = process.env.DATABASE_URL;
+  if (!url) die('DATABASE_URL is not set');
+  const sslMode = String(process.env.PGSSLMODE || '').toLowerCase();
+  const disableSSL = sslMode === 'disable' || /sslmode=disable/i.test(url);
+  const ssl = disableSSL ? false : { rejectUnauthorized: false };
+  return new Pool({ connectionString: url, ssl, max: 2, connectionTimeoutMillis: 15000 });
+}
+
+async function fetchImmientEvent(pool) {
+  const todayStr  = NOW_UTC.toISOString().slice(0, 10);
+  const cutoffStr = CUTOFF.toISOString().slice(0, 10);
+  const res = await pool.query(
+    `SELECT id, name, date FROM events
+     WHERE date >= $1 AND date <= $2
+     ORDER BY date ASC LIMIT 1`,
+    [todayStr, cutoffStr]
+  );
+  return res.rows[0] || null;
+}
+
+async function fetchFighterGaps(pool, eventId) {
+  // Build SELECT with all broad fields + hash + core fields
+  const sql = `
+    SELECT DISTINCT
+      f.id,
+      f.name,
+      f.ufcstats_hash,
+      f.height_cm, f.reach_cm, f.stance,
+      f.slpm, f.str_acc, f.sapm, f.str_def,
+      f.td_avg, f.td_acc, f.td_def, f.sub_avg
+    FROM fights ft
+    JOIN fighters f ON f.id IN (ft.red_fighter_id, ft.blue_fighter_id)
+    WHERE ft.event_id = $1
+    ORDER BY f.id
+  `;
+  const res = await pool.query(sql, [eventId]);
+  return res.rows.map(r => {
+    const hash_missing = r.ufcstats_hash == null;
+    const missing_core = CORE_FIELDS.filter(c => r[c] == null);
+    const core_missing = missing_core.length > 0;
+    const null_broad   = BROAD_FIELDS.filter(c => r[c] == null);
+    const completely_empty = null_broad.length >= EMPTY_THRESH;
+    return {
+      id: r.id,
+      name: r.name,
+      hash_missing,
+      core_missing,
+      missing_core,
+      completely_empty,
+      null_broad,
+    };
+  });
+}
+
+// ── GitHub helpers via gh CLI ────────────────────────────────────────────────
+
+function ghRun(args) {
+  return execFileSync('gh', args, { encoding: 'utf8' }).trim();
+}
+
+function issueTitle(eventName, eventDate) {
+  return `⚠️ Fighter-integrity gate: ${eventName} on ${eventDate} has incomplete profiles`;
+}
+
+function findExistingIssue(title) {
+  try {
+    // search open issues in this repo matching title
+    const out = ghRun([
+      'issue', 'list',
+      '--repo', 'westondunn/ufc245-tactical',
+      '--state', 'open',
+      '--limit', '50',
+      '--json', 'number,title',
+    ]);
+    const issues = JSON.parse(out);
+    const match = issues.find(i => i.title === title);
+    return match ? match.number : null;
+  } catch (e) {
+    console.error('Warning: could not search existing issues:', e.message);
+    return null;
+  }
+}
+
+function hoursUntil(dateStr) {
+  const eventTime = new Date(dateStr + 'T00:00:00Z');
+  return ((eventTime - NOW_UTC) / (1000 * 60 * 60)).toFixed(1);
+}
+
+function buildTable(fighters) {
+  const rows = fighters
+    .filter(f => f.hash_missing || f.core_missing)
+    .map(f => {
+      const flags = [];
+      if (f.hash_missing)    flags.push('no hash');
+      if (f.completely_empty) flags.push('**EMPTY**');
+      else if (f.core_missing) flags.push('missing core');
+      const gaps = [
+        f.hash_missing ? '`ufcstats_hash`' : null,
+        ...f.missing_core.map(c => `\`${c}\``),
+      ].filter(Boolean).join(', ');
+      return `| ${f.id} | ${f.name} | ${flags.join(', ')} | ${gaps} |`;
+    });
+
+  return [
+    '| Fighter ID | Name | Flag | Missing Fields |',
+    '|---|---|---|---|',
+    ...rows,
+  ].join('\n');
+}
+
+function buildBody(event, fighters, severity, hours) {
+  const table = buildTable(fighters);
+  return [
+    `**Event ID:** ${event.id}`,
+    `**Event Name:** ${event.name}`,
+    `**Event Date:** ${event.date}`,
+    `**Hours until start:** ${hours}`,
+    '',
+    `**Severity:** \`${severity}\``,
+    '',
+    '## Fighter Gaps',
+    '',
+    table,
+    '',
+    '## Remediation',
+    '',
+    'Run `scripts/link-and-backfill-card-fighters.js` to populate missing hashes and stats.',
+    '',
+    `_Generated by fighter-integrity gate at ${NOW_UTC.toISOString()}_`,
+  ].join('\n');
+}
+
+function createIssue(title, body, severity) {
+  const labels = ['data-integrity'];
+  if (severity === 'block') labels.push('urgent');
+
+  const args = [
+    'issue', 'create',
+    '--repo', 'westondunn/ufc245-tactical',
+    '--title', title,
+    '--body', body,
+    '--label', labels.join(','),
+  ];
+  return ghRun(args);
+}
+
+function commentOnIssue(number, body) {
+  return ghRun([
+    'issue', 'comment', String(number),
+    '--repo', 'westondunn/ufc245-tactical',
+    '--body', body,
+  ]);
+}
+
+function closeIssue(number, reason) {
+  return ghRun([
+    'issue', 'close', String(number),
+    '--repo', 'westondunn/ufc245-tactical',
+    '--comment', reason,
+  ]);
+}
+
+// ── Main ─────────────────────────────────────────────────────────────────────
+
+async function main() {
+  const pool = await getPool();
+  try {
+    // Step 1: find next imminent event
+    const event = await fetchImmientEvent(pool);
+    if (!event) {
+      console.log(JSON.stringify({ status: 'no_imminent_event', checked_at: NOW_UTC.toISOString() }));
+      return;
+    }
+
+    const hours = hoursUntil(event.date);
+    console.log(`Found imminent event: [${event.id}] ${event.name} on ${event.date} (~${hours}h away)`);
+
+    // Step 2: evaluate each fighter
+    const fighters = await fetchFighterGaps(pool, event.id);
+    console.log(`Evaluated ${fighters.length} fighter(s) on the card`);
+
+    const violations = fighters.filter(f => f.hash_missing || f.core_missing);
+    const anyEmpty   = fighters.some(f => f.completely_empty);
+
+    if (violations.length === 0) {
+      console.log(JSON.stringify({ status: 'all_clear', event_id: event.id, event_name: event.name, fighters_checked: fighters.length }));
+      // If there's an existing open issue for this event, close it as resolved
+      const title = issueTitle(event.name, event.date);
+      const existingNum = findExistingIssue(title);
+      if (existingNum) {
+        closeIssue(existingNum, `✅ All gaps resolved as of ${NOW_UTC.toISOString()}. Closing.`);
+        console.log(`Closed existing issue #${existingNum} — all clear.`);
+      }
+      return;
+    }
+
+    // Step 3: determine severity
+    const severity = anyEmpty ? 'block' : 'warn';
+    console.log(`Integrity violation: ${violations.length} fighter(s) with gaps. Severity: ${severity}`);
+
+    // Log summary
+    for (const f of violations) {
+      const parts = [];
+      if (f.hash_missing)    parts.push('no ufcstats_hash');
+      if (f.completely_empty) parts.push(`completely_empty (${f.null_broad.length}/${BROAD_FIELDS.length} null)`);
+      else if (f.core_missing) parts.push(`missing_core: [${f.missing_core.join(', ')}]`);
+      console.log(`  Fighter ${f.id} (${f.name}): ${parts.join('; ')}`);
+    }
+
+    const title = issueTitle(event.name, event.date);
+    const body  = buildBody(event, fighters, severity, hours);
+
+    // Step 4: idempotent — find existing open issue
+    const existingNum = findExistingIssue(title);
+    if (existingNum) {
+      const comment = [
+        `## Gap snapshot — ${NOW_UTC.toISOString()}`,
+        '',
+        `Severity: \`${severity}\`  |  ${violations.length} fighter(s) still have gaps.`,
+        '',
+        buildTable(fighters),
+        '',
+        `_Run \`scripts/link-and-backfill-card-fighters.js\` to remediate._`,
+      ].join('\n');
+      commentOnIssue(existingNum, comment);
+      console.log(`Updated existing issue #${existingNum} with gap snapshot.`);
+    } else {
+      const url = createIssue(title, body, severity);
+      console.log(`Created GitHub issue: ${url}`);
+    }
+
+    // Exit non-zero on block severity so CI / run history shows the failure
+    if (severity === 'block') {
+      process.exit(2);
+    }
+
+  } finally {
+    await pool.end();
+  }
+}
+
+main().catch(e => { console.error('[FATAL]', e.message || e); process.exit(1); });
