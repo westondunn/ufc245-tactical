@@ -4610,11 +4610,11 @@ function setupPicksSubnav(){
 // TC label for the "Event" subview is dynamic — the body morphs based on the
 // selected event's lifecycle state (upcoming / live / history), and the TC
 // reflects that state.
-const PICKS_TC_LABEL = { event:'PICKS · EVENT', history:'PICKS · HISTORY', trends:'PICKS · TRENDS', leaderboard:'PICKS · LEADERBOARD' };
+const PICKS_TC_LABEL = { event:'PICKS · EVENT', live:'PICKS · LIVE', history:'PICKS · HISTORY', trends:'PICKS · TRENDS', leaderboard:'PICKS · LEADERBOARD' };
 const PICKS_EVENT_TC_BY_STATE = { upcoming:'PICKS · UPCOMING', live:'PICKS · LIVE', history:'PICKS · EVENT HISTORY' };
 
 function activatePicksView(view, opts = {}){
-  if (!['event','history','trends','leaderboard'].includes(view)) view = 'event';
+  if (!['event','live','history','trends','leaderboard'].includes(view)) view = 'event';
   const primaryIsPicks = getActivePrimaryTabName() === 'picks';
   _picksState.view = view;
   if (opts.persist !== false && primaryIsPicks) {
@@ -4625,15 +4625,20 @@ function activatePicksView(view, opts = {}){
     b.classList.toggle('active', b.dataset.picksView === view);
   });
   document.getElementById('picksViewEvent').style.display       = view === 'event'       ? '' : 'none';
+  const liveEl = document.getElementById('picksViewLive');
+  if (liveEl) liveEl.style.display                              = view === 'live'        ? '' : 'none';
   document.getElementById('picksViewHistory').style.display     = view === 'history'     ? '' : 'none';
   document.getElementById('picksViewTrends').style.display      = view === 'trends'      ? '' : 'none';
   document.getElementById('picksViewLeaderboard').style.display = view === 'leaderboard' ? '' : 'none';
   // Update TC to reflect the subview
   if (_tcForceSet && primaryIsPicks) _tcForceSet(PICKS_TC_LABEL[view] || 'YOUR PICKS');
-  // Live-rounds polling only runs while the user is on the event view.
+  // Polling lifecycle: stop both pollers on view change, restart in the
+  // matching loader.
   if (typeof stopLiveRoundsPolling === 'function') stopLiveRoundsPolling();
+  if (typeof stopLiveEventPolling === 'function') stopLiveEventPolling();
   if (!_currentUser || !primaryIsPicks) return;
   if (view === 'event')       loadEventView();
+  if (view === 'live')        loadLiveEventView();
   if (view === 'history')     loadHistoryView();
   if (view === 'trends')      loadTrendsView();
   if (view === 'leaderboard') loadLeaderboardView();
@@ -4814,6 +4819,219 @@ async function loadEventView(){
 // Backwards compat — older callers (fight-result handlers, pick mutators)
 // still call loadUpcomingView() to refresh the body after writes.
 const loadUpcomingView = loadEventView;
+
+/* -----------------------------------------------------------
+   LIVE EVENT VIEW — read-only, dense card optimized for fight night.
+   Layout: sticky header + a list of fight cards. Each card shows
+     • both fighter avatars + names + records
+     • per-fight result strip: WIN/LOSS badges, method, round, time
+     • per-fighter live aggregates (SS/TD/KD/Ctrl)
+     • the user's pick + agreement marker
+     • click anywhere on the card → expand a per-round table
+
+   Polls /api/events/:id/card and /api/fights/:id/rounds every 30s
+   while the view is mounted. Stops on view-change.
+----------------------------------------------------------- */
+let _liveEventTimer = null;
+let _liveEventState = { eventId: null, expanded: new Set() };
+
+async function loadLiveEventView(){
+  await populatePicksEventSelect(); // reuse the same event list
+  const eventId = _picksState.eventId;
+  if (!eventId) return;
+  _liveEventState.eventId = eventId;
+  await refreshLiveEventView();
+  startLiveEventPolling();
+}
+
+function startLiveEventPolling(){
+  stopLiveEventPolling();
+  _liveEventTimer = setInterval(refreshLiveEventView, 30 * 1000);
+}
+function stopLiveEventPolling(){
+  if (_liveEventTimer) { clearInterval(_liveEventTimer); _liveEventTimer = null; }
+}
+
+async function refreshLiveEventView(){
+  const eventId = _liveEventState.eventId;
+  const listEl = document.getElementById('liveEventList');
+  const titleEl = document.getElementById('liveEventTitle');
+  const subEl = document.getElementById('liveEventSub');
+  const statusEl = document.getElementById('liveEventStatus');
+  if (!eventId || !listEl) return;
+  try {
+    const [cardRes, picksRes] = await Promise.all([
+      fetch(`/api/events/${eventId}/card`),
+      _currentUser ? fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?event_id=${eventId}`) : Promise.resolve(null)
+    ]);
+    const { event, card } = await cardRes.json();
+    const picks = picksRes ? (await picksRes.json()).picks : [];
+    const picksByFightId = new Map((picks || []).map(p => [p.fight_id, p]));
+
+    if (titleEl) titleEl.textContent = (event && event.name) || 'Live event';
+    if (subEl) {
+      const venue = [event && event.venue, event && event.city, event && event.country].filter(Boolean).join(' · ');
+      subEl.textContent = (event && event.date ? event.date : '') + (venue ? ' · ' + venue : '');
+    }
+    if (statusEl) {
+      const state = (event && event.state) || 'live';
+      statusEl.className = `live-event__status is-${state}`;
+      statusEl.textContent = state === 'live' ? 'LIVE' : (state === 'history' ? 'CONCLUDED' : 'UPCOMING');
+    }
+
+    const normalized = (card || []).map(f => ({
+      ...f,
+      red_fighter_id:  f.red_fighter_id  != null ? f.red_fighter_id  : f.red_id,
+      blue_fighter_id: f.blue_fighter_id != null ? f.blue_fighter_id : f.blue_id,
+    }));
+    // Order: in-progress first (no winner, has_stats=0 or some round_stats), then concluded by latest, then upcoming.
+    normalized.sort((a, b) => {
+      const ord = (f) => {
+        if (f.winner_id == null && f.has_stats !== 1) return 2; // upcoming
+        if (f.winner_id != null) return 1;                       // concluded
+        return 0;                                                 // in-progress
+      };
+      const oa = ord(a), ob = ord(b);
+      if (oa !== ob) return oa - ob;
+      return (b.card_position || 0) - (a.card_position || 0);
+    });
+
+    // Hydrate round_stats for any concluded fight, in parallel.
+    await Promise.all(normalized
+      .filter(f => f.has_stats === 1 || f.has_stats === '1' || f.winner_id != null)
+      .map(async (f) => {
+        try {
+          const r = await fetch(`/api/fights/${f.id}/rounds`);
+          if (!r.ok) return;
+          const detail = await r.json();
+          f._roundStats = Array.isArray(detail.round_stats) ? detail.round_stats : [];
+          const red = f._roundStats.filter(x => x.fighter_id === f.red_fighter_id);
+          const blue = f._roundStats.filter(x => x.fighter_id === f.blue_fighter_id);
+          f._liveAggRed  = red.length  ? summariseRoundStats(red)  : null;
+          f._liveAggBlue = blue.length ? summariseRoundStats(blue) : null;
+        } catch (_) { /* skip on transient failure */ }
+      }));
+
+    listEl.innerHTML = normalized.map(f => renderLiveEventCard(f, picksByFightId.get(f.id))).join('') || '<div class="picks-placeholder">No fights on this card.</div>';
+    attachLiveEventHandlers(listEl);
+  } catch (e) {
+    if (listEl) listEl.innerHTML = '<div class="picks-placeholder">Failed to load live event.</div>';
+  }
+}
+
+function renderLiveEventCard(fight, pick){
+  const concluded = fight.winner_id != null;
+  const winnerRed = concluded && fight.winner_id === fight.red_fighter_id;
+  const winnerBlue = concluded && fight.winner_id === fight.blue_fighter_id;
+  const hasStats = !!(fight._liveAggRed || fight._liveAggBlue);
+  const inProgress = !concluded && (hasStats || fight.has_stats === 1);
+  const stateLabel = concluded ? 'FINAL' : (inProgress ? 'LIVE' : (fight.event_started ? 'PENDING' : 'UPCOMING'));
+
+  const aggCell = (agg) => {
+    if (!agg) return '<span class="live-card__agg-empty">—</span>';
+    const ss = `${agg.sig_str_landed}/${agg.sig_str_attempted}`;
+    const td = `${agg.td_landed}/${agg.td_attempted}`;
+    const ctrlSec = agg.ctrl_sec || 0;
+    const ctrl = ctrlSec ? `${Math.floor(ctrlSec/60)}:${(ctrlSec%60).toString().padStart(2,'0')}` : '0:00';
+    const kd = agg.kd || 0;
+    return `
+      <div class="live-card__agg">
+        <span><label>SS</label>${ss}</span>
+        <span><label>TD</label>${td}</span>
+        <span><label>KD</label>${kd}</span>
+        <span><label>CTRL</label>${ctrl}</span>
+      </div>`;
+  };
+
+  const cornerHtml = (corner) => {
+    const name = corner === 'red' ? fight.red_name : fight.blue_name;
+    const isWinner = (corner === 'red' && winnerRed) || (corner === 'blue' && winnerBlue);
+    const isLoser = concluded && !isWinner;
+    const fighter = fightFighter(fight, corner);
+    const agg = corner === 'red' ? fight._liveAggRed : fight._liveAggBlue;
+    const badge = isWinner ? '<span class="live-card__badge live-card__badge--win">WIN</span>'
+                : isLoser  ? '<span class="live-card__badge live-card__badge--loss">LOSS</span>'
+                : '';
+    return `
+      <div class="live-card__corner live-card__corner--${corner}${isWinner ? ' is-winner' : ''}${isLoser ? ' is-loser' : ''}">
+        <div class="live-card__corner-head">
+          ${fighterAvatar(fighter, { size: 'sm', corner })}
+          <div class="live-card__corner-name">${escHtml(name || '—')}</div>
+          ${badge}
+        </div>
+        ${aggCell(agg)}
+      </div>`;
+  };
+
+  const decision = concluded
+    ? `${escHtml(fight.method || '—')}${fight.round ? ' · R' + fight.round : ''}${fight.time ? ' · ' + escHtml(fight.time) : ''}`
+    : (inProgress ? 'In progress — stats refresh every 30s' : 'Bell hasn\'t rung');
+
+  // User pick badge + correctness
+  let pickHtml = '';
+  if (pick && pick.picked_fighter_id) {
+    const pickedRed = pick.picked_fighter_id === fight.red_fighter_id;
+    const correct = pick.correct === 1;
+    const wrong = pick.correct === 0;
+    const cls = correct ? 'is-correct' : (wrong ? 'is-wrong' : '');
+    const corner = pickedRed ? 'red' : 'blue';
+    const name = pickedRed ? fight.red_name : fight.blue_name;
+    const result = correct ? '✓ Correct' : (wrong ? '✗ Missed' : `Conf ${pick.confidence || 50}%`);
+    pickHtml = `<div class="live-card__pick ${cls}">
+      <span class="live-card__pick-label">Your pick</span>
+      <span class="live-card__pick-name live-card__pick-name--${corner}">${escHtml(name)}</span>
+      <span class="live-card__pick-result">${result}${pick.points != null ? ' · ' + pick.points + ' pts' : ''}</span>
+    </div>`;
+  }
+
+  const isExpanded = _liveEventState.expanded.has(fight.id);
+  const roundsHtml = isExpanded ? renderLiveRoundsPanel(fight) : '';
+
+  return `
+    <div class="live-card${concluded ? ' is-concluded' : ''}${inProgress ? ' is-live' : ''}" data-live-fight="${fight.id}">
+      <div class="live-card__head">
+        <div class="live-card__meta">
+          <span class="live-card__pos">${fight.is_main ? 'MAIN EVENT' : (fight.is_title ? 'TITLE FIGHT' : (fight.card_position ? '#' + fight.card_position : ''))}</span>
+          <span class="live-card__weight">${escHtml(fight.weight_class || '')}</span>
+        </div>
+        <span class="live-card__state live-card__state--${stateLabel.toLowerCase()}">${stateLabel}</span>
+      </div>
+      <div class="live-card__body">
+        ${cornerHtml('red')}
+        <div class="live-card__vs">VS</div>
+        ${cornerHtml('blue')}
+      </div>
+      <div class="live-card__decision">${decision}</div>
+      ${pickHtml}
+      <button type="button" class="live-card__expand" data-expand-fight="${fight.id}">
+        ${isExpanded ? '▾ Hide round-by-round' : '▸ Round-by-round'}
+      </button>
+      <div class="live-card__rounds" data-rounds-slot="${fight.id}">${roundsHtml}</div>
+    </div>`;
+}
+
+function attachLiveEventHandlers(container){
+  container.querySelectorAll('[data-expand-fight]').forEach(btn => {
+    btn.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const id = parseInt(btn.dataset.expandFight, 10);
+      if (!Number.isFinite(id)) return;
+      if (_liveEventState.expanded.has(id)) _liveEventState.expanded.delete(id);
+      else _liveEventState.expanded.add(id);
+      // Re-render just this card's expand state without a full refresh.
+      const card = container.querySelector(`.live-card[data-live-fight="${id}"]`);
+      if (!card) return;
+      const slot = card.querySelector('[data-rounds-slot]');
+      if (slot) {
+        // Fight payload is stashed on the dataset only if we keep it; for
+        // simplicity pull the live-card's fight via a quick lookup —
+        // refreshLiveEventView re-fetches and re-renders, so the cheap
+        // option is to just call refresh.
+        refreshLiveEventView();
+      }
+    });
+  });
+}
 
 function renderEventLiveOrUpcomingBody(normalized, state){
   const fightsEl = document.getElementById('picksFights');
