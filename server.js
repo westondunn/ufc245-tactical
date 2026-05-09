@@ -1254,10 +1254,7 @@ app.post('/api/admin/events/:id/sync-live', requireAdmin, apiHandler(async (req,
   if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
   const result = await pollLiveEvent(eventId, db);
   await db.save();
-  if (result.fights_synced) {
-    cache.delete(`tactical:event:${eventId}`);
-    cache.delete(`tactical:fight:*`); // best-effort; cache.delete may be a no-op for wildcards
-  }
+  if (result.fights_synced) cache.invalidateAll();
   console.log(`[admin] sync-live event=${eventId} synced=${result.fights_synced || 0} status=${result.status}`);
   res.json(result);
 }));
@@ -1446,7 +1443,7 @@ async function pollAllLiveEvents() {
       try {
         const r = await pollLiveEvent(e.id, db);
         if (r && r.fights_synced) {
-          cache.delete(`tactical:event:${e.id}`);
+          cache.invalidateAll();
           await db.save();
           console.log(`[cron] live-poll event=${e.id} synced=${r.fights_synced}`);
         }
