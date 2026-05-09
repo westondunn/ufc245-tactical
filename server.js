@@ -955,7 +955,13 @@ app.use((req, res, next) => {
 app.use(express.static(path.join(__dirname, 'public'), {
   etag: true, lastModified: true, maxAge: '1d',
   setHeaders: (res, filePath) => {
-    if (filePath.endsWith('.html')) res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    if (filePath.endsWith('.html')) {
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    } else if (filePath.endsWith('.js') || filePath.endsWith('.css')) {
+      // Short-circuit browser caching for JS/CSS so deploys land within a
+      // single page-load. ETag still drives 304s on the wire.
+      res.setHeader('Cache-Control', 'public, max-age=0, must-revalidate');
+    }
   }
 }));
 app.use('/vendor/three', express.static(path.join(__dirname, 'node_modules', 'three', 'build'), {
