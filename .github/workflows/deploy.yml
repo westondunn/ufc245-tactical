@@ -207,14 +207,14 @@ jobs:
           echo "Expecting version=${NEW_VERSION} at ${URL}"
           for i in $(seq 1 30); do
             BODY=$(curl -s --max-time 10 "$URL" || true)
-            DEPLOYED=$(echo "$BODY" | python -c "import sys,json;
-try: print(json.loads(sys.stdin.read()).get('version',''))
-except: print('')" 2>/dev/null || true)
+            # Extract "version":"X.Y.Z" via grep — keeps the YAML scalar
+            # block free of multi-line Python.
+            DEPLOYED=$(printf '%s' "$BODY" | grep -oE '"version":"[^"]+"' | head -1 | sed -E 's/.*:"([^"]+)"/\1/')
             if [ "$DEPLOYED" = "$NEW_VERSION" ]; then
               echo "Prod on $DEPLOYED (matches $NEW_VERSION) after $i polls"
               exit 0
             fi
-            echo "Attempt $i/30: deployed=${DEPLOYED:-?} expected=$NEW_VERSION"
+            echo "Attempt $i/30 — deployed=${DEPLOYED:-?} expected=$NEW_VERSION"
             sleep 20
           done
           echo "::error::Prod did not reach $NEW_VERSION within 10 minutes — Railway deploy likely failed. Last body: $BODY"
