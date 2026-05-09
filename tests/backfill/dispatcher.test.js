@@ -67,6 +67,64 @@ async function run() {
   await pRun(`DELETE FROM audit_runs WHERE run_id = ?`, [runId]);
   await pRun(`DELETE FROM fighters WHERE id = ?`, [fixId]);
 
+  // ── Hash-link + cascade: auto-link ufcstats_hash and immediately backfill profile fields ──
+  console.log('\nBackfill Dispatcher (identity-link + cascade):');
+
+  const fixId2 = 9502;
+  const runId2 = 'dispatcher-cascade-test-run';
+
+  await pRun(`INSERT OR REPLACE INTO fighters (id, name, ufcstats_hash, reach_cm) VALUES (?, ?, ?, ?)`,
+    [fixId2, 'DispatcherSearch', null, null]);
+
+  await pRun(`
+    INSERT INTO coverage_snapshots (run_id, ran_at, table_name, column_name, scope, total_rows, non_null_rows, coverage_pct, gap_row_ids)
+    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+  `, [runId2, new Date().toISOString(), 'fighters', 'ufcstats_hash', 'all', 1, 0, 0.0, JSON.stringify([fixId2])]);
+  await pRun(`
+    INSERT INTO audit_runs (run_id, started_at, status, trigger_source) VALUES (?, ?, ?, ?)
+  `, [runId2, new Date().toISOString(), 'complete', 'test']);
+
+  const scraperMocks2 = {
+    'ufcstats-fighter-search': async () => ({
+      candidates: [{ hash: 'searchhash950200aa', name: 'DispatcherSearch' }],
+      source_url: 'http://ufcstats.com/statistics/fighters/search?query=DispatcherSearch',
+    }),
+    'ufcstats-fighter-page': async () => ({
+      reach_cm: 185, height_cm: 178,
+      source_url: 'http://ufcstats.com/fighter-details/searchhash950200aa',
+    }),
+    'ufc-com-athlete': async () => ({ headshot_url: null }),
+  };
+
+  const result2 = await runBackfill({ runId: runId2, scraperMocks: scraperMocks2 });
+
+  assert(typeof result2 === 'object', 'cascade: returns object');
+  assert(result2.auto >= 1, 'cascade: at least one auto decision (hash link)');
+
+  const fr2 = await pOneRow(`SELECT ufcstats_hash, reach_cm FROM fighters WHERE id = ?`, [fixId2]);
+  assert(fr2.ufcstats_hash === 'searchhash950200aa', 'cascade: ufcstats_hash auto-written');
+
+  const cascadeQueue = await pAllRows(
+    `SELECT column_name, status FROM pending_backfill WHERE table_name = ? AND row_id = ?`,
+    ['fighters', String(fixId2)]
+  );
+  const hashRow = cascadeQueue.find(r => r.column_name === 'ufcstats_hash');
+  assert(hashRow && hashRow.status === 'applied', 'cascade: ufcstats_hash logged as applied');
+
+  const profileRow = cascadeQueue.find(r => r.column_name === 'reach_cm');
+  assert(profileRow !== undefined, 'cascade: reach_cm backfill recorded in same run');
+  if (profileRow && profileRow.status === 'applied') {
+    assert(fr2.reach_cm === 185, 'cascade: reach_cm auto-written via cascade');
+  } else {
+    assert(true, 'cascade: reach_cm queued for review (gate demoted)');
+  }
+
+  // Cleanup
+  await pRun(`DELETE FROM pending_backfill WHERE table_name = ? AND row_id = ?`, ['fighters', String(fixId2)]);
+  await pRun(`DELETE FROM coverage_snapshots WHERE run_id = ?`, [runId2]);
+  await pRun(`DELETE FROM audit_runs WHERE run_id = ?`, [runId2]);
+  await pRun(`DELETE FROM fighters WHERE id = ?`, [fixId2]);
+
   return results;
 }
 

@@ -6,6 +6,14 @@
  * or queues a pending_backfill row.
  *
  * Pass `scraperMocks` to inject deterministic source fetchers in tests.
+ *
+ * Special behaviour for fighters.ufcstats_hash (identity-link safety class):
+ *   - Calls the ufcstats-fighter-search source, picks an exact normalized-name
+ *     match, and lets the gate decide (auto on single exact match, review
+ *     otherwise).
+ *   - On auto-apply, immediately cascades to fill all other fighters.* gaps
+ *     for the same row using the newly acquired hash, so the nightly job
+ *     closes both the hash gap and profile gaps in one pass.
  */
 const db = require('../../db');
 const spec = require('./backfill-spec');
@@ -13,13 +21,27 @@ const { decide } = require('./gate');
 const { runVerify } = require('./verify');
 const { fetchFighter } = require('../scrapers/ufcstats-fighter');
 const { fetchAthlete } = require('../scrapers/ufc-com-athlete');
+const { searchFighter } = require('../scrapers/ufcstats-search');
 
 const SOURCE_FETCHERS = {
-  'ufcstats-fighter-page': async (ctx) => fetchFighter(ctx.ufcstats_hash, {}),
-  'ufc-com-athlete':       async (ctx) => fetchAthlete(ctx.ufc_slug, {}),
-  'ufcstats-event-page':   async () => null,
-  'ufcstats-fight-page':   async () => null,
+  'ufcstats-fighter-page':   async (ctx) => fetchFighter(ctx.ufcstats_hash, {}),
+  'ufc-com-athlete':         async (ctx) => fetchAthlete(ctx.ufc_slug, {}),
+  'ufcstats-fighter-search': async (ctx) => searchFighter(ctx.name, {}),
+  'ufcstats-event-page':     async () => null,
+  'ufcstats-fight-page':     async () => null,
 };
+
+// Same normalization used by scripts/link-and-backfill-card-fighters.js:
+// NFD-decompose → strip combining marks → lowercase → strip punctuation → collapse whitespace
+function normalizeName(s) {
+  return (s || '')
+    .normalize('NFD')
+    .replace(/[̀-ͯ]/g, '')
+    .toLowerCase()
+    .replace(/[^\w\s]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+}
 
 function pRun(sql, params) {
   try { return Promise.resolve(db.run(sql, params)); }
@@ -100,6 +122,84 @@ async function applyAutoWrite({ table, rowId, column, current, proposed }) {
   }
 }
 
+/**
+ * After auto-linking a ufcstats_hash, immediately process all other fighters.*
+ * spec entries for the same row using the profile page. This closes hash gap
+ * and profile gaps in a single nightly pass rather than two.
+ */
+async function cascadeFighterProfile({ ctx, runId, fetchers, dryRun }) {
+  let auto = 0, queued = 0, rejected = 0;
+  const errors = [];
+
+  const profileFetcher = fetchers['ufcstats-fighter-page'];
+  if (!profileFetcher || !ctx.ufcstats_hash) return { auto, queued, rejected, errors };
+
+  let srcResult;
+  try {
+    srcResult = await profileFetcher(ctx);
+  } catch (e) {
+    errors.push({ gap: { table: 'fighters', column: 'profile', row_id: String(ctx.id) }, error: String(e.message || e) });
+    return { auto, queued, rejected, errors };
+  }
+  if (!srcResult) return { auto, queued, rejected, errors };
+
+  for (const [specKey, specEntry] of Object.entries(spec)) {
+    if (!specKey.startsWith('fighters.')) continue;
+    if (specKey === 'fighters.ufcstats_hash') continue;
+    if (specEntry.source !== 'ufcstats-fighter-page') continue;
+
+    const column = specKey.split('.')[1];
+    const current = ctx[column] != null ? ctx[column] : null;
+    if (current !== null) continue; // gap-fill only
+
+    const proposed = srcResult[column];
+    if (proposed === undefined || proposed === null) continue;
+
+    try {
+      const verifyCtx = { current, proposed, bounds: specEntry.bounds };
+      const verify = await runVerify(specEntry.verify, verifyCtx);
+      const sources = [{ name: specEntry.source, value: proposed }];
+
+      const decision = decide({
+        safety: specEntry.safety,
+        current,
+        proposed,
+        sources,
+        verifyPassed: verify.passed,
+        ambiguousIdentity: false,
+      });
+
+      if (dryRun) {
+        console.log(`[dry-run][cascade] fighters.${column} id=${ctx.id} → ${decision.decision} (${decision.reason})`);
+        continue;
+      }
+
+      if (decision.decision === 'auto') {
+        await applyAutoWrite({ table: 'fighters', rowId: ctx.id, column, current, proposed });
+        await logDecision({ table: 'fighters', rowId: ctx.id, column, current, proposed,
+          source: specEntry.source, sourceUrl: srcResult.source_url, decision: 'auto',
+          reason: decision.reason, sourcesDiff: { sources }, runId, applied: true });
+        auto++;
+      } else if (decision.decision === 'review') {
+        await logDecision({ table: 'fighters', rowId: ctx.id, column, current, proposed,
+          source: specEntry.source, sourceUrl: srcResult.source_url, decision: 'review',
+          reason: decision.reason, sourcesDiff: { sources }, runId, applied: false });
+        queued++;
+      } else if (decision.decision === 'reject') {
+        await logDecision({ table: 'fighters', rowId: ctx.id, column, current, proposed,
+          source: specEntry.source, sourceUrl: srcResult.source_url, decision: 'reject',
+          reason: decision.reason, sourcesDiff: { sources }, runId, applied: false });
+        rejected++;
+      }
+    } catch (e) {
+      errors.push({ gap: { table: 'fighters', column, row_id: String(ctx.id) }, error: String(e.message || e) });
+      console.error(`[backfill][cascade] fighters.${column} id=${ctx.id}: ${e.message}`);
+    }
+  }
+
+  return { auto, queued, rejected, errors };
+}
+
 async function runBackfill({ runId, dryRun = false, scraperMocks = null } = {}) {
   const gaps = await loadGaps(runId);
   const fetchers = scraperMocks || SOURCE_FETCHERS;
@@ -133,8 +233,25 @@ async function runBackfill({ runId, dryRun = false, scraperMocks = null } = {}) 
 
       const srcResult = await fetchOnce(specEntry.source, ctx);
       if (!srcResult) continue;
-      const proposed = srcResult[gap.column];
-      if (proposed === undefined || proposed === null) continue;
+
+      // identity-link: resolve proposed value and match quality from candidates
+      let proposed = srcResult[gap.column];
+      let identityLinkMatch = null;
+
+      if (specEntry.safety === 'identity-link') {
+        const candidates = srcResult.candidates || [];
+        const target = normalizeName(ctx.name);
+        const exact = candidates.filter(c => normalizeName(c.name) === target);
+        if (exact.length === 1) {
+          proposed = exact[0].hash;
+          identityLinkMatch = 'exact-single';
+        } else {
+          identityLinkMatch = exact.length > 1 ? 'multiple-exact' : 'no-exact-match';
+          // proposed stays undefined/null; gate returns 'review'
+        }
+      } else {
+        if (proposed === undefined || proposed === null) continue;
+      }
 
       const verifyCtx = { current, proposed, bounds: specEntry.bounds };
       const verify = await runVerify(specEntry.verify, verifyCtx);
@@ -148,6 +265,7 @@ async function runBackfill({ runId, dryRun = false, scraperMocks = null } = {}) 
         sources,
         verifyPassed: verify.passed,
         ambiguousIdentity: false,
+        identityLinkMatch,
       });
 
       if (dryRun) {
@@ -161,6 +279,22 @@ async function runBackfill({ runId, dryRun = false, scraperMocks = null } = {}) 
           source: specEntry.source, sourceUrl: srcResult.source_url, decision: 'auto',
           reason: decision.reason, sourcesDiff: { sources }, runId, applied: true });
         auto++;
+
+        // Cascade: if we just linked a ufcstats_hash, immediately backfill
+        // profile fields for this fighter so the nightly job closes both the
+        // hash gap and the profile gaps in one pass.
+        if (gap.column === 'ufcstats_hash' && gap.table === 'fighters') {
+          const cascadeResult = await cascadeFighterProfile({
+            ctx: { ...ctx, ufcstats_hash: proposed },
+            runId,
+            fetchers,
+            dryRun,
+          });
+          auto += cascadeResult.auto;
+          queued += cascadeResult.queued;
+          rejected += cascadeResult.rejected;
+          errors.push(...cascadeResult.errors);
+        }
       } else if (decision.decision === 'review') {
         await logDecision({ table: gap.table, rowId: gap.row_id, column: gap.column, current, proposed,
           source: specEntry.source, sourceUrl: srcResult.source_url, decision: 'review',

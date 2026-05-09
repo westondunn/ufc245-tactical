@@ -2,12 +2,15 @@
  * data/backfill/gate.js — pure decision function.
  *
  * Inputs:
- *   safety: 'cosmetic' | 'safe' | 'risky' | 'reconcile'
+ *   safety: 'cosmetic' | 'safe' | 'risky' | 'reconcile' | 'identity-link'
  *   current: existing DB value (any) or null
  *   proposed: proposed new value (any), required
  *   sources: [{ name, value }, ...] — what each source returned
  *   verifyPassed: bool — write-time verify rule outcome
  *   ambiguousIdentity: bool — true if fighter/row identity match was ambiguous
+ *   identityLinkMatch: 'exact-single' | 'multiple-exact' | 'no-exact-match' | null
+ *     Only relevant when safety === 'identity-link'. 'exact-single' → auto;
+ *     anything else → review so a human approves the link.
  *
  * Output:
  *   { decision: 'auto' | 'review' | 'reject', reason }
@@ -24,9 +27,21 @@ function valuesAgree(a, b) {
   return JSON.stringify(a) === JSON.stringify(b);
 }
 
-function decide({ safety, current, proposed, sources = [], verifyPassed, ambiguousIdentity = false }) {
+function decide({ safety, current, proposed, sources = [], verifyPassed, ambiguousIdentity = false, identityLinkMatch = null }) {
   if (ambiguousIdentity) {
     return { decision: 'reject', reason: 'ambiguous identity match' };
+  }
+
+  // identity-link is checked before the null-proposed guard because an
+  // ambiguous search (no exact match) legitimately has no proposed value yet.
+  if (safety === 'identity-link') {
+    if (current !== null && current !== undefined) {
+      return { decision: 'review', reason: 'identity-link: value already set; gap-fill only' };
+    }
+    if (identityLinkMatch === 'exact-single' && proposed !== null && proposed !== undefined) {
+      return { decision: 'auto', reason: 'identity-link: exact unambiguous name match' };
+    }
+    return { decision: 'review', reason: `identity-link: ${identityLinkMatch || 'no match'}` };
   }
 
   if (proposed === null || proposed === undefined) {
