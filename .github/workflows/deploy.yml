@@ -192,6 +192,34 @@ jobs:
             echo "Deploy verification skipped — Railway secrets not configured."
           fi
 
+      # Hardcoded public-URL safety net: poll /api/version against the
+      # known prod hostname and fail the workflow if the deployed version
+      # doesn't match the version-bump commit's package.json. Runs even
+      # when Railway secrets are missing, so future deploy regressions can't
+      # silently sit on prod for days.
+      - name: Verify prod is on the new version (public URL)
+        if: needs.version-bump.outputs.new_version != ''
+        env:
+          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+        run: |
+          set -euo pipefail
+          URL="https://web-production-96d6e.up.railway.app/api/version"
+          echo "Expecting version=${NEW_VERSION} at ${URL}"
+          for i in $(seq 1 30); do
+            BODY=$(curl -s --max-time 10 "$URL" || true)
+            DEPLOYED=$(echo "$BODY" | python -c "import sys,json;
+try: print(json.loads(sys.stdin.read()).get('version',''))
+except: print('')" 2>/dev/null || true)
+            if [ "$DEPLOYED" = "$NEW_VERSION" ]; then
+              echo "Prod on $DEPLOYED (matches $NEW_VERSION) after $i polls"
+              exit 0
+            fi
+            echo "Attempt $i/30: deployed=${DEPLOYED:-?} expected=$NEW_VERSION"
+            sleep 20
+          done
+          echo "::error::Prod did not reach $NEW_VERSION within 10 minutes — Railway deploy likely failed. Last body: $BODY"
+          exit 1
+
       - name: Wait for web + predictions health
         if: steps.check_secrets.outputs.missing == '0'
         run: |
