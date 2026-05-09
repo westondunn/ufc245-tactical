@@ -4896,25 +4896,40 @@ async function refreshLiveEventView(){
       return (b.card_position || 0) - (a.card_position || 0);
     });
 
-    // Active-fight detection. Manual override via ?active_fight=<id> wins;
-    // otherwise heuristic = highest card_position among unfinished fights
-    // (chronologically next in card order). ufcstats publishes stats only
-    // after a fight ends, so the data alone can't tell us which prelim has
-    // the bell. The override URL param lets the user pin the live tab to a
-    // specific fight when card order doesn't match chronology.
+    // Active-fight detection. Override via ?active_fight=<id> URL param OR
+    // localStorage pin (persists across reloads / sessions). Heuristic
+    // fallback = highest card_position among unfinished fights — but
+    // card_position doesn't always match the actual chronological order on
+    // the floor (UFC bumps slots), so the user can override at any time
+    // with the chooser shown above the active card.
     let activeFight = null;
+    let pinSource = null;
+    const PIN_LS_KEY = `ufc_active_fight:${eventId}`;
     try {
       const params = new URLSearchParams(window.location.search);
-      const overrideId = parseInt(params.get('active_fight'), 10);
-      if (Number.isFinite(overrideId)) {
-        activeFight = normalized.find(f => f.id === overrideId) || null;
+      const fromUrl = parseInt(params.get('active_fight'), 10);
+      if (Number.isFinite(fromUrl)) {
+        const f = normalized.find(x => x.id === fromUrl);
+        if (f) { activeFight = f; pinSource = 'url'; }
       }
     } catch (_) { /* ignore */ }
+    if (!activeFight) {
+      try {
+        const fromLs = parseInt(localStorage.getItem(PIN_LS_KEY) || '', 10);
+        if (Number.isFinite(fromLs)) {
+          const f = normalized.find(x => x.id === fromLs);
+          // Auto-clear the pin once that fight finishes so we advance.
+          if (f && f.winner_id == null) { activeFight = f; pinSource = 'pin'; }
+          else if (f && f.winner_id != null) { try { localStorage.removeItem(PIN_LS_KEY); } catch (_) {} }
+        }
+      } catch (_) { /* ignore */ }
+    }
     if (!activeFight) {
       const unfinished = normalized.filter(f => f.winner_id == null);
       if (unfinished.length) {
         unfinished.sort((a, b) => (b.card_position || 0) - (a.card_position || 0));
         activeFight = unfinished[0];
+        pinSource = 'auto';
       }
     }
 
@@ -4944,24 +4959,33 @@ async function refreshLiveEventView(){
 
     const concludedCount = normalized.filter(f => f.winner_id != null).length;
     const pendingCount = normalized.filter(f => f.winner_id == null).length - 1;
-    // Build a quick switcher of remaining unfinished fights so the user can
-    // pin a different one when card_position order doesn't match chronology.
-    const remaining = normalized
-      .filter(f => f.winner_id == null && f.id !== activeFight.id)
-      .sort((a, b) => (b.card_position || 0) - (a.card_position || 0));
-    const remainingHtml = remaining.length ? remaining.slice(0, 4).map(f =>
-      `<button class="live-event__pin" data-live-pin="${f.id}">${escHtml(f.red_name)} vs ${escHtml(f.blue_name)}</button>`
-    ).join('') : '';
+    // All unfinished fights as a chooser — sorted with the auto-pick first,
+    // then the rest in card-position order (highest first = next on card).
+    const unfinishedAll = normalized.filter(f => f.winner_id == null);
+    unfinishedAll.sort((a, b) => (b.card_position || 0) - (a.card_position || 0));
+    const switcherHtml = unfinishedAll.map(f => {
+      const isActive = f.id === activeFight.id;
+      return `
+        <button class="live-event__chip${isActive ? ' is-active' : ''}" data-live-pin="${f.id}">
+          <span class="live-event__chip-pos">#${f.card_position || '?'}</span>
+          <span class="live-event__chip-names">${escHtml(f.red_name)} vs ${escHtml(f.blue_name)}</span>
+          ${isActive ? '<span class="live-event__chip-tag">LIVE</span>' : ''}
+        </button>`;
+    }).join('');
+    const sourceNote = pinSource === 'pin' || pinSource === 'url'
+      ? '<span class="live-event__pin-note">Pinned · <a href="#" data-live-clear>clear</a></span>'
+      : '<span class="live-event__pin-note">Auto-picked. Click another fight below if it\'s wrong.</span>';
     const summary = `
       <div class="live-event__summary">
         <span class="live-event__summary-pill">ACTIVE FIGHT</span>
-        <span>${concludedCount} concluded</span>
-        <span>${pendingCount} pending</span>
+        <span>${concludedCount} of ${normalized.length} concluded</span>
+        <span>${pendingCount} pending after this</span>
         <a href="#" class="live-event__see-all" data-live-see-all>See full card →</a>
       </div>
-      ${remainingHtml ? `<div class="live-event__pinrow">
-        <span class="live-event__pinrow-label">Pin a different fight:</span>${remainingHtml}
-      </div>` : ''}`;
+      <div class="live-event__chooser">
+        <div class="live-event__chooser-row">${switcherHtml}</div>
+        <div class="live-event__chooser-foot">${sourceNote}</div>
+      </div>`;
     listEl.innerHTML = summary + renderLiveEventCard(activeFight, picksByFightId.get(activeFight.id));
     attachLiveEventHandlers(listEl);
     const seeAll = listEl.querySelector('[data-live-see-all]');
@@ -4969,10 +4993,23 @@ async function refreshLiveEventView(){
       ev.preventDefault();
       if (typeof activatePicksView === 'function') activatePicksView('event');
     });
+    const clearBtn = listEl.querySelector('[data-live-clear]');
+    if (clearBtn) clearBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      try { localStorage.removeItem(PIN_LS_KEY); } catch (_) {}
+      try {
+        const url = new URL(window.location.href);
+        url.searchParams.delete('active_fight');
+        window.history.replaceState(null, '', url.toString());
+      } catch (_) {}
+      refreshLiveEventView();
+    });
     listEl.querySelectorAll('[data-live-pin]').forEach(btn => {
       btn.addEventListener('click', (ev) => {
         ev.preventDefault();
         const id = btn.dataset.livePin;
+        // Persist in localStorage AND mirror to URL so a copied link respects it.
+        try { localStorage.setItem(PIN_LS_KEY, String(id)); } catch (_) {}
         try {
           const url = new URL(window.location.href);
           url.searchParams.set('active_fight', id);

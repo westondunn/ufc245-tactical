@@ -2907,17 +2907,33 @@ footer{
 .live-event__see-all{margin-left:auto;color:var(--cyan);text-decoration:none}
 .live-event__see-all:hover{text-decoration:underline}
 
-.live-event__pinrow{
-  display:flex;flex-wrap:wrap;align-items:center;gap:8px;padding:6px 14px 12px 14px;
-  font-family:var(--f-mono);font-size:9px;letter-spacing:.06em;color:var(--muted-dim);
+.live-event__chooser{
+  margin:8px 0 12px;padding:10px;border:1px solid var(--border);border-radius:4px;
+  background:rgba(0,0,0,0.18);display:flex;flex-direction:column;gap:8px;
 }
-.live-event__pinrow-label{text-transform:uppercase;letter-spacing:.18em;margin-right:4px}
-.live-event__pin{
+.live-event__chooser-row{display:flex;flex-wrap:wrap;gap:6px}
+.live-event__chip{
+  display:inline-flex;align-items:center;gap:8px;
   background:transparent;color:var(--text);border:1px solid var(--border);
-  font-family:var(--f-mono);font-size:9px;letter-spacing:.04em;
-  padding:4px 8px;border-radius:2px;cursor:pointer;
+  font-family:var(--f-mono);font-size:10px;letter-spacing:.04em;
+  padding:6px 10px;border-radius:2px;cursor:pointer;
 }
-.live-event__pin:hover{border-color:var(--cyan);color:var(--cyan)}
+.live-event__chip:hover{border-color:var(--cyan);color:var(--cyan)}
+.live-event__chip.is-active{
+  border-color:#ff4757;background:rgba(255,71,87,0.08);color:#fff;
+}
+.live-event__chip-pos{color:var(--muted-dim);font-size:9px;letter-spacing:.18em}
+.live-event__chip.is-active .live-event__chip-pos{color:#ff8896}
+.live-event__chip-names{}
+.live-event__chip-tag{
+  margin-left:6px;color:#ff4757;border:1px solid #ff4757;
+  padding:1px 6px;border-radius:2px;font-size:8px;letter-spacing:.18em;
+}
+.live-event__chooser-foot{
+  font-family:var(--f-mono);font-size:9px;color:var(--muted-dim);letter-spacing:.04em;
+}
+.live-event__pin-note a{color:var(--cyan);text-decoration:none}
+.live-event__pin-note a:hover{text-decoration:underline}
 
 .live-event__between{
   padding:24px 14px;border:1px dashed var(--border);border-radius:4px;
@@ -3631,14 +3647,14 @@ img.flag {
        user picked the same fighter.
 */
 .pick-fight__corner.is-winner {
-  outline: 2px solid var(--amber, #FFB020);
-  outline-offset: -2px;
-  box-shadow: 0 0 0 1px rgba(255,176,32,.18) inset, 0 4px 18px -8px rgba(255,176,32,.55);
-  background: linear-gradient(180deg, rgba(255,176,32,.06), rgba(255,176,32,0));
+  /* Subtle green accent on the left edge instead of the gold outline that
+     read as a thick yellow border on the picks list. */
+  border-left: 2px solid #00ffaa;
+  background: linear-gradient(180deg, rgba(0,255,170,.05), rgba(0,255,170,0));
   position: relative;
 }
 .pick-fight__corner.is-winner .pick-fight__tag {
-  color: var(--amber, #FFB020);
+  color: #00ffaa;
   letter-spacing: .14em;
   font-weight: 600;
 }
@@ -3648,14 +3664,11 @@ img.flag {
 }
 
 .pick-fighter.is-actual-winner {
-  border-color: var(--amber, #FFB020) !important;
-  box-shadow: 0 0 0 1px rgba(255,176,32,.25) inset, 0 0 14px -2px rgba(255,176,32,.35);
+  border-color: #00ffaa !important;
+  box-shadow: 0 0 0 1px rgba(0,255,170,.20) inset;
 }
 .pick-fighter.is-actual-winner.selected {
-  /* user picked the actual winner — keep the selected colour but stack the
-     gold ring on top so it reads as "you got it right" without losing the
-     selected state. */
-  box-shadow: 0 0 0 2px var(--amber, #FFB020) inset, 0 0 16px -2px rgba(255,176,32,.5);
+  box-shadow: 0 0 0 2px #00ffaa inset;
 }
 .pick-fighter__winner-tag {
   display: inline-block;
@@ -3664,8 +3677,8 @@ img.flag {
   font-family: var(--f-mono);
   font-size: 9px;
   letter-spacing: .14em;
-  border: 1px solid var(--amber, #FFB020);
-  color: var(--amber, #FFB020);
+  border: 1px solid #00ffaa;
+  color: #00ffaa;
   border-radius: 2px;
   vertical-align: 1px;
 }
