@@ -4630,6 +4630,8 @@ function activatePicksView(view, opts = {}){
   document.getElementById('picksViewLeaderboard').style.display = view === 'leaderboard' ? '' : 'none';
   // Update TC to reflect the subview
   if (_tcForceSet && primaryIsPicks) _tcForceSet(PICKS_TC_LABEL[view] || 'YOUR PICKS');
+  // Live-rounds polling only runs while the user is on the event view.
+  if (typeof stopLiveRoundsPolling === 'function') stopLiveRoundsPolling();
   if (!_currentUser || !primaryIsPicks) return;
   if (view === 'event')       loadEventView();
   if (view === 'history')     loadHistoryView();
@@ -4792,6 +4794,13 @@ async function loadEventView(){
       renderEventHistoryBody(normalized, picks || [], event);
     } else {
       renderEventLiveOrUpcomingBody(normalized, state);
+    }
+    // Start polling round_stats when the event is live so per-round
+    // breakdowns appear inline as fights conclude.
+    if (state === 'live' && typeof startLiveRoundsPolling === 'function') {
+      startLiveRoundsPolling();
+    } else if (typeof stopLiveRoundsPolling === 'function') {
+      stopLiveRoundsPolling();
     }
   } catch (e) {
     fightsEl.innerHTML = '<div class="picks-placeholder">Failed to load this event\'s card.</div>';
@@ -5021,12 +5030,52 @@ function renderFighterStatsHover(fight, model, corner){
 }
 
 function getFighterEvidenceItems(fight, model, corner){
-  // Live-event override (UFC 328 night): the per-fighter evidence rows are
-  // sourced from the model's category evidence, which currently shows
-  // sparse/zero values for fighters with limited fight_stats history. Force
-  // the empty-state copy so the panel doesn't claim signal that isn't there.
-  // See server-side discussion in scripts/correct-fighter-drift-2026-05-09.js.
-  return [];
+  // 1) Live round_stats aggregate (when present on the fight payload — set
+  //    by the live-rounds polling path, see attachLiveRoundsToCard).
+  const liveAgg = corner === 'red' ? fight._liveAggRed : fight._liveAggBlue;
+  if (liveAgg) {
+    const items = [];
+    if (Number.isFinite(liveAgg.sig_str_landed)) {
+      items.push({ label: 'Sig strikes (live)', value: `${liveAgg.sig_str_landed}/${liveAgg.sig_str_attempted}` });
+    }
+    if (Number.isFinite(liveAgg.td_landed) && liveAgg.td_attempted > 0) {
+      items.push({ label: 'Takedowns (live)', value: `${liveAgg.td_landed}/${liveAgg.td_attempted}` });
+    }
+    if (Number.isFinite(liveAgg.kd) && liveAgg.kd > 0) {
+      items.push({ label: 'Knockdowns (live)', value: String(liveAgg.kd) });
+    }
+    if (Number.isFinite(liveAgg.ctrl_sec) && liveAgg.ctrl_sec > 0) {
+      const m = Math.floor(liveAgg.ctrl_sec / 60), s = liveAgg.ctrl_sec % 60;
+      items.push({ label: 'Control time (live)', value: `${m}:${s.toString().padStart(2, '0')}` });
+    }
+    if (items.length) return items;
+  }
+
+  // 2) Model category evidence when present.
+  const categories = model && model.explanation && Array.isArray(model.explanation.categories)
+    ? model.explanation.categories : [];
+  const key = corner === 'red' ? 'red' : 'blue';
+  const items = [];
+  for (const category of categories) {
+    const evidence = Array.isArray(category.evidence) ? category.evidence[0] : null;
+    if (!evidence || !evidence[key]) continue;
+    const value = formatEvidenceNumber(evidence[key].value, evidence.unit || '');
+    if (!value) continue;
+    items.push({ label: category.category || evidence.label || 'Model stat', value });
+  }
+  if (items.length) return items;
+
+  // 3) Profile fallback so every fighter card shows something concrete.
+  const out = [];
+  const height = corner === 'red' ? fight.red_height : fight.blue_height;
+  const reach  = corner === 'red' ? fight.red_reach  : fight.blue_reach;
+  const slpm   = corner === 'red' ? fight.red_slpm   : fight.blue_slpm;
+  const tdAvg  = corner === 'red' ? fight.red_td_avg : fight.blue_td_avg;
+  if (height) out.push({ label: 'Height', value: formatHeight(height) });
+  if (reach)  out.push({ label: 'Reach',  value: formatReach(reach) });
+  if (Number.isFinite(+slpm) && +slpm > 0) out.push({ label: 'SLpM', value: (+slpm).toFixed(2) });
+  if (Number.isFinite(+tdAvg) && +tdAvg > 0) out.push({ label: 'TD avg', value: (+tdAvg).toFixed(2) + '/15min' });
+  return out;
 }
 
 function fighterInitials(name){
@@ -5034,6 +5083,128 @@ function fighterInitials(name){
   if (!parts.length) return '—';
   if (parts.length === 1) return parts[0].slice(0, 2).toUpperCase();
   return (parts[0][0] + parts[parts.length - 1][0]).toUpperCase();
+}
+
+/* -----------------------------------------------------------
+   LIVE ROUND STATS — picks-page panel that surfaces per-round
+   breakdowns as ufcstats publishes them. The server-side live
+   poller writes round_stats; the frontend polls
+   /api/fights/:id/rounds every 30s for any non-concluded fight on
+   the active live card and renders the per-round table inline on
+   the pick widget.
+----------------------------------------------------------- */
+function summariseRoundStats(rs){
+  // Sum landed + attempted + kd + ctrl across all rounds for a fighter.
+  const out = { sig_str_landed: 0, sig_str_attempted: 0, td_landed: 0, td_attempted: 0, kd: 0, ctrl_sec: 0 };
+  for (const r of rs) {
+    out.sig_str_landed += r.sig_str_landed || 0;
+    out.sig_str_attempted += r.sig_str_attempted || 0;
+    out.td_landed += r.td_landed || 0;
+    out.td_attempted += r.td_attempted || 0;
+    out.kd += r.kd || 0;
+    out.ctrl_sec += r.ctrl_sec || 0;
+  }
+  return out;
+}
+
+function renderLiveRoundsPanel(fight){
+  const rs = Array.isArray(fight._roundStats) ? fight._roundStats : null;
+  if (!rs || rs.length === 0) {
+    if (fight._liveRoundsLoaded) {
+      return '<div class="pick-live-rounds__empty">No round-by-round stats published yet.</div>';
+    }
+    return ''; // no panel until first poll completes
+  }
+  const byRound = {};
+  for (const r of rs) {
+    if (!byRound[r.round]) byRound[r.round] = {};
+    if (r.fighter_id === fight.red_fighter_id) byRound[r.round].red = r;
+    else if (r.fighter_id === fight.blue_fighter_id) byRound[r.round].blue = r;
+  }
+  const rounds = Object.keys(byRound).map(Number).sort((a, b) => a - b);
+  if (!rounds.length) return '';
+  const headerCell = (label) => `<th class="pick-live-rounds__h">${label}</th>`;
+  const cell = (v) => `<td>${v == null ? '—' : v}</td>`;
+  const rows = rounds.map(rn => {
+    const r = byRound[rn] || {};
+    const red = r.red || {};
+    const blue = r.blue || {};
+    const fmt = (s) => `${s.sig_str_landed || 0}/${s.sig_str_attempted || 0}`;
+    const tdf = (s) => (s.td_landed || s.td_attempted)
+      ? `${s.td_landed || 0}/${s.td_attempted || 0}` : '—';
+    const ctrl = (s) => {
+      const sec = s.ctrl_sec || 0;
+      if (!sec) return '—';
+      return `${Math.floor(sec/60)}:${(sec%60).toString().padStart(2,'0')}`;
+    };
+    return `
+      <tr>
+        <th class="pick-live-rounds__rh">R${rn}</th>
+        ${cell(fmt(red))}${cell(tdf(red))}${cell(red.kd || '—')}${cell(ctrl(red))}
+        <td class="pick-live-rounds__sep"></td>
+        ${cell(fmt(blue))}${cell(tdf(blue))}${cell(blue.kd || '—')}${cell(ctrl(blue))}
+      </tr>`;
+  }).join('');
+  return `
+    <div class="pick-live-rounds__panel">
+      <div class="pick-live-rounds__head">
+        <span class="pick-live-rounds__title">Round-by-round</span>
+        <span class="pick-live-rounds__sub">${escHtml(fight.red_name || 'Red')} vs ${escHtml(fight.blue_name || 'Blue')}</span>
+      </div>
+      <table class="pick-live-rounds__table">
+        <thead>
+          <tr>
+            <th></th>
+            ${headerCell('SS')}${headerCell('TD')}${headerCell('KD')}${headerCell('Ctrl')}
+            <th class="pick-live-rounds__sep"></th>
+            ${headerCell('SS')}${headerCell('TD')}${headerCell('KD')}${headerCell('Ctrl')}
+          </tr>
+        </thead>
+        <tbody>${rows}</tbody>
+      </table>
+    </div>`;
+}
+
+let _liveRoundsTimer = null;
+async function pollLiveRoundsForCard(){
+  try {
+    if (!_picksState || _picksState.view !== 'event') return;
+    const card = Array.isArray(_picksState.eventCard) ? _picksState.eventCard : [];
+    if (!card.length) return;
+    // Poll any fight that's started or already concluded — concluded fights
+    // get their round_stats once, in-progress get re-polled until stats land.
+    const targets = card.filter(f => f.has_stats === 1 || f.has_stats === '1' || (f.event_started && !f._liveRoundsLoaded));
+    if (!targets.length) return;
+    for (const f of targets) {
+      try {
+        const r = await fetch(`/api/fights/${f.id}/rounds`);
+        if (!r.ok) continue;
+        const detail = await r.json();
+        const rs = Array.isArray(detail.round_stats) ? detail.round_stats : [];
+        f._roundStats = rs;
+        f._liveRoundsLoaded = true;
+        // Per-fighter aggregates so the evidence panel can surface them.
+        const red = rs.filter(x => x.fighter_id === f.red_fighter_id);
+        const blue = rs.filter(x => x.fighter_id === f.blue_fighter_id);
+        f._liveAggRed  = red.length  ? summariseRoundStats(red)  : null;
+        f._liveAggBlue = blue.length ? summariseRoundStats(blue) : null;
+        // Inject into the open card without a full re-render.
+        const slot = document.querySelector(`.pick-live-rounds[data-live-rounds="${f.id}"]`);
+        if (slot) slot.innerHTML = renderLiveRoundsPanel(f);
+      } catch (_) { /* ignore per-fight failures, retry next tick */ }
+    }
+  } catch (_) { /* keep polling alive */ }
+}
+
+function startLiveRoundsPolling(){
+  stopLiveRoundsPolling();
+  // First tick happens immediately so users see data on view-mount; subsequent
+  // ticks every 30s catch new round_stats writes from the server-side poller.
+  pollLiveRoundsForCard();
+  _liveRoundsTimer = setInterval(pollLiveRoundsForCard, 30 * 1000);
+}
+function stopLiveRoundsPolling(){
+  if (_liveRoundsTimer) { clearInterval(_liveRoundsTimer); _liveRoundsTimer = null; }
 }
 
 function fighterRecordText(fight, corner){
@@ -5178,6 +5349,10 @@ function renderPickWidget(fight){
     modelHtml = `<div class="pick-model"><span class="pick-model__empty">No model prediction available for this fight yet.</span></div>`;
   }
 
+  // Live rounds panel — populated by pollLiveRoundsForCard() once
+  // /api/fights/:id/rounds returns round_stats. Empty placeholder until then.
+  const liveRoundsHtml = renderLiveRoundsPanel(fight);
+
   // Outcome banner (if fight has a winner)
   let outcomeHtml = '';
   if (fight.winner_id != null) {
@@ -5273,6 +5448,10 @@ function renderPickWidget(fight){
           </div>
 
           ${modelHtml}
+
+          <div class="pick-live-rounds" data-live-rounds="${fight.id}">
+            ${liveRoundsHtml}
+          </div>
 
           <div class="pick-method">
             <label class="pick-method__field">
@@ -5452,7 +5631,10 @@ function formatModelFactorValue(f){
     return sign + Math.round(abs * 100) + ' pts';
   }
   if ((f.feature || '').includes('reach') || (f.feature || '').includes('height')) {
-    return sign + Math.round(abs) + ' cm';
+    // Honor the imp/met preference instead of always emitting cm.
+    return _unitsPref === 'metric'
+      ? sign + Math.round(abs) + ' cm'
+      : sign + Math.round(abs / 2.54) + '"';
   }
   if ((f.feature || '').includes('ctrl_sec')) {
     return sign + Math.round(abs) + ' sec/fight';
