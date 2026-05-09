@@ -1246,6 +1246,22 @@ app.post('/api/admin/save', requireAdmin, apiHandler(async (_req, res) => {
   res.json({ status: ok ? 'saved' : 'not_persistent', dbPath: process.env.DB_PATH || process.env.DATABASE_URL || null, cacheEntries: cache.size() });
 }));
 
+// Live poller: scrape ufcstats for the event and ingest winner / round_stats /
+// fight_stats for any fight that has just concluded. Idempotent.
+const { pollLiveEvent } = require('./lib/livePoll');
+app.post('/api/admin/events/:id/sync-live', requireAdmin, apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
+  const result = await pollLiveEvent(eventId, db);
+  await db.save();
+  if (result.fights_synced) {
+    cache.delete(`tactical:event:${eventId}`);
+    cache.delete(`tactical:fight:*`); // best-effort; cache.delete may be a no-op for wildcards
+  }
+  console.log(`[admin] sync-live event=${eventId} synced=${result.fights_synced || 0} status=${result.status}`);
+  res.json(result);
+}));
+
 // Lock all picks for an event (admin). Picks written after lock return 409.
 app.post('/api/admin/events/:id/lock-picks', requireAdmin, apiHandler(async (req, res) => {
   const eventId = parseInt(req.params.id, 10);
@@ -1402,6 +1418,7 @@ async function warmCache() {
 const LOGIN_CLEANUP_MS = 24 * 60 * 60 * 1000;   // daily
 const LEADERBOARD_REFRESH_MS = 5 * 60 * 1000;   // every 5 min
 const LOGIN_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000; // keep last 24h of attempts
+const LIVE_POLL_MS = 90 * 1000;                  // 90s during live events
 
 async function cleanupLoginAttempts() {
   const cutoff = new Date(Date.now() - LOGIN_ATTEMPT_TTL_MS).toISOString();
@@ -1417,13 +1434,42 @@ async function refreshLeaderboardCache() {
   } catch (e) { console.error('[cron] leaderboard refresh failed:', e.message); }
 }
 
+let _livePollRunning = false;
+async function pollAllLiveEvents() {
+  if (_livePollRunning) return; // skip if previous tick still running
+  _livePollRunning = true;
+  try {
+    const events = await db.getAllEvents();
+    const live = (events || []).filter(e => e && e.state === 'live' && e.ufcstats_hash);
+    if (!live.length) return;
+    for (const e of live) {
+      try {
+        const r = await pollLiveEvent(e.id, db);
+        if (r && r.fights_synced) {
+          cache.delete(`tactical:event:${e.id}`);
+          await db.save();
+          console.log(`[cron] live-poll event=${e.id} synced=${r.fights_synced}`);
+        }
+      } catch (err) {
+        console.error(`[cron] live-poll event=${e.id} failed:`, err.message);
+      }
+    }
+  } catch (e) {
+    console.error('[cron] live-poll outer failed:', e.message);
+  } finally {
+    _livePollRunning = false;
+  }
+}
+
 function startCronTasks() {
   // Run once at boot, then on interval. .unref() so SIGTERM can exit.
   cleanupLoginAttempts();
   setInterval(cleanupLoginAttempts, LOGIN_CLEANUP_MS).unref();
   refreshLeaderboardCache();
   setInterval(refreshLeaderboardCache, LEADERBOARD_REFRESH_MS).unref();
-  console.log(`[cron] started: login-cleanup=${LOGIN_CLEANUP_MS/3600000}h, leaderboard-refresh=${LEADERBOARD_REFRESH_MS/60000}min`);
+  pollAllLiveEvents();
+  setInterval(pollAllLiveEvents, LIVE_POLL_MS).unref();
+  console.log(`[cron] started: login-cleanup=${LOGIN_CLEANUP_MS/3600000}h, leaderboard-refresh=${LEADERBOARD_REFRESH_MS/60000}min, live-poll=${LIVE_POLL_MS/1000}s`);
 }
 
 // ============================================================
