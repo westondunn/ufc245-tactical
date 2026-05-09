@@ -5038,15 +5038,19 @@ function renderEventLiveOrUpcomingBody(normalized, state){
   // Upcoming + Live both render pick widgets; lock state inside the widget
   // (already handled by the existing lock logic via event_started + per-fight
   // winner_id) gives Live the locked styling automatically.
+  // During a live event we want concluded fights visible inline (with their
+  // outcome banner) so you can see results without leaving the tab.
   const openFights = normalized.filter(f => f.winner_id == null);
+  const visibleFights = state === 'live' ? normalized : openFights;
   const hint = document.getElementById('picksEventHint');
   if (hint) {
     const total = normalized.length;
     const open = openFights.length;
+    const concluded = total - open;
     if (total === 0) {
       hint.textContent = 'No fights on this card.';
     } else if (state === 'live') {
-      hint.textContent = `${open} of ${total} fight${total === 1 ? '' : 's'} live · picks locked`;
+      hint.textContent = `${concluded} concluded · ${open} pending · picks locked`;
     } else if (open === 0) {
       hint.textContent = `All ${total} fights concluded · see History`;
     } else {
@@ -5054,15 +5058,21 @@ function renderEventLiveOrUpcomingBody(normalized, state){
     }
   }
 
-  if (openFights.length === 0) {
+  if (visibleFights.length === 0) {
     fightsEl.innerHTML = `
       <div class="picks-placeholder">
-        No open fights on this card — every fight is concluded.<br>
-        Check <strong>My History</strong> for any picks you already made,
-        or pick a different event from the dropdown.
+        No fights on this card.
       </div>`;
   } else {
-    fightsEl.innerHTML = openFights.map(f => renderPickWidget(f)).join('');
+    // Concluded first (most recent at top), then in-progress / pending. So
+    // freshly-finished fights jump to the top of the live tab.
+    const sorted = [...visibleFights].sort((a, b) => {
+      const aDone = a.winner_id != null ? 1 : 0;
+      const bDone = b.winner_id != null ? 1 : 0;
+      if (aDone !== bDone) return state === 'live' ? bDone - aDone : aDone - bDone;
+      return (a.card_position || 0) - (b.card_position || 0);
+    });
+    fightsEl.innerHTML = sorted.map(f => renderPickWidget(f)).join('');
     attachPickHandlers(fightsEl);
   }
   renderPicksCardSummary(openFights);
