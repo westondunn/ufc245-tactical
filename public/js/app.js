@@ -4896,24 +4896,91 @@ async function refreshLiveEventView(){
       return (b.card_position || 0) - (a.card_position || 0);
     });
 
-    // Hydrate round_stats for any concluded fight, in parallel.
-    await Promise.all(normalized
-      .filter(f => f.has_stats === 1 || f.has_stats === '1' || f.winner_id != null)
-      .map(async (f) => {
-        try {
-          const r = await fetch(`/api/fights/${f.id}/rounds`);
-          if (!r.ok) return;
-          const detail = await r.json();
-          f._roundStats = Array.isArray(detail.round_stats) ? detail.round_stats : [];
-          const red = f._roundStats.filter(x => x.fighter_id === f.red_fighter_id);
-          const blue = f._roundStats.filter(x => x.fighter_id === f.blue_fighter_id);
-          f._liveAggRed  = red.length  ? summariseRoundStats(red)  : null;
-          f._liveAggBlue = blue.length ? summariseRoundStats(blue) : null;
-        } catch (_) { /* skip on transient failure */ }
-      }));
+    // Active-fight detection. Manual override via ?active_fight=<id> wins;
+    // otherwise heuristic = highest card_position among unfinished fights
+    // (chronologically next in card order). ufcstats publishes stats only
+    // after a fight ends, so the data alone can't tell us which prelim has
+    // the bell. The override URL param lets the user pin the live tab to a
+    // specific fight when card order doesn't match chronology.
+    let activeFight = null;
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const overrideId = parseInt(params.get('active_fight'), 10);
+      if (Number.isFinite(overrideId)) {
+        activeFight = normalized.find(f => f.id === overrideId) || null;
+      }
+    } catch (_) { /* ignore */ }
+    if (!activeFight) {
+      const unfinished = normalized.filter(f => f.winner_id == null);
+      if (unfinished.length) {
+        unfinished.sort((a, b) => (b.card_position || 0) - (a.card_position || 0));
+        activeFight = unfinished[0];
+      }
+    }
 
-    listEl.innerHTML = normalized.map(f => renderLiveEventCard(f, picksByFightId.get(f.id))).join('') || '<div class="picks-placeholder">No fights on this card.</div>';
+    // Hydrate round_stats for the active fight only (cheap, single request).
+    if (activeFight) {
+      try {
+        const r = await fetch(`/api/fights/${activeFight.id}/rounds`);
+        if (r.ok) {
+          const detail = await r.json();
+          activeFight._roundStats = Array.isArray(detail.round_stats) ? detail.round_stats : [];
+          const red = activeFight._roundStats.filter(x => x.fighter_id === activeFight.red_fighter_id);
+          const blue = activeFight._roundStats.filter(x => x.fighter_id === activeFight.blue_fighter_id);
+          activeFight._liveAggRed  = red.length  ? summariseRoundStats(red)  : null;
+          activeFight._liveAggBlue = blue.length ? summariseRoundStats(blue) : null;
+        }
+      } catch (_) { /* transient — try again next tick */ }
+    }
+
+    if (!activeFight) {
+      listEl.innerHTML = `
+        <div class="live-event__between">
+          <div class="live-event__between-label">Between fights</div>
+          <div class="live-event__between-sub">${normalized.filter(f=>f.winner_id!=null).length} of ${normalized.length} concluded — see the Event tab for full results.</div>
+        </div>`;
+      return;
+    }
+
+    const concludedCount = normalized.filter(f => f.winner_id != null).length;
+    const pendingCount = normalized.filter(f => f.winner_id == null).length - 1;
+    // Build a quick switcher of remaining unfinished fights so the user can
+    // pin a different one when card_position order doesn't match chronology.
+    const remaining = normalized
+      .filter(f => f.winner_id == null && f.id !== activeFight.id)
+      .sort((a, b) => (b.card_position || 0) - (a.card_position || 0));
+    const remainingHtml = remaining.length ? remaining.slice(0, 4).map(f =>
+      `<button class="live-event__pin" data-live-pin="${f.id}">${escHtml(f.red_name)} vs ${escHtml(f.blue_name)}</button>`
+    ).join('') : '';
+    const summary = `
+      <div class="live-event__summary">
+        <span class="live-event__summary-pill">ACTIVE FIGHT</span>
+        <span>${concludedCount} concluded</span>
+        <span>${pendingCount} pending</span>
+        <a href="#" class="live-event__see-all" data-live-see-all>See full card →</a>
+      </div>
+      ${remainingHtml ? `<div class="live-event__pinrow">
+        <span class="live-event__pinrow-label">Pin a different fight:</span>${remainingHtml}
+      </div>` : ''}`;
+    listEl.innerHTML = summary + renderLiveEventCard(activeFight, picksByFightId.get(activeFight.id));
     attachLiveEventHandlers(listEl);
+    const seeAll = listEl.querySelector('[data-live-see-all]');
+    if (seeAll) seeAll.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      if (typeof activatePicksView === 'function') activatePicksView('event');
+    });
+    listEl.querySelectorAll('[data-live-pin]').forEach(btn => {
+      btn.addEventListener('click', (ev) => {
+        ev.preventDefault();
+        const id = btn.dataset.livePin;
+        try {
+          const url = new URL(window.location.href);
+          url.searchParams.set('active_fight', id);
+          window.history.replaceState(null, '', url.toString());
+        } catch (_) { /* ignore */ }
+        refreshLiveEventView();
+      });
+    });
   } catch (e) {
     if (listEl) listEl.innerHTML = '<div class="picks-placeholder">Failed to load live event.</div>';
   }
