@@ -5021,29 +5021,12 @@ function renderFighterStatsHover(fight, model, corner){
 }
 
 function getFighterEvidenceItems(fight, model, corner){
-  const categories = model && model.explanation && Array.isArray(model.explanation.categories)
-    ? model.explanation.categories
-    : [];
-  const key = corner === 'red' ? 'red' : 'blue';
-  const items = [];
-  for (const category of categories) {
-    const evidence = Array.isArray(category.evidence) ? category.evidence[0] : null;
-    if (!evidence || !evidence[key]) continue;
-    const value = formatEvidenceNumber(evidence[key].value, evidence.unit || '');
-    if (!value) continue;
-    items.push({
-      label: category.category || evidence.label || 'Model stat',
-      value,
-      source: evidence.source || ''
-    });
-  }
-  if (!items.length) {
-    const height = corner === 'red' ? fight.red_height : fight.blue_height;
-    const reach = corner === 'red' ? fight.red_reach : fight.blue_reach;
-    if (height) items.push({ label: 'Height', value: `${Math.round(height)} cm` });
-    if (reach) items.push({ label: 'Reach', value: `${Math.round(reach)} cm` });
-  }
-  return items;
+  // Live-event override (UFC 328 night): the per-fighter evidence rows are
+  // sourced from the model's category evidence, which currently shows
+  // sparse/zero values for fighters with limited fight_stats history. Force
+  // the empty-state copy so the panel doesn't claim signal that isn't there.
+  // See server-side discussion in scripts/correct-fighter-drift-2026-05-09.js.
+  return [];
 }
 
 function fighterInitials(name){
