@@ -126,6 +126,19 @@
     } catch (_) { /* ignore quota errors */ }
   }
 
+  // Server-controlled feature flag: when /api/version returns
+  // features.signup === false, hide every signup affordance and refuse to
+  // open the modal in signup mode. Existing sessions continue to work.
+  let _signupEnabled = true;
+  async function loadFeatureFlags() {
+    try {
+      const r = await fetch('/api/version', { credentials: 'omit' });
+      if (!r.ok) return;
+      const j = await r.json();
+      if (j && j.features && j.features.signup === false) _signupEnabled = false;
+    } catch (_) { /* default true */ }
+  }
+
   /* ---- Top-bar indicator ---- */
   function renderIndicator() {
     const el = $('authIndicator');
@@ -146,12 +159,17 @@
         setTimeout(() => location.reload(), 100);
       });
     } else {
+      const signupBtn = _signupEnabled
+        ? `<button class="auth-ind__btn auth-ind__btn--primary" id="authOpenSignUp" type="button">Create account</button>`
+        : '';
       el.innerHTML = `
         <button class="auth-ind__btn" id="authOpenSignIn" type="button">Sign in</button>
-        <button class="auth-ind__btn auth-ind__btn--primary" id="authOpenSignUp" type="button">Create account</button>
+        ${signupBtn}
       `;
       $('authOpenSignIn').addEventListener('click', () => openModal('signin'));
-      $('authOpenSignUp').addEventListener('click', () => openModal('signup'));
+      if (_signupEnabled && $('authOpenSignUp')) {
+        $('authOpenSignUp').addEventListener('click', () => openModal('signup'));
+      }
     }
   }
 
@@ -159,9 +177,11 @@
   function openModal(mode) {
     const m = $('authModal');
     if (!m) return;
+    // Force signin mode if signup has been disabled by feature flag.
+    const resolved = (mode === 'signup' && !_signupEnabled) ? 'signin' : (mode || 'signin');
     m.style.display = 'flex';
     m.setAttribute('aria-hidden', 'false');
-    setMode(mode || 'signin');
+    setMode(resolved);
     setTimeout(() => $('authEmail') && $('authEmail').focus(), 30);
   }
   function closeModal() {
@@ -442,12 +462,17 @@
 
   /* ---- Init ---- */
   async function init() {
+    // Server features (signup gate, etc.). Best-effort; failures default
+    // _signupEnabled=true so we don't accidentally hide the button when the
+    // version endpoint is briefly unreachable.
+    await loadFeatureFlags();
     // Wire form
     const form = $('authForm');
     if (form) form.addEventListener('submit', handleSubmit);
     // Tab switches
     if ($('authTabSignIn')) $('authTabSignIn').addEventListener('click', () => setMode('signin'));
-    if ($('authTabSignUp')) $('authTabSignUp').addEventListener('click', () => setMode('signup'));
+    if ($('authTabSignUp') && _signupEnabled) $('authTabSignUp').addEventListener('click', () => setMode('signup'));
+    if (!_signupEnabled && $('authTabSignUp')) $('authTabSignUp').style.display = 'none';
     // Forgot password link → forgot mode
     if ($('authForgotLink')) $('authForgotLink').addEventListener('click', (ev) => {
       ev.preventDefault(); setMode('forgot');

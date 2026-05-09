@@ -968,7 +968,7 @@ app.get('/healthz', (_req, res) => {
     status: 'ok', service: 'ufc-tactical',
     version: ver.version, build: ver.full, buildTime: ver.buildTime,
     uptime_s: Math.round(process.uptime()), node: process.version, env: NODE_ENV,
-    features: { picks: ENABLE_PICKS }
+    features: { picks: ENABLE_PICKS, signup: !/^(1|true|yes|on)$/i.test(String(process.env.DISABLE_SIGNUP || '')) }
   });
 });
 
@@ -977,7 +977,7 @@ app.get('/api/version', (_req, res) => {
   res.setHeader('Cache-Control', 'no-cache');
   res.json({
     version: ver.version, build: ver.full, sha: ver.buildSha, buildTime: ver.buildTime,
-    features: { picks: ENABLE_PICKS }
+    features: { picks: ENABLE_PICKS, signup: !/^(1|true|yes|on)$/i.test(String(process.env.DISABLE_SIGNUP || '')) }
   });
 });
 

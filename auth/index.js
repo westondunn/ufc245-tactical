@@ -31,6 +31,10 @@ const NODE_ENV = process.env.NODE_ENV || 'production';
 const SECRET = process.env.BETTER_AUTH_SECRET;
 const BASE_URL = process.env.BETTER_AUTH_URL || `http://localhost:${process.env.PORT || 3000}`;
 const REQUIRE_EMAIL_VERIFICATION = /^(1|true|yes|on)$/i.test(String(process.env.REQUIRE_EMAIL_VERIFICATION || ''));
+// Disable new-account creation while we're on the file-based mail stub
+// (ALLOW_FILE_MAIL_IN_PRODUCTION=true). Existing accounts continue to log in.
+// Flip this off once a real MAIL_PROVIDER=webhook + MAIL_WEBHOOK_URL are wired.
+const DISABLE_SIGNUP = /^(1|true|yes|on)$/i.test(String(process.env.DISABLE_SIGNUP || ''));
 
 if (!SECRET && NODE_ENV === 'production') {
   throw new Error('BETTER_AUTH_SECRET is required when NODE_ENV=production');
@@ -114,6 +118,7 @@ async function buildAuth() {
 
     emailAndPassword: {
       enabled: true,
+      disableSignUp: DISABLE_SIGNUP,
       minPasswordLength: 8,
       maxPasswordLength: 128,
       // Default remains non-blocking for existing accounts. Set
