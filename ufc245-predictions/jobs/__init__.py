@@ -186,9 +186,16 @@ def _sync_predictions(predictions: list[dict], local_ids: list[int], label: str)
     return synced
 
 
-def _predict_window(days: int | None, label: str) -> dict:
-    """Predict and sync future fights through the requested day window."""
-    logger.info(f"=== {label} start ===")
+def _predict_window(days: int | None, label: str, *, event_id: int | None = None,
+                    include_today: bool = False) -> dict:
+    """Predict and sync future fights through the requested day window.
+
+    `event_id` restricts the run to a single event (admin override).
+    `include_today` lifts the same-day lock so today's still-future event
+    can be re-predicted (admin override; default False to preserve the lock
+    for scheduled jobs).
+    """
+    logger.info(f"=== {label} start === event_id={event_id} include_today={include_today}")
     init_db()
 
     model_rec = get_latest_model()
@@ -221,7 +228,11 @@ def _predict_window(days: int | None, label: str) -> dict:
             ev_date = datetime.strptime(ev["date"], "%Y-%m-%d").date()
         except ValueError:
             continue
-        if ev_date <= today:
+        if event_id is not None and ev.get("id") != event_id:
+            continue
+        if ev_date < today:
+            continue
+        if not include_today and ev_date <= today:
             continue
         if cutoff is not None and ev_date > cutoff:
             continue

@@ -155,6 +155,27 @@ def trigger_refresh(request: Request, x_prediction_key: str = Header(default="")
     return refresh_near()
 
 
+@app.post("/admin/predict-event")
+def admin_predict_event(request: Request, x_prediction_key: str = Header(default="")):
+    """Admin override: re-predict a single event regardless of the same-day lock.
+
+    Pass event_id via query param: POST /admin/predict-event?event_id=103
+    Bypasses the same-day lock in _predict_window so a card on its event day
+    can be re-predicted after upstream fighter data is corrected.
+    """
+    _require_key(request, x_prediction_key)
+    from jobs import _predict_window
+    raw = request.query_params.get("event_id")
+    if not raw:
+        return {"status": "error", "reason": "event_id query param required"}
+    try:
+        event_id_int = int(raw)
+    except ValueError:
+        return {"status": "error", "reason": "event_id must be int"}
+    return _predict_window(days=None, label=f"admin_predict_event_{event_id_int}",
+                           event_id=event_id_int, include_today=True)
+
+
 @app.post("/trigger/reconcile")
 def trigger_reconcile(request: Request, x_prediction_key: str = Header(default="")):
     _require_key(request, x_prediction_key)
