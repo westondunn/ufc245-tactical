@@ -40,3 +40,62 @@ This is the canonical project brief for coding agents working in this repo. Keep
 - Data/ETL: call out source URLs, parser changes, generated artifacts, and integrity checks.
 - Predictions: call out FastAPI contract, scheduler impact, model features, and main-app sync.
 - Review/testing: lead with findings, cite files/lines, then summarize verification.
+
+## Branch + PR strategy
+
+All changes ship via pull request. Direct pushes to `main` are not used.
+
+- **Branching**: cut a feature branch from `main` for every change. Naming convention is `<scope>/<short-kebab-desc>`:
+  - `feat/<thing>`, `fix/<thing>`, `refactor/<thing>`, `chore/<thing>`
+  - Subsystem prefixes are also fine: `ci/<thing>`, `db/<thing>`, `picks/<thing>`, `predictions/<thing>`
+  - Avoid putting issue numbers or dates in branch names; the PR carries that context.
+- **One logical change per PR**. Multi-concern branches make the e2e selector and reviewers' lives harder. Stack PRs if a chain is needed.
+- **Conventional Commit subjects**, since `deploy.yml`'s version-bump derives the bump type from the merge commit's first line:
+  - `feat:` → minor; `fix:` / `chore:` / `refactor:` / `ci:` / `docs:` → patch; `feat!:` or trailer `BREAKING CHANGE:` → major.
+- **Self-merge is allowed** once CI is green. The branch-protection ruleset requires a PR but does not require a second reviewer.
+- **Don't push back to `main` directly** even after a PR is merged. The version-bump workflow handles the post-merge `vX.Y.Z [skip-version]` commit + tag via a fine-grained PAT (`RELEASE_TOKEN` secret) that bypasses the ruleset; humans don't get that bypass and shouldn't try to.
+- **Do not skip hooks (`--no-verify`) or bypass signing** unless the user explicitly asks for it. Same for `git push --force` — never to `main`, and only with explicit go on a feature branch.
+
+### Picking the e2e scope
+
+The `Playwright E2E` job uses `.github/scripts/select-e2e.js` to pick which spec files to run based on the PR diff. Agents don't have to think about which suite their change touches — the routing table handles it:
+
+- `public/css/**`, `public/img/**`, `public/icons/**` → `dashboard`
+- `public/index.html` → `dashboard` + `picks`
+- `public/js/auth.js` → `admin` + `picks`
+- `public/js/app.js`, other `public/js/**` → `dashboard` + `picks`
+- `server.js`, `db/**`, `lib/**` → all four suites
+- `auth/**` → `admin` + `picks`
+- `data/seed.json`, `data/admin/**` → `api` + `admin`
+- `data/scrapers/**`, `scripts/**`, `data/audit/**` → skip (covered by `node tests/run.js`)
+- `ufc245-predictions/**`, `llm-pipeline/**` → skip (python tests / no e2e coverage)
+- `*.md`, `docs/**`, `tmp/**` → skip
+- `package.json`, `package-lock.json`, `playwright.config.js`, `.github/**` → all (force-full)
+- anything unmapped → all (conservative default)
+
+If a path is genuinely ambiguous, lean toward leaving it unmapped (full suite) rather than carving in a narrow rule that drifts as code moves.
+
+**Escape hatches** in the commit message or PR title:
+
+- `[full-e2e]` — force every spec to run regardless of paths.
+- `[skip-e2e]` — skip the suite entirely. Use sparingly (the routing table already skips docs/scratch/data-only diffs cleanly).
+
+When you change the routing rules, the `select-e2e.test.js` self-test runs in the `Quality & Security` job and gates the PR — keep adding cases there alongside any rule edits.
+
+### Local pre-push checks
+
+Before opening a PR, run the targeted suite plus the static gates the quality job runs:
+
+```
+node tests/run.js
+node .github/scripts/select-e2e.test.js   # if you touched routing rules
+npx playwright test tests/e2e/<scope>.spec.js   # the suite(s) your change maps to
+```
+
+If you don't know which spec maps to your diff, pipe the changed paths through the selector:
+
+```
+git diff --name-only origin/main...HEAD | node .github/scripts/select-e2e.js --format=args
+```
+
+Then run only those.
