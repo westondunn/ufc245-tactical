@@ -8,6 +8,9 @@
  * audit report but are not dispatched.
  */
 module.exports = {
+  // Fighter identity link — auto-links when exactly one exact normalized-name match
+  'fighters.ufcstats_hash': { source: 'ufcstats-fighter-search', safety: 'identity-link', verify: 'identity' },
+
   // Fighter physicals — safe (one source, gap-only writes)
   'fighters.height_cm':    { source: 'ufcstats-fighter-page', safety: 'safe',     verify: 'numeric-tolerance:1', bounds: [140, 230] },
   'fighters.reach_cm':     { source: 'ufcstats-fighter-page', safety: 'safe',     verify: 'numeric-tolerance:1', bounds: [140, 230] },

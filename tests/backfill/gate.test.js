@@ -36,6 +36,19 @@ async function run() {
   r = decide({ safety: 'reconcile', current: null, proposed: { winner_id: 42 }, sources: [{name: 'ufcstats', value: { winner_id: 42 }}], verifyPassed: true });
   assert(r.decision === 'review' && /reconcile/i.test(r.reason), 'reconcile defers to outcomes pipeline');
 
+  // identity-link class
+  r = decide({ safety: 'identity-link', current: null, proposed: 'abc123def456789a', sources: [], verifyPassed: true, identityLinkMatch: 'exact-single' });
+  assert(r.decision === 'auto' && /exact/i.test(r.reason), 'identity-link exact-single+null=auto');
+
+  r = decide({ safety: 'identity-link', current: null, proposed: null, sources: [], verifyPassed: true, identityLinkMatch: 'multiple-exact' });
+  assert(r.decision === 'review' && /identity-link/i.test(r.reason), 'identity-link multiple-exact=review');
+
+  r = decide({ safety: 'identity-link', current: null, proposed: null, sources: [], verifyPassed: true, identityLinkMatch: 'no-exact-match' });
+  assert(r.decision === 'review' && /identity-link/i.test(r.reason), 'identity-link no-match=review');
+
+  r = decide({ safety: 'identity-link', current: 'existinghash0001', proposed: 'newhash00000002', sources: [], verifyPassed: true, identityLinkMatch: 'exact-single' });
+  assert(r.decision === 'review' && /already set/i.test(r.reason), 'identity-link non-null current=review (gap-fill only)');
+
   return results;
 }
 

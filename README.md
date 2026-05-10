@@ -357,6 +357,16 @@ Manual HTTP endpoints (require `x-prediction-key`):
 - `GET  /api/data/coverage` (`?run=`, `?table=&column=`, `?diff=last2`)
 - `GET  /api/data/backfill/queue?status=pending`
 
+**Hash auto-linking.** When the audit detects a `fighters.ufcstats_hash` gap,
+the dispatcher searches ufcstats.com by the fighter's name and auto-applies the
+link if exactly one candidate has an exact normalized-name match (lowercase,
+punctuation stripped, whitespace collapsed). If the search returns zero matches,
+multiple exact matches, or only fuzzy matches, the gap is sent to the review
+queue so a human can approve the link manually. Immediately after a hash is
+auto-linked, the dispatcher cascades to fill any remaining physical and career-stat
+gaps for the same fighter in the same run, so a single nightly pass closes both
+the identity gap and the profile gaps instead of taking two nights.
+
 See the design doc at `docs/superpowers/specs/2026-04-29-etl-data-gap-audit-and-backfill-design.md`
 for source precedence, gate rules, and v1 scope.
 
