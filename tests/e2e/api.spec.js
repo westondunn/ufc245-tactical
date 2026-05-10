@@ -82,6 +82,20 @@ test.describe('API Endpoints', () => {
     expect(card[0]).toHaveProperty('blue_is_ufc_debut');
   });
 
+  test('GET /api/events/:id/walkouts returns playlist payload shape', async ({ request }) => {
+    const evRes = await request.get('/api/events');
+    const events = await evRes.json();
+    const event = events.find(e => e.number === 245) || events[0];
+    expect(event).toBeTruthy();
+
+    const walkoutRes = await request.get(`/api/events/${event.id}/walkouts`);
+    expect(walkoutRes.ok()).toBe(true);
+    const body = await walkoutRes.json();
+    expect(body).toHaveProperty('event_id');
+    expect(body).toHaveProperty('playlists');
+    expect(Array.isArray(body.playlists)).toBe(true);
+  });
+
   test('GET /api/events/:id/card returns 400 for non-numeric ID', async ({ request }) => {
     const res = await request.get('/api/events/notanumber/card');
     expect(res.status()).toBe(400);
@@ -147,6 +161,17 @@ test.describe('API Endpoints', () => {
     expect(events[0].fights.length).toBeGreaterThan(0);
     expect(events[0].fights[0]).toHaveProperty('fight_id');
     expect(events[0].fights[0]).toHaveProperty('method');
+  });
+
+  test('GET /api/fighters/:id/walkouts returns playlist payload shape', async ({ request }) => {
+    const searchRes = await request.get('/api/fighters/search?q=McGregor');
+    const id = (await searchRes.json())[0].id;
+    const res = await request.get(`/api/fighters/${id}/walkouts`);
+    expect(res.ok()).toBe(true);
+    const body = await res.json();
+    expect(body).toHaveProperty('fighter_id');
+    expect(body).toHaveProperty('playlists');
+    expect(Array.isArray(body.playlists)).toBe(true);
   });
 
   test('GET /api/fighters/:id/career-stats returns nested stats', async ({ request }) => {

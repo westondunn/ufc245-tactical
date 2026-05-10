@@ -546,7 +546,9 @@ async function main() {
       distance_landed: rs.distance_landed || 0, distance_attempted: rs.distance_attempted || 0,
       clinch_landed: rs.clinch_landed || 0, clinch_attempted: rs.clinch_attempted || 0,
       ground_landed: rs.ground_landed || 0, ground_attempted: rs.ground_attempted || 0
-    }))
+    })),
+    walkout_playlists: [],
+    walkout_playlist_tracks: []
   };
 
   const outPath = path.join(__dirname, 'seed.json');
