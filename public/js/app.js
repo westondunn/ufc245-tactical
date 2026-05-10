@@ -4910,7 +4910,15 @@ async function refreshLiveEventView(){
       const fromUrl = parseInt(params.get('active_fight'), 10);
       if (Number.isFinite(fromUrl)) {
         const f = normalized.find(x => x.id === fromUrl);
-        if (f) { activeFight = f; pinSource = 'url'; }
+        // Auto-clear URL pin once that fight finishes so the next bell advances.
+        if (f && f.winner_id == null) { activeFight = f; pinSource = 'url'; }
+        else if (f && f.winner_id != null) {
+          try {
+            const url = new URL(window.location.href);
+            url.searchParams.delete('active_fight');
+            window.history.replaceState(null, '', url.toString());
+          } catch (_) {}
+        }
       }
     } catch (_) { /* ignore */ }
     if (!activeFight) {
@@ -4918,7 +4926,6 @@ async function refreshLiveEventView(){
         const fromLs = parseInt(localStorage.getItem(PIN_LS_KEY) || '', 10);
         if (Number.isFinite(fromLs)) {
           const f = normalized.find(x => x.id === fromLs);
-          // Auto-clear the pin once that fight finishes so we advance.
           if (f && f.winner_id == null) { activeFight = f; pinSource = 'pin'; }
           else if (f && f.winner_id != null) { try { localStorage.removeItem(PIN_LS_KEY); } catch (_) {} }
         }
@@ -5500,9 +5507,16 @@ async function pollLiveRoundsForCard(){
     if (!_picksState || _picksState.view !== 'event') return;
     const card = Array.isArray(_picksState.eventCard) ? _picksState.eventCard : [];
     if (!card.length) return;
-    // Poll any fight that's started or already concluded — concluded fights
-    // get their round_stats once, in-progress get re-polled until stats land.
-    const targets = card.filter(f => f.has_stats === 1 || f.has_stats === '1' || (f.event_started && !f._liveRoundsLoaded));
+    // Poll every fight whose stats haven't been loaded yet OR whose
+    // round_stats came back empty last time — those get re-polled until
+    // ufcstats publishes them. Concluded fights with stats stay loaded.
+    const targets = card.filter(f => {
+      const haveStats = Array.isArray(f._roundStats) && f._roundStats.length > 0;
+      if (haveStats) return false;
+      // Started or already-concluded fights are worth polling; pre-event
+      // fights aren't.
+      return f.event_started || f.winner_id != null || f.has_stats === 1 || f.has_stats === '1';
+    });
     if (!targets.length) return;
     for (const f of targets) {
       try {
@@ -5510,16 +5524,31 @@ async function pollLiveRoundsForCard(){
         if (!r.ok) continue;
         const detail = await r.json();
         const rs = Array.isArray(detail.round_stats) ? detail.round_stats : [];
+        // Sync the freshly-fetched fight metadata onto the cached card row
+        // so winner banners + has_stats flips appear without reloading the card.
+        const winnerJustLanded = detail.winner_id != null && f.winner_id == null;
+        if (winnerJustLanded) f.winner_id = detail.winner_id;
+        if (detail.method && !f.method) f.method = detail.method;
+        if (detail.round && !f.round) f.round = detail.round;
+        if (detail.time && !f.time) f.time = detail.time;
+        if (detail.has_stats != null) f.has_stats = detail.has_stats;
         f._roundStats = rs;
-        f._liveRoundsLoaded = true;
-        // Per-fighter aggregates so the evidence panel can surface them.
         const red = rs.filter(x => x.fighter_id === f.red_fighter_id);
         const blue = rs.filter(x => x.fighter_id === f.blue_fighter_id);
         f._liveAggRed  = red.length  ? summariseRoundStats(red)  : null;
         f._liveAggBlue = blue.length ? summariseRoundStats(blue) : null;
-        // Inject into the open card without a full re-render.
-        const slot = document.querySelector(`.pick-live-rounds[data-live-rounds="${f.id}"]`);
-        if (slot) slot.innerHTML = renderLiveRoundsPanel(f);
+        // Re-render the entire fight card when a winner first lands so the
+        // outcome banner and lock state appear without a manual reload.
+        // Otherwise just update the rounds slot to keep DOM state stable.
+        const wrap = document.querySelector(`.pick-fight[data-fight-id="${f.id}"]`);
+        if (winnerJustLanded && wrap) {
+          wrap.outerHTML = renderPickWidget(f);
+          const fightsContainer = document.getElementById('picksFights');
+          if (fightsContainer) attachPickHandlers(fightsContainer);
+        } else {
+          const slot = document.querySelector(`.pick-live-rounds[data-live-rounds="${f.id}"]`);
+          if (slot && rs.length > 0) slot.innerHTML = renderLiveRoundsPanel(f);
+        }
       } catch (_) { /* ignore per-fight failures, retry next tick */ }
     }
   } catch (_) { /* keep polling alive */ }
