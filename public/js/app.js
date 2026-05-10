@@ -5194,9 +5194,9 @@ function renderLiveEventCard(fight, pick){
   } else if (espnWalkouts) {
     decision = 'Fighters walking out — bell imminent.';
   } else if (espn && espn.status_type === 'scheduled') {
-    decision = 'Scheduled — bell hasn\'t rung.';
+    decision = 'Scheduled — shit hasn\'t hit the fan.';
   } else {
-    decision = 'Bell hasn\'t rung.';
+    decision = 'Shit hasn\'t hit the fan.';
   }
 
   // User pick badge + correctness
