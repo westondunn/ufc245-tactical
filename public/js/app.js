@@ -5168,14 +5168,11 @@ function renderEventLiveOrUpcomingBody(normalized, state){
         No fights on this card.
       </div>`;
   } else {
-    // Concluded first (most recent at top), then in-progress / pending. So
-    // freshly-finished fights jump to the top of the live tab.
-    const sorted = [...visibleFights].sort((a, b) => {
-      const aDone = a.winner_id != null ? 1 : 0;
-      const bDone = b.winner_id != null ? 1 : 0;
-      if (aDone !== bDone) return state === 'live' ? bDone - aDone : aDone - bDone;
-      return (a.card_position || 0) - (b.card_position || 0);
-    });
+    // Card order: main event first (card_position 1), opener last
+    // (highest card_position). Matches the standard fight-night reading
+    // order and keeps the main event at the top regardless of which
+    // prelims have already concluded.
+    const sorted = [...visibleFights].sort((a, b) => (a.card_position || 999) - (b.card_position || 999));
     fightsEl.innerHTML = sorted.map(f => renderPickWidget(f)).join('');
     attachPickHandlers(fightsEl);
   }
