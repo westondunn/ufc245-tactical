@@ -65,4 +65,20 @@ module.exports = [
   { table: 'official_fight_outcomes', column: '__row__', scopes: ['completed-fights'] },
   { table: 'predictions',             column: '__row__', scopes: ['upcoming-fights'] },
   { table: 'predictions',             column: 'enrichment_level', scopes: ['upcoming-fights'] },
+
+  // ── walkout playlists (upcoming roster focus) ──
+  { table: 'walkout_playlists',       column: 'snapshot_mode',      scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlists',       column: 'stats_snapshot_json',scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlists',       column: 'source',             scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlists',       column: 'source_url',         scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlists',       column: 'captured_at',        scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlists',       column: 'confidence',         scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlists',       column: 'review_status',      scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlist_tracks', column: 'song_title',         scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlist_tracks', column: 'artist',             scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlist_tracks', column: 'source',             scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlist_tracks', column: 'source_url',         scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlist_tracks', column: 'captured_at',        scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlist_tracks', column: 'confidence',         scopes: ['upcoming-roster'] },
+  { table: 'walkout_playlist_tracks', column: 'review_status',      scopes: ['upcoming-roster'] },
 ];

@@ -152,6 +152,39 @@ async function run() {
     assertEq(Number(ufc245Debut.blue_prior_ufc_fights), 0, 'blue UFC debut has zero prior UFC fights');
   }
 
+  // Walkout playlist CRUD/read models
+  const testEventId = 990001;
+  const testFighterId = 990001;
+  db.upsertEvent({ id: testEventId, number: 990, name: 'UFC Walkout Test', date: '2030-01-01' });
+  db.upsertFighter({ id: testFighterId, name: 'Walkout Tester' });
+  const walkoutSaved = db.replaceWalkoutPlaylist({
+    event_id: testEventId,
+    fighter_id: testFighterId,
+    snapshot_mode: 'frozen_event',
+    stats_snapshot: { record: { wins: 1, losses: 0, draws: 0 }, metrics: { slpm: 4.2 } },
+    source: 'manual_admin_reviewed',
+    source_url: 'https://www.ufc.com',
+    captured_at: new Date().toISOString(),
+    confidence: 'high',
+    review_status: 'approved',
+    tracks: [
+      { track_order: 1, song_title: 'Song One', artist: 'Artist One', source: 'manual_admin_reviewed' },
+      { track_order: 2, song_title: 'Song Two', artist: 'Artist Two', source: 'manual_admin_reviewed' },
+    ],
+  });
+  assertTruthy(walkoutSaved, 'replaceWalkoutPlaylist returns saved playlist');
+  assertEq((walkoutSaved.tracks || []).length, 2, 'replaceWalkoutPlaylist stores ordered tracks');
+  const walkoutsByEvent = db.getEventWalkouts(testEventId);
+  assertGt(walkoutsByEvent.length, 0, 'getEventWalkouts returns rows');
+  const walkoutsByFighter = db.getFighterWalkouts(testFighterId);
+  assertGt(walkoutsByFighter.length, 0, 'getFighterWalkouts returns rows');
+  const singlePlaylist = db.getFighterEventWalkoutPlaylist(testEventId, testFighterId);
+  assertTruthy(singlePlaylist && singlePlaylist.stats_snapshot, 'getFighterEventWalkoutPlaylist returns parsed snapshot');
+  db.run('DELETE FROM walkout_playlist_tracks WHERE event_id = ? AND fighter_id = ?', [testEventId, testFighterId]);
+  db.run('DELETE FROM walkout_playlists WHERE event_id = ? AND fighter_id = ?', [testEventId, testFighterId]);
+  db.run('DELETE FROM events WHERE id = ?', [testEventId]);
+  db.run('DELETE FROM fighters WHERE id = ?', [testFighterId]);
+
   // Fight detail
   const mainEvent = card.find(f => f.is_main);
   assertTruthy(mainEvent, 'UFC 245 has a main event');

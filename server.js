@@ -188,6 +188,81 @@ function fighterMassKg(fighter) {
   return WEIGHT_CLASS_KG[fighter.weight_class] || Math.round(fighter.height_cm * 0.42);
 }
 
+const WALKOUT_APPROVED_SOURCES = new Set([
+  'ufc_broadcast',
+  'ufc_com',
+  'espn',
+  'manual_admin_reviewed',
+]);
+
+function normalizeWalkoutTrackInput(track, fallbackOrder) {
+  const order = Number.isFinite(+track.track_order) ? +track.track_order : fallbackOrder;
+  return {
+    track_order: order > 0 ? order : fallbackOrder,
+    song_title: String(track.song_title || '').trim(),
+    artist: String(track.artist || '').trim(),
+    album: track.album == null ? null : String(track.album).trim(),
+    duration_sec: track.duration_sec == null || track.duration_sec === '' ? null : Math.max(parseInt(track.duration_sec, 10) || 0, 0),
+    source: track.source == null ? null : String(track.source).trim(),
+    source_url: track.source_url == null ? null : String(track.source_url).trim(),
+    captured_at: track.captured_at == null ? null : String(track.captured_at).trim(),
+    confidence: track.confidence == null ? 'review' : String(track.confidence).trim(),
+    review_status: track.review_status == null ? 'pending' : String(track.review_status).trim(),
+  };
+}
+
+function mapWalkoutRowsByPlaylist(rows) {
+  const grouped = new Map();
+  for (const row of rows || []) {
+    const key = `${row.event_id}:${row.fighter_id}`;
+    if (!grouped.has(key)) {
+      let statsSnapshot = null;
+      if (row.stats_snapshot_json) {
+        try { statsSnapshot = typeof row.stats_snapshot_json === 'string' ? JSON.parse(row.stats_snapshot_json) : row.stats_snapshot_json; }
+        catch { statsSnapshot = null; }
+      }
+      grouped.set(key, {
+        event_id: row.event_id,
+        fighter_id: row.fighter_id,
+        fighter_name: row.fighter_name || null,
+        fighter_nickname: row.fighter_nickname || null,
+        fighter_headshot_url: row.fighter_headshot_url || null,
+        fighter_body_url: row.fighter_body_url || null,
+        event_name: row.event_name || null,
+        event_number: row.event_number || null,
+        event_date: row.event_date || null,
+        snapshot_mode: row.snapshot_mode || 'frozen_event',
+        stats_snapshot: statsSnapshot,
+        source: row.source || null,
+        source_url: row.source_url || null,
+        captured_at: row.captured_at || null,
+        confidence: row.confidence || 'review',
+        review_status: row.review_status || 'pending',
+        tracks: [],
+      });
+    }
+    if (row.track_id != null) {
+      grouped.get(key).tracks.push({
+        id: row.track_id,
+        track_order: row.track_order,
+        song_title: row.song_title,
+        artist: row.artist,
+        album: row.album,
+        duration_sec: row.duration_sec,
+        source: row.track_source || null,
+        source_url: row.track_source_url || null,
+        captured_at: row.track_captured_at || null,
+        confidence: row.track_confidence || 'review',
+        review_status: row.track_review_status || 'pending',
+      });
+    }
+  }
+  return [...grouped.values()].map(p => ({
+    ...p,
+    tracks: p.tracks.sort((a, b) => (a.track_order || 0) - (b.track_order || 0)),
+  }));
+}
+
 // Fighter search (autocomplete)
 app.get('/api/fighters/search', apiHandler(async (req, res) => {
   const q = (req.query.q || '').trim();
@@ -222,6 +297,23 @@ app.get('/api/fighters/:id/events', apiHandler(async (req, res) => {
   res.json(Object.values(grouped));
 }));
 
+// Fighter walkout playlists (optionally scoped to one event via ?event_id=)
+app.get('/api/fighters/:id/walkouts', apiHandler(async (req, res) => {
+  const fighterId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(fighterId)) return res.status(400).json({ error: 'invalid_fighter_id' });
+  const eventId = req.query.event_id != null ? parseInt(req.query.event_id, 10) : null;
+  if (req.query.event_id != null && !Number.isFinite(eventId)) {
+    return res.status(400).json({ error: 'invalid_event_id' });
+  }
+  const key = `walkouts:fighter:${fighterId}:${eventId || 'all'}`;
+  let result = cache.get(key);
+  if (!result) {
+    const rows = await db.getFighterWalkouts(fighterId, eventId);
+    result = cache.set(key, { fighter_id: fighterId, playlists: mapWalkoutRowsByPlaylist(rows) });
+  }
+  res.json(result);
+}));
+
 // All events
 app.get('/api/events', apiHandler(async (req, res) => {
   // Event lifecycle state is time-sensitive; fetch fresh rows so live cards
@@ -237,6 +329,19 @@ app.get('/api/events/:id/card', apiHandler(async (req, res) => {
   if (!event) return res.status(404).json({ error: 'event_not_found' });
   const card = await db.getEventCard(eventId);
   res.json({ event, card });
+}));
+
+// Event walkout playlists keyed by fighter on this card/event.
+app.get('/api/events/:id/walkouts', apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (!Number.isFinite(eventId)) return res.status(400).json({ error: 'invalid_event_id' });
+  const key = `walkouts:event:${eventId}`;
+  let result = cache.get(key);
+  if (!result) {
+    const rows = await db.getEventWalkouts(eventId);
+    result = cache.set(key, { event_id: eventId, playlists: mapWalkoutRowsByPlaylist(rows) });
+  }
+  res.json(result);
 }));
 
 // ESPN-backed live status for an event. Cheap public endpoint that hits
@@ -1343,6 +1448,49 @@ app.post('/api/admin/reconcile-all-picks', requireAdmin, apiHandler(async (_req,
   res.json({ status: 'ok', ...result });
 }));
 
+// Upsert walkout playlist for one fighter at one event. Controlled admin path.
+app.post('/api/admin/events/:id/walkouts', requireAdmin, apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  const fighterId = parseInt(req.body && req.body.fighter_id, 10);
+  if (!Number.isFinite(eventId) || !Number.isFinite(fighterId)) {
+    return res.status(400).json({ error: 'invalid_event_or_fighter_id' });
+  }
+  const source = req.body && req.body.source ? String(req.body.source).trim() : null;
+  if (!source || !WALKOUT_APPROVED_SOURCES.has(source)) {
+    return res.status(400).json({
+      error: 'invalid_walkout_source',
+      allowed_sources: [...WALKOUT_APPROVED_SOURCES],
+    });
+  }
+
+  const tracksInput = Array.isArray(req.body && req.body.tracks) ? req.body.tracks : [];
+  if (!tracksInput.length) return res.status(400).json({ error: 'tracks_required' });
+  const tracks = tracksInput.map((t, idx) => normalizeWalkoutTrackInput(t || {}, idx + 1));
+  for (const t of tracks) {
+    if (!t.song_title || !t.artist) return res.status(400).json({ error: 'invalid_track_fields', message: 'song_title and artist are required' });
+    if (t.source && !WALKOUT_APPROVED_SOURCES.has(t.source)) {
+      return res.status(400).json({ error: 'invalid_track_source', allowed_sources: [...WALKOUT_APPROVED_SOURCES] });
+    }
+  }
+
+  const playlist = await db.replaceWalkoutPlaylist({
+    event_id: eventId,
+    fighter_id: fighterId,
+    snapshot_mode: req.body && req.body.snapshot_mode ? String(req.body.snapshot_mode) : 'frozen_event',
+    stats_snapshot: req.body && req.body.stats_snapshot ? req.body.stats_snapshot : null,
+    source,
+    source_url: req.body && req.body.source_url ? String(req.body.source_url) : null,
+    captured_at: req.body && req.body.captured_at ? String(req.body.captured_at) : new Date().toISOString(),
+    confidence: req.body && req.body.confidence ? String(req.body.confidence) : 'review',
+    review_status: req.body && req.body.review_status ? String(req.body.review_status) : 'pending',
+    tracks,
+  });
+
+  await db.save();
+  cache.invalidateAll();
+  res.json({ status: 'ok', playlist });
+}));
+
 // Import new rows from data/seed.json without clobbering existing data.
 // Idempotent: rows whose id doesn't already exist are inserted, and existing
 // event rows get non-null seed date/timing metadata refreshed. Used after
@@ -1352,8 +1500,8 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
   const seedPath = path.join(__dirname, 'data', 'seed.json');
   if (!fs.existsSync(seedPath)) return res.status(404).json({ error: 'seed_not_found' });
   const seed = JSON.parse(fs.readFileSync(seedPath, 'utf8'));
-  const added = { fighters: 0, events: 0, fights: 0 };
-  const updated = { fighters: 0, events: 0, fight_outcomes: 0 };
+  const added = { fighters: 0, events: 0, fights: 0, walkout_playlists: 0, walkout_tracks: 0 };
+  const updated = { fighters: 0, events: 0, fight_outcomes: 0, walkout_playlists: 0, walkout_tracks: 0 };
   for (const f of (seed.fighters || [])) {
     const existing = await db.oneRow('SELECT id FROM fighters WHERE id = ?', [f.id]);
     await db.upsertFighter(f);
@@ -1408,9 +1556,53 @@ app.post('/api/admin/import-seed', requireAdmin, apiHandler(async (_req, res) =>
       if (outcome) updated.fight_outcomes++;
     }
   }
+  for (const p of (seed.walkout_playlists || [])) {
+    if (!p || !Number.isFinite(+p.event_id) || !Number.isFinite(+p.fighter_id)) continue;
+    const existing = await db.oneRow(
+      'SELECT event_id, fighter_id FROM walkout_playlists WHERE event_id = ? AND fighter_id = ?',
+      [p.event_id, p.fighter_id]
+    );
+    await db.upsertWalkoutPlaylist({
+      event_id: p.event_id,
+      fighter_id: p.fighter_id,
+      snapshot_mode: p.snapshot_mode || 'frozen_event',
+      stats_snapshot_json: p.stats_snapshot_json != null ? p.stats_snapshot_json : null,
+      stats_snapshot: p.stats_snapshot || null,
+      source: p.source || null,
+      source_url: p.source_url || null,
+      captured_at: p.captured_at || new Date().toISOString(),
+      confidence: p.confidence || 'review',
+      review_status: p.review_status || 'pending',
+    });
+    if (!existing) added.walkout_playlists++;
+    else updated.walkout_playlists++;
+  }
+  for (const t of (seed.walkout_playlist_tracks || [])) {
+    if (!t || !Number.isFinite(+t.event_id) || !Number.isFinite(+t.fighter_id)) continue;
+    const existing = await db.oneRow(
+      'SELECT id FROM walkout_playlist_tracks WHERE event_id = ? AND fighter_id = ? AND track_order = ?',
+      [t.event_id, t.fighter_id, Number.isFinite(+t.track_order) ? +t.track_order : 1]
+    );
+    await db.upsertWalkoutTrack({
+      event_id: t.event_id,
+      fighter_id: t.fighter_id,
+      track_order: Number.isFinite(+t.track_order) ? +t.track_order : 1,
+      song_title: t.song_title || 'Unknown',
+      artist: t.artist || 'Unknown',
+      album: t.album || null,
+      duration_sec: t.duration_sec == null ? null : +t.duration_sec,
+      source: t.source || null,
+      source_url: t.source_url || null,
+      captured_at: t.captured_at || new Date().toISOString(),
+      confidence: t.confidence || 'review',
+      review_status: t.review_status || 'pending',
+    });
+    if (!existing) added.walkout_tracks++;
+    else updated.walkout_tracks++;
+  }
   await db.save();
   cache.invalidateAll();
-  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights} updated_fighters=${updated.fighters} updated_events=${updated.events} fight_outcomes=${updated.fight_outcomes}`);
+  console.log(`[admin] import-seed added fighters=${added.fighters} events=${added.events} fights=${added.fights} walkout_playlists=${added.walkout_playlists} walkout_tracks=${added.walkout_tracks} updated_fighters=${updated.fighters} updated_events=${updated.events} fight_outcomes=${updated.fight_outcomes} updated_walkout_playlists=${updated.walkout_playlists} updated_walkout_tracks=${updated.walkout_tracks}`);
   res.json({ status: 'ok', added, updated, cacheEntries: cache.size() });
 }));
 

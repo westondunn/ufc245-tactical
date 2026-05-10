@@ -3167,13 +3167,27 @@ async function loadFighterEvents(fighterId){
 }
 
 // Load full event card
+function walkoutSummaryText(playlist){
+  if (!playlist || !Array.isArray(playlist.tracks) || !playlist.tracks.length) return 'No walkout playlist logged';
+  const first = playlist.tracks[0];
+  const title = escHtml(first.song_title || 'Unknown track');
+  const artist = escHtml(first.artist || 'Unknown artist');
+  const extra = playlist.tracks.length > 1 ? ` <span style="color:var(--muted-dim)">+${playlist.tracks.length - 1}</span>` : '';
+  return `${title} <span style="color:var(--muted-dim)">—</span> ${artist}${extra}`;
+}
+
 async function loadEventCard(eventId){
   const body = document.getElementById('fighterPanelBody');
   const title = document.getElementById('fighterPanelTitle');
 
   try {
-    const res = await fetch('/api/events/' + eventId + '/card');
-    const data = await res.json();
+    const [cardRes, walkoutRes] = await Promise.all([
+      fetch('/api/events/' + eventId + '/card'),
+      fetch('/api/events/' + eventId + '/walkouts').catch(() => null),
+    ]);
+    const data = await cardRes.json();
+    const walkoutData = walkoutRes && walkoutRes.ok ? await walkoutRes.json() : { playlists: [] };
+    const walkoutsByFighter = new Map((walkoutData.playlists || []).map(p => [p.fighter_id, p]));
 
     title.innerHTML = escHtml(data.event.name||'') +
       ' <span style="color:var(--muted);font-weight:400;font-size:12px">' + escHtml(data.event.date||'') + ' · ' + escHtml(data.event.venue||'') + '</span>';
@@ -3193,6 +3207,11 @@ async function loadEventCard(eventId){
             '</div>' +
             '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted);margin-top:3px;letter-spacing:.1em">' +
               escHtml(f.weight_class||'') + (f.is_title ? ' · TITLE FIGHT' : '') + '</div>' +
+            '<div style="font-family:var(--f-mono);font-size:9px;color:var(--muted-dim);margin-top:5px;letter-spacing:.05em">' +
+              '<span style="color:#FF5965">♫</span> ' + walkoutSummaryText(walkoutsByFighter.get(f.red_id)) +
+              ' <span style="color:var(--muted)">·</span> ' +
+              '<span style="color:#5EC2FF">♫</span> ' + walkoutSummaryText(walkoutsByFighter.get(f.blue_id)) +
+            '</div>' +
           '</div>' +
           '<div style="text-align:right">' +
             '<div style="font-family:var(--f-mono);font-size:11px;color:var(--fg);letter-spacing:.1em">' +
@@ -3794,12 +3813,15 @@ function renderFighterDir(fighters){
 
 async function showFighterProfile(fid){
   try {
-    const [profRes, evRes] = await Promise.all([
+    const [profRes, evRes, walkoutRes] = await Promise.all([
       fetch('/api/fighters/' + fid + '/career-stats'),
-      fetch('/api/fighters/' + fid + '/events')
+      fetch('/api/fighters/' + fid + '/events'),
+      fetch('/api/fighters/' + fid + '/walkouts').catch(() => null)
     ]);
     const prof = await profRes.json();
     const events = await evRes.json();
+    const walkouts = walkoutRes && walkoutRes.ok ? ((await walkoutRes.json()).playlists || []) : [];
+    const walkoutByEventId = new Map(walkouts.map(w => [w.event_id, w]));
     const f = prof.fighter; const s = prof.stats || {}; const r = prof.record || {};
     let html = '<div class="fighter-profile-hero">' +
         fighterAvatar(f, { size: 'xl', body: true }) +
@@ -3815,8 +3837,11 @@ async function showFighterProfile(fid){
       html += '<div style="font-family:var(--f-mono);font-size:10px;color:var(--cyan);letter-spacing:.15em;margin-bottom:8px">FIGHT HISTORY (' + events.length + ' events)</div>';
       events.forEach(ev => {
         const evLabel = ev.number ? 'UFC ' + ev.number : (ev.name || 'UFC Fight Night');
+        const playlist = walkoutByEventId.get(ev.event_id);
         html += '<div style="margin-bottom:8px">' +
           '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted)">' + escHtml(evLabel) + ' · ' + escHtml(ev.date||'') + '</div>';
+        html += '<div style="font-family:var(--f-mono);font-size:10px;color:var(--muted-dim);padding:2px 0 4px 0">' +
+          '<span style="color:var(--cyan)">WALKOUT</span> · ' + walkoutSummaryText(playlist) + '</div>';
         ev.fights.forEach(fight => {
           const won = fight.winner_id === fid;
           html += '<div style="font-family:var(--f-mono);font-size:11px;padding:3px 0;color:' + (won?'var(--green)':'var(--fg-dim)') + '">' +
