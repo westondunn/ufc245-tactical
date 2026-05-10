@@ -5192,7 +5192,7 @@ function renderLiveEventCard(fight, pick){
       decision = 'In progress — stats refresh every 30s.';
     }
   } else if (espnWalkouts) {
-    decision = 'Fighters walking out — bell imminent.';
+    decision = 'Fighters walking out — finger pokes imminent.';
   } else if (espn && espn.status_type === 'scheduled') {
     decision = 'Scheduled — shit hasn\'t hit the fan.';
   } else {
