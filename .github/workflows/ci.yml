@@ -77,6 +77,11 @@ jobs:
       - name: Run test suite
         run: node tests/run.js
 
+      - name: Selector self-test
+        # Exercises the routing rules in .github/scripts/select-e2e.js so
+        # a regression there can never silently shrink the e2e gate.
+        run: node .github/scripts/select-e2e.test.js
+
       - name: Setup Python
         uses: actions/setup-python@v5
         with:
@@ -175,25 +180,99 @@ jobs:
     timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
+        with:
+          # Need the merge-base for diff computation on PRs and the
+          # parent commit for push events.
+          fetch-depth: 0
 
       - uses: actions/setup-node@v4
         with:
           node-version: '22'
           cache: 'npm'
 
+      - name: Compute e2e scope
+        id: scope
+        # Path-based suite selection — see .github/scripts/select-e2e.js.
+        # Commit message escape hatches:
+        #   [full-e2e]  → run every spec regardless of paths
+        #   [skip-e2e]  → skip the suite entirely (use sparingly; main
+        #                 push protections still re-run the suite)
+        env:
+          GH_EVENT: ${{ github.event_name }}
+          GH_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GH_HEAD_SHA: ${{ github.event.pull_request.head.sha || github.sha }}
+          COMMIT_MSG: ${{ github.event.head_commit.message || github.event.pull_request.title }}
+        run: |
+          set -euo pipefail
+          # Decide diff range.
+          if [ "$GH_EVENT" = "pull_request" ]; then
+            BASE="$GH_BASE_SHA"
+            HEAD="$GH_HEAD_SHA"
+            git fetch --no-tags --depth=0 origin "$BASE" "$HEAD" || true
+            RANGE="$BASE...$HEAD"
+          else
+            RANGE="HEAD~1..HEAD"
+          fi
+          echo "diff range: $RANGE"
+          # Compute changed paths (always emit at least an empty file).
+          if ! git diff --name-only "$RANGE" > /tmp/changed.txt 2>/tmp/diff-err.txt; then
+            echo "git diff failed:"
+            cat /tmp/diff-err.txt || true
+            : > /tmp/changed.txt
+          fi
+          echo "::group::changed paths"
+          cat /tmp/changed.txt || true
+          echo "::endgroup::"
+
+          # Honor escape hatches in the commit message / PR title.
+          export SELECT_FORCE_FULL=
+          export SELECT_FORCE_SKIP=
+          case "$COMMIT_MSG" in
+            *"[full-e2e]"*) export SELECT_FORCE_FULL=1 ;;
+          esac
+          case "$COMMIT_MSG" in
+            *"[skip-e2e]"*) export SELECT_FORCE_SKIP=1 ;;
+          esac
+
+          # Run the selector. Stderr carries the human summary; stdout
+          # is the consumer-friendly args string.
+          ARGS=$(node .github/scripts/select-e2e.js --format=args < /tmp/changed.txt 2> /tmp/select-summary.json || true)
+          echo "::group::selector summary"
+          cat /tmp/select-summary.json
+          echo "::endgroup::"
+
+          if [ -z "$ARGS" ]; then
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+            echo "specs=" >> "$GITHUB_OUTPUT"
+            echo "Selector: skip — no e2e-relevant paths."
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+            # Emit on a single line for easy reuse downstream.
+            echo "specs=$ARGS" >> "$GITHUB_OUTPUT"
+            echo "Selector: $ARGS"
+          fi
+
       - name: Install dependencies
+        if: steps.scope.outputs.skip != 'true'
         run: npm ci
 
       - name: Install Playwright browsers
+        if: steps.scope.outputs.skip != 'true'
         run: npx playwright install --with-deps chromium
 
       - name: Run E2E tests
+        if: steps.scope.outputs.skip != 'true'
         env:
           # Playwright spawns server.js via webServer config; same auth/index.js
           # check applies as in the boot smoke step above.
           NODE_ENV: development
           BETTER_AUTH_SECRET: ci-smoke-not-a-real-secret
-        run: npx playwright test
+        run: npx playwright test ${{ steps.scope.outputs.specs }}
+
+      - name: Skipped notice
+        if: steps.scope.outputs.skip == 'true'
+        run: |
+          echo "::notice::E2E suite skipped — no e2e-relevant paths in this diff. See selector summary above."
 
       - name: Upload test report
         uses: actions/upload-artifact@v4
