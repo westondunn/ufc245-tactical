@@ -16,6 +16,7 @@ const cron = require('node-cron');
 const db = require('../../db');
 const { runAudit } = require('./runner');
 const { runBackfill } = require('../backfill/dispatcher');
+const { runIntegrityScan } = require('../integrity/runner');
 
 const mutexes = new Map();
 
@@ -88,13 +89,28 @@ function postEventT24() {
   }));
 }
 
+// Runs all 17 integrity scanners nightly at 02:00 UTC — one hour before the
+// coverage audit (03:00) to avoid overlap. Replaces the former hourly
+// fighter-integrity-gate remote-agent routine; findings persist in DB instead
+// of opening GitHub issues.
+function nightlyIntegrity() {
+  return cron.schedule('0 2 * * *', () => withMutex('nightly-integrity', async () => {
+    try {
+      const result = await runIntegrityScan();
+      console.log(`[scheduler] integrity run=${result.run_id} opened=${result.opened} refreshed=${result.refreshed} resolved=${result.resolved}`);
+    } catch (e) {
+      console.error('[scheduler] nightly-integrity error:', e.message);
+    }
+  }));
+}
+
 function startScheduler() {
   if (process.env.AUDIT_SCHEDULER === 'off') {
     console.log('[scheduler] disabled by AUDIT_SCHEDULER=off');
     return [];
   }
-  console.log('[scheduler] starting nightly + pre/post-event triggers');
-  return [nightlySweep(), preEventDaily(), postEventPoller(), postEventT24()];
+  console.log('[scheduler] starting nightly + pre/post-event triggers + integrity scan');
+  return [nightlySweep(), preEventDaily(), postEventPoller(), postEventT24(), nightlyIntegrity()];
 }
 
 module.exports = { startScheduler, trigger };

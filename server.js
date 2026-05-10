@@ -771,6 +771,52 @@ app.get('/api/data/backfill/queue', requirePredictionKey, apiHandler(async (req,
 }));
 
 // ============================================================
+// DATA INTEGRITY API (key-protected, same as /api/data/*)
+// ============================================================
+const integrityRunner = require('./data/integrity/runner');
+
+app.get('/api/integrity', requirePredictionKey, apiHandler(async (req, res) => {
+  const status   = req.query.status   ? String(req.query.status).slice(0, 16)   : 'open';
+  const category = req.query.category ? String(req.query.category).slice(0, 64) : undefined;
+  const severity = req.query.severity ? String(req.query.severity).slice(0, 16) : undefined;
+  const limit    = parseInt(req.query.limit  || '50',  10);
+  const offset   = parseInt(req.query.offset || '0',   10);
+  res.json(await integrityRunner.listIssues({ status, category, severity, limit, offset }));
+}));
+
+app.get('/api/integrity/summary', requirePredictionKey, apiHandler(async (_req, res) => {
+  res.json(await integrityRunner.getSummary());
+}));
+
+app.post('/api/integrity/scan', requirePredictionKey, apiHandler(async (_req, res) => {
+  const result = await integrityRunner.runIntegrityScan();
+  res.json(result);
+}));
+
+app.post('/api/integrity/resolve-batch', requirePredictionKey, apiHandler(async (req, res) => {
+  const { category, subject_ids, resolution, note } = req.body || {};
+  const safeCategory = category ? String(category).slice(0, 64) : undefined;
+  const safeResolution = resolution ? String(resolution).slice(0, 32) : undefined;
+  const safeNote = note ? String(note).slice(0, 512) : undefined;
+  const safeIds = Array.isArray(subject_ids) ? subject_ids.map(s => String(s).slice(0, 64)) : undefined;
+  const result = await integrityRunner.resolveBatch({
+    category: safeCategory, subject_ids: safeIds,
+    resolution: safeResolution, note: safeNote,
+  });
+  res.json(result);
+}));
+
+app.post('/api/integrity/:id/resolve', requirePredictionKey, apiHandler(async (req, res) => {
+  const id = parseInt(req.params.id, 10);
+  if (!Number.isFinite(id)) return res.status(400).json({ error: 'invalid_id' });
+  const { resolution, note } = req.body || {};
+  const safeResolution = resolution ? String(resolution).slice(0, 32) : undefined;
+  const safeNote = note ? String(note).slice(0, 512) : undefined;
+  const result = await integrityRunner.resolveOne(id, { resolution: safeResolution, note: safeNote });
+  res.json(result);
+}));
+
+// ============================================================
 // USER PICKS API (additive, flag-gated via ENABLE_PICKS)
 // ============================================================
 const validate = require('./lib/validate');
