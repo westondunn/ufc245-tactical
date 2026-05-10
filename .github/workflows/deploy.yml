@@ -10,13 +10,16 @@ on:
 
 permissions:
   contents: write
+  pull-requests: write
   checks: read
 
 jobs:
   version-bump:
-    name: Bump Version
+    name: Bump Version (PR)
     runs-on: ubuntu-latest
-    # Skip if the commit message contains [skip-version]
+    # Skip on the bot's own [skip-version] commit (avoids the bump loop)
+    # and on commits whose subject is itself a version-bump squash from
+    # the bot PR landing on main — both cases are handled by tag-and-release.
     if: "!contains(github.event.head_commit.message, '[skip-version]')"
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
@@ -25,17 +28,14 @@ jobs:
       - name: Wait for CI Quality Gates to pass on this sha
         # CI runs on the same `push: main` trigger as this workflow. Poll the
         # check-suite for this sha until it completes — abort if it failed.
-        # This is the workflow-level CI gate; we can't enforce it via classic
-        # branch protection because github-actions[bot] can't bypass status
-        # checks when pushing the version-bump commit back to main.
+        # We still poll here even though main only takes PR-merged commits;
+        # belt-and-suspenders if a fast-forward of an old branch ever lands.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           SHA: ${{ github.sha }}
         run: |
           set -euo pipefail
           for i in $(seq 1 60); do
-            # Look at all check-runs for this sha; ignore the deploy workflow's
-            # own runs (this very job) by name.
             CONCLUSIONS=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${SHA}/check-runs?per_page=100" \
               --jq '[.check_runs[] | select(.name=="Quality & Security" or .name=="Playwright E2E") | {name, status, conclusion}]')
             DONE=$(echo "$CONCLUSIONS" | python -c "import sys,json; r=json.load(sys.stdin); print('yes' if r and all(c['status']=='completed' for c in r) else 'no')")
@@ -68,17 +68,10 @@ jobs:
 
       - name: Determine version bump type
         id: bump_type
-        # Pass the commit message via env (not shell interpolation) so `"`,
-        # backticks, `$`, etc. in the body don't break bash parsing.
         env:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
-        # Anchor on Conventional Commits semantics, not substring soup. The
-        # previous regex matched "major" and "feat" anywhere in the message
-        # body — so a paragraph saying "...breaks every deployment, this is
-        # a fix..." would trigger a major bump (3.17.x → 4.0.0 happened).
-        # Now:
+        # Anchor on Conventional Commits semantics:
         #   major: trailer "BREAKING CHANGE:" or `!` after type/scope
-        #          (e.g. "feat!: ..." or "fix(api)!: ...")
         #   minor: subject starts with "feat:" or "feat(scope):"
         #   patch: anything else
         run: |
@@ -126,30 +119,103 @@ jobs:
             "
           fi
 
-      - name: Commit version bump
-        # Idempotent: if a prior failed run left an orphan tag (e.g. branch
-        # protection blocked the push but the tag was created locally and
-        # leaked), delete it before retrying. The next bump will re-tag the
-        # same SHA — that's the intent.
+      - name: Open release PR
+        # Push the bumped package.json + package-lock.json to a release/vX.Y.Z
+        # branch and open a PR. Auto-merge keeps the human flow unchanged
+        # (the bot's PR squash-merges the second its required checks pass);
+        # the tag + GitHub Release job fires on the squashed commit landing
+        # on main via the [skip-version] subject.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          SOURCE_SUBJECT: ${{ github.event.head_commit.message }}
+          SOURCE_SHA: ${{ github.sha }}
         run: |
-          NEW_VERSION=${{ steps.bump.outputs.new_version }}
+          set -euo pipefail
+          BRANCH="release/v${NEW_VERSION}"
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
-          git add package.json package-lock.json
-          git commit -m "v${NEW_VERSION} [skip-version]" || echo "No changes to commit"
-          if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
-            echo "Tag v${NEW_VERSION} already exists — replacing"
-            git tag -d "v${NEW_VERSION}"
-            git push origin ":refs/tags/v${NEW_VERSION}" || true
+          # Idempotent against repeat runs (if a prior run created the branch
+          # but failed before the PR opened): delete and recreate.
+          if git ls-remote --exit-code --heads origin "$BRANCH" >/dev/null 2>&1; then
+            echo "Stale branch $BRANCH on remote — recreating"
+            git push origin ":refs/heads/${BRANCH}" || true
           fi
+          git checkout -b "$BRANCH"
+          git add package.json package-lock.json
+          # The [skip-version] token in the subject is what tag-and-release
+          # keys off of. The [skip-e2e] token tells the e2e selector that
+          # this mechanical version-string change doesn't need the full
+          # Playwright suite. Quality gates still run.
+          git commit -m "v${NEW_VERSION} [skip-version] [skip-e2e]" --no-verify
+          git push -u origin "$BRANCH"
+
+          # Body is a HEREDOC so newlines + special chars survive.
+          BODY=$(cat <<EOF
+          Automated version bump for $(printf '%s' "$SOURCE_SUBJECT" | head -n1)
+
+          Source commit: ${SOURCE_SHA}
+          Bump type: ${{ steps.bump_type.outputs.type }}
+
+          Auto-merges once required checks pass. The tag and GitHub Release
+          land on the squash commit via the tag-and-release job.
+          EOF
+          )
+          gh pr create \
+            --base main \
+            --head "$BRANCH" \
+            --title "v${NEW_VERSION} [skip-version] [skip-e2e]" \
+            --body "$BODY" \
+            --label "automated,version-bump"
+          gh pr merge "$BRANCH" --auto --squash --delete-branch
+
+  tag-and-release:
+    name: Tag + GitHub Release
+    runs-on: ubuntu-latest
+    # Fires on the bot PR's squash-merge commit landing on main.
+    # Tags are separate refs (refs/tags/*); the branch-protection
+    # pull_request rule applies to branches, not tags, so the bot can
+    # push the tag directly using GITHUB_TOKEN.
+    if: "contains(github.event.head_commit.message, '[skip-version]')"
+    outputs:
+      version: ${{ steps.ver.outputs.version }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          token: ${{ secrets.GITHUB_TOKEN }}
+          fetch-depth: 0
+
+      - name: Read version from package.json
+        id: ver
+        run: |
+          VERSION=$(node -e "console.log(require('./package.json').version)")
+          echo "version=${VERSION}" >> "$GITHUB_OUTPUT"
+          echo "Read version: ${VERSION}"
+
+      - name: Create + push tag
+        env:
+          NEW_VERSION: ${{ steps.ver.outputs.version }}
+        run: |
+          set -euo pipefail
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          if git rev-parse "v${NEW_VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${NEW_VERSION} already exists locally — recreating"
+            git tag -d "v${NEW_VERSION}"
+          fi
+          # If the tag already exists on the remote (e.g. partial prior run),
+          # delete it so we can re-point at the squash commit.
+          git push origin ":refs/tags/v${NEW_VERSION}" 2>/dev/null || true
           git tag "v${NEW_VERSION}"
-          git push origin main --tags
+          git push origin "v${NEW_VERSION}"
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
         with:
-          tag_name: v${{ steps.bump.outputs.new_version }}
-          name: v${{ steps.bump.outputs.new_version }}
+          tag_name: v${{ steps.ver.outputs.version }}
+          name: v${{ steps.ver.outputs.version }}
           body: |
             Automated release from commit ${{ github.sha }}
 
@@ -161,12 +227,14 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Railway deploys automatically via GitHub integration — no action needed.
-  # This job just verifies the deployment happened.
+  # This job just verifies the deployment happened. Runs only on the
+  # [skip-version] squash-merge that tag-and-release also keys off, so
+  # we know the package.json version matches what Railway should serve.
   verify-deploy:
     name: Verify Railway Deploy
     runs-on: ubuntu-latest
-    needs: version-bump
-    if: always()
+    needs: tag-and-release
+    if: always() && needs.tag-and-release.result == 'success'
     timeout-minutes: 20
     env:
       RAILWAY_WEB_URL: ${{ secrets.RAILWAY_WEB_URL }}
@@ -194,13 +262,13 @@ jobs:
 
       # Hardcoded public-URL safety net: poll /api/version against the
       # known prod hostname and fail the workflow if the deployed version
-      # doesn't match the version-bump commit's package.json. Runs even
-      # when Railway secrets are missing, so future deploy regressions can't
-      # silently sit on prod for days.
+      # doesn't match what tag-and-release tagged. Runs even when Railway
+      # secrets are missing, so future deploy regressions can't silently
+      # sit on prod for days.
       - name: Verify prod is on the new version (public URL)
-        if: needs.version-bump.outputs.new_version != ''
+        if: needs.tag-and-release.outputs.version != ''
         env:
-          NEW_VERSION: ${{ needs.version-bump.outputs.new_version }}
+          NEW_VERSION: ${{ needs.tag-and-release.outputs.version }}
         run: |
           set -euo pipefail
           URL="https://web-production-96d6e.up.railway.app/api/version"
