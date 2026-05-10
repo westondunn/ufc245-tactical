@@ -1302,8 +1302,15 @@ app.post('/api/admin/events/:id/sync-live', requireAdmin, apiHandler(async (req,
   const result = await pollLiveEvent(eventId, db);
   await db.save();
   if (result.fights_synced) cache.invalidateAll();
-  console.log(`[admin] sync-live event=${eventId} synced=${result.fights_synced || 0} status=${result.status}`);
-  res.json(result);
+  // Reconcile picks for any newly-finished fight in the same call — same
+  // logic the live cron uses, exposed manually so an admin can force a
+  // resync + score in one shot.
+  let reconciled = null;
+  try { reconciled = await db.reconcilePicksForEvent(eventId); }
+  catch (err) { console.error(`[admin] reconcile after sync-live failed:`, err.message); }
+  if (reconciled && reconciled.reconciled) cache.invalidateAll();
+  console.log(`[admin] sync-live event=${eventId} synced=${result.fights_synced || 0} reconciled=${reconciled && reconciled.reconciled || 0} status=${result.status}`);
+  res.json({ ...result, reconciled });
 }));
 
 // Lock all picks for an event (admin). Picks written after lock return 409.
@@ -1493,6 +1500,19 @@ async function pollAllLiveEvents() {
           cache.invalidateAll();
           await db.save();
           console.log(`[cron] live-poll event=${e.id} synced=${r.fights_synced}`);
+        }
+        // Reconcile picks immediately after each tick — cheap, idempotent
+        // (only acts on fights with winner_id set), so picks update points
+        // within ~45s of a result landing rather than waiting on the
+        // predictions service's daily reconcile job.
+        try {
+          const rec = await db.reconcilePicksForEvent(e.id);
+          if (rec && rec.reconciled) {
+            cache.invalidateAll();
+            console.log(`[cron] live-poll reconcile event=${e.id} reconciled=${rec.reconciled} points=${rec.points_awarded}`);
+          }
+        } catch (err) {
+          console.error(`[cron] live-poll reconcile event=${e.id} failed:`, err.message);
         }
       } catch (err) {
         console.error(`[cron] live-poll event=${e.id} failed:`, err.message);

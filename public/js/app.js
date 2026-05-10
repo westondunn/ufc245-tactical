@@ -4850,9 +4850,66 @@ function startLiveEventPolling(){
   // a little more aggressively. /api/events/:id/live-status is in-process
   // cached for 10s so a flock of clients doesn't hammer ESPN.
   _liveEventTimer = setInterval(refreshLiveEventView, 15 * 1000);
+  startRoundClockTicker();
 }
 function stopLiveEventPolling(){
   if (_liveEventTimer) { clearInterval(_liveEventTimer); _liveEventTimer = null; }
+  stopRoundClockTicker();
+}
+
+// 1Hz local countdown so the round clock visibly ticks down between the
+// 15s ESPN polls. Each ESPN poll re-syncs the baseline ('clock_at_poll'
+// + timestamp), so any local drift gets corrected within a poll cycle.
+let _roundClockTimer = null;
+function startRoundClockTicker(){
+  stopRoundClockTicker();
+  _roundClockTimer = setInterval(tickRoundClocks, 1000);
+}
+function stopRoundClockTicker(){
+  if (_roundClockTimer) { clearInterval(_roundClockTimer); _roundClockTimer = null; }
+}
+function tickRoundClocks(){
+  // Find any state chip with data-clock-baseline; recompute remaining secs.
+  const nodes = document.querySelectorAll('[data-clock-baseline]');
+  if (!nodes.length) return;
+  const now = Date.now();
+  for (const el of nodes) {
+    const baseline = parseFloat(el.dataset.clockBaseline);
+    const ts = parseFloat(el.dataset.clockSyncedAt);
+    if (!Number.isFinite(baseline) || !Number.isFinite(ts)) continue;
+    const elapsed = (now - ts) / 1000;
+    const rem = Math.max(0, Math.round(baseline - elapsed));
+    const m = Math.floor(rem / 60);
+    const s = (rem % 60).toString().padStart(2, '0');
+    const period = el.dataset.clockPeriod || '?';
+    const prefix = el.dataset.clockPrefix || 'LIVE · R';
+    el.textContent = `${prefix}${period} ${m}:${s}`;
+  }
+}
+
+function clockToSeconds(displayClock){
+  if (!displayClock) return null;
+  const m = String(displayClock).match(/^(\d+):(\d+)$/);
+  if (!m) return null;
+  return parseInt(m[1], 10) * 60 + parseInt(m[2], 10);
+}
+
+function renderLiveStateChip(stateLabel, espn, espnInProgress, concluded){
+  const cls = (stateLabel.split(' ')[0] || 'upcoming').toLowerCase();
+  // If ESPN reports a live in-round clock, emit data-* so the 1Hz ticker
+  // can keep the chip visibly counting down between 15s polls.
+  if (!concluded && espnInProgress && espn && espn.period && espn.display_clock
+      && espn.status_type === 'in_progress') {
+    const secs = clockToSeconds(espn.display_clock);
+    if (Number.isFinite(secs)) {
+      return `<span class="live-card__state live-card__state--${cls}"
+        data-clock-baseline="${secs}"
+        data-clock-synced-at="${Date.now()}"
+        data-clock-period="${espn.period}"
+        data-clock-prefix="LIVE · R">${escHtml(stateLabel)}</span>`;
+    }
+  }
+  return `<span class="live-card__state live-card__state--${cls}">${escHtml(stateLabel)}</span>`;
 }
 
 async function refreshLiveEventView(){
@@ -5169,7 +5226,7 @@ function renderLiveEventCard(fight, pick){
           <span class="live-card__pos">${fight.is_main ? 'MAIN EVENT' : (fight.is_title ? 'TITLE FIGHT' : (fight.card_position ? '#' + fight.card_position : ''))}</span>
           <span class="live-card__weight">${escHtml(fight.weight_class || '')}</span>
         </div>
-        <span class="live-card__state live-card__state--${(stateLabel.split(' ')[0] || 'upcoming').toLowerCase()}">${escHtml(stateLabel)}</span>
+        ${renderLiveStateChip(stateLabel, espn, espnInProgress, concluded)}
       </div>
       <div class="live-card__body">
         ${cornerHtml('red')}
