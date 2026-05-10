@@ -28,7 +28,8 @@ function normaliseStatusType(typeName) {
   const t = String(typeName || '').toUpperCase();
   if (t === 'STATUS_FINAL' || t === 'STATUS_END_OF_FIGHT') return 'final';
   if (t === 'STATUS_IN_PROGRESS' || t.startsWith('STATUS_IN_PROGRESS_')) return 'in_progress';
-  if (t === 'STATUS_END_OF_PERIOD' || t.startsWith('STATUS_END_OF_PERIOD_')) return 'between_rounds';
+  if (t === 'STATUS_END_OF_PERIOD' || t.startsWith('STATUS_END_OF_PERIOD_')
+      || t === 'STATUS_END_OF_ROUND' || t.startsWith('STATUS_END_OF_ROUND_')) return 'between_rounds';
   if (t === 'STATUS_FIGHTERS_INTRODUCTION' || t === 'STATUS_FIGHTERS_WALKING') return 'walkouts';
   if (t === 'STATUS_SCHEDULED' || t === 'STATUS_PRE_FIGHT') return 'scheduled';
   return 'unknown';
