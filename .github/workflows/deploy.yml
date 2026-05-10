@@ -167,12 +167,16 @@ jobs:
           land on the squash commit via the tag-and-release job.
           EOF
           )
+          # No --label here: 'gh pr create --label' fails the whole step
+          # if any of the labels don't exist on the repo, and we don't
+          # want a missing-label config to break the deploy cycle. The
+          # PR title (and the branch name release/vX.Y.Z) are enough to
+          # identify automated bumps in the UI.
           gh pr create \
             --base main \
             --head "$BRANCH" \
             --title "[skip-version] [skip-e2e] v${NEW_VERSION}" \
-            --body "$BODY" \
-            --label "automated,version-bump"
+            --body "$BODY"
           gh pr merge "$BRANCH" --auto --squash --delete-branch
 
   tag-and-release:
