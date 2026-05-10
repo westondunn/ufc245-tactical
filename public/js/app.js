@@ -4987,6 +4987,7 @@ async function refreshLiveEventView(){
         <span class="live-event__summary-pill">ACTIVE FIGHT</span>
         <span>${concludedCount} of ${normalized.length} concluded</span>
         <span>${pendingCount} pending after this</span>
+        <a href="#" class="live-event__refresh" data-live-refresh>↻ Refresh now</a>
         <a href="#" class="live-event__see-all" data-live-see-all>See full card →</a>
       </div>
       <div class="live-event__chooser">
@@ -4999,6 +5000,12 @@ async function refreshLiveEventView(){
     if (seeAll) seeAll.addEventListener('click', (ev) => {
       ev.preventDefault();
       if (typeof activatePicksView === 'function') activatePicksView('event');
+    });
+    const refreshBtn = listEl.querySelector('[data-live-refresh]');
+    if (refreshBtn) refreshBtn.addEventListener('click', (ev) => {
+      ev.preventDefault();
+      refreshBtn.classList.add('is-spinning');
+      refreshLiveEventView().finally(() => refreshBtn.classList.remove('is-spinning'));
     });
     const clearBtn = listEl.querySelector('[data-live-clear]');
     if (clearBtn) clearBtn.addEventListener('click', (ev) => {

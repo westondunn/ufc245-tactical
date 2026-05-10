@@ -2904,8 +2904,11 @@ footer{
   letter-spacing:.18em;font-size:9px;background:rgba(255,71,87,0.08);
   animation:livePulse 1.6s ease-in-out infinite;
 }
-.live-event__see-all{margin-left:auto;color:var(--cyan);text-decoration:none}
+.live-event__see-all{color:var(--cyan);text-decoration:none}
 .live-event__see-all:hover{text-decoration:underline}
+.live-event__refresh{margin-left:auto;color:var(--cyan);text-decoration:none;cursor:pointer;letter-spacing:.06em}
+.live-event__refresh:hover{text-decoration:underline}
+.live-event__refresh.is-spinning{opacity:0.5;pointer-events:none}
 
 .live-event__chooser{
   margin:8px 0 12px;padding:10px;border:1px solid var(--border);border-radius:4px;

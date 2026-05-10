@@ -1421,7 +1421,7 @@ async function warmCache() {
 const LOGIN_CLEANUP_MS = 24 * 60 * 60 * 1000;   // daily
 const LEADERBOARD_REFRESH_MS = 5 * 60 * 1000;   // every 5 min
 const LOGIN_ATTEMPT_TTL_MS = 24 * 60 * 60 * 1000; // keep last 24h of attempts
-const LIVE_POLL_MS = 90 * 1000;                  // 90s during live events
+const LIVE_POLL_MS = 45 * 1000;                  // 45s during live events
 
 async function cleanupLoginAttempts() {
   const cutoff = new Date(Date.now() - LOGIN_ATTEMPT_TTL_MS).toISOString();
