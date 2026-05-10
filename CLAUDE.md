@@ -12,6 +12,8 @@ Use `AGENTS.md` as the shared project brief. This file keeps Claude-specific ent
 - Fight data must cite official or credible sources; never fabricate missing stats.
 - Keep frontend changes in the existing dense dashboard style, not a marketing style.
 - Run targeted tests first, then broader checks when touching shared behavior.
+- **All changes ship via PR** — never push directly to `main`. See AGENTS.md → "Branch + PR strategy" for the full convention. Cut a feature branch (`<scope>/<kebab-desc>`), run targeted tests + the matching Playwright spec, push, open a PR, self-merge after CI passes.
+- The CI's e2e job auto-scopes itself via `.github/scripts/select-e2e.js`. Don't force the full suite unless the change really needs it; conversely, don't carve narrow rules into the table that drift. Use `[full-e2e]` / `[skip-e2e]` in the commit subject only when the path-based default is wrong.
 
 ## Project Skills
 
