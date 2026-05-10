@@ -2846,10 +2846,11 @@ footer{
 .live-card__pos{color:var(--cyan)}
 .live-card__weight{}
 .live-card__state{padding:2px 8px;border-radius:2px;border:1px solid var(--border);font-size:9px;letter-spacing:.18em}
-.live-card__state--live{color:#ff4757;border-color:#ff4757;background:rgba(255,71,87,0.08);animation:livePulse 1.6s ease-in-out infinite}
+.live-card__state--live{color:#ff4757;border-color:#ff4757;background:rgba(255,71,87,0.08);animation:livePulse 1.6s ease-in-out infinite;font-variant-numeric:tabular-nums}
 .live-card__state--final{color:var(--cyan);border-color:var(--cyan)}
 .live-card__state--pending{color:var(--muted-dim)}
 .live-card__state--upcoming{color:var(--muted-dim)}
+.live-card__state--walkouts{color:#FFB020;border-color:#FFB020;background:rgba(255,176,32,0.08);letter-spacing:.18em}
 @keyframes livePulse{0%,100%{opacity:1}50%{opacity:0.5}}
 
 .live-card__body{display:grid;grid-template-columns:1fr auto 1fr;gap:14px;align-items:stretch}

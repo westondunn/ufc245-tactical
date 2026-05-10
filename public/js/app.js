@@ -4846,7 +4846,10 @@ async function loadLiveEventView(){
 
 function startLiveEventPolling(){
   stopLiveEventPolling();
-  _liveEventTimer = setInterval(refreshLiveEventView, 30 * 1000);
+  // ESPN's live status is fast (~5-15s lag from broadcast) so we poll
+  // a little more aggressively. /api/events/:id/live-status is in-process
+  // cached for 10s so a flock of clients doesn't hammer ESPN.
+  _liveEventTimer = setInterval(refreshLiveEventView, 15 * 1000);
 }
 function stopLiveEventPolling(){
   if (_liveEventTimer) { clearInterval(_liveEventTimer); _liveEventTimer = null; }
@@ -4860,13 +4863,21 @@ async function refreshLiveEventView(){
   const statusEl = document.getElementById('liveEventStatus');
   if (!eventId || !listEl) return;
   try {
-    const [cardRes, picksRes] = await Promise.all([
+    const [cardRes, picksRes, espnRes] = await Promise.all([
       fetch(`/api/events/${eventId}/card`),
-      _currentUser ? fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?event_id=${eventId}`) : Promise.resolve(null)
+      _currentUser ? fetch(`/api/users/${encodeURIComponent(_currentUser.id)}/picks?event_id=${eventId}`) : Promise.resolve(null),
+      fetch(`/api/events/${eventId}/live-status`).catch(() => null),
     ]);
     const { event, card } = await cardRes.json();
     const picks = picksRes ? (await picksRes.json()).picks : [];
     const picksByFightId = new Map((picks || []).map(p => [p.fight_id, p]));
+    let espnByFightId = {};
+    try {
+      if (espnRes && espnRes.ok) {
+        const j = await espnRes.json();
+        if (j && j.ok) espnByFightId = j.by_fight_id || {};
+      }
+    } catch (_) { /* ignore */ }
 
     if (titleEl) titleEl.textContent = (event && event.name) || 'Live event';
     if (subEl) {
@@ -4883,6 +4894,7 @@ async function refreshLiveEventView(){
       ...f,
       red_fighter_id:  f.red_fighter_id  != null ? f.red_fighter_id  : f.red_id,
       blue_fighter_id: f.blue_fighter_id != null ? f.blue_fighter_id : f.blue_id,
+      _espn: espnByFightId[f.id] || null,
     }));
     // Order: in-progress first (no winner, has_stats=0 or some round_stats), then concluded by latest, then upcoming.
     normalized.sort((a, b) => {
@@ -5038,12 +5050,37 @@ async function refreshLiveEventView(){
 }
 
 function renderLiveEventCard(fight, pick){
-  const concluded = fight.winner_id != null;
-  const winnerRed = concluded && fight.winner_id === fight.red_fighter_id;
-  const winnerBlue = concluded && fight.winner_id === fight.blue_fighter_id;
+  // ESPN-backed live status (preferred over our slower ufcstats-derived
+  // signals when present). Set on `fight._espn` by refreshLiveEventView.
+  const espn = fight._espn || null;
+  const espnFinal = !!(espn && espn.status_type === 'final');
+  const espnInProgress = !!(espn && (espn.status_type === 'in_progress' || espn.status_type === 'between_rounds'));
+  const espnWalkouts = !!(espn && espn.status_type === 'walkouts');
+
+  // Winner: prefer DB winner_id (ufcstats canonical), fall back to ESPN's
+  // winner flag (lands within seconds of the bell, well before ufcstats).
+  let winnerCorner = null;
+  if (fight.winner_id != null) {
+    winnerCorner = fight.winner_id === fight.red_fighter_id ? 'red'
+                  : fight.winner_id === fight.blue_fighter_id ? 'blue' : null;
+  } else if (espnFinal && espn.espn_winner_corner) {
+    winnerCorner = espn.espn_winner_corner;
+  }
+  const concluded = winnerCorner != null;
+  const winnerRed = concluded && winnerCorner === 'red';
+  const winnerBlue = concluded && winnerCorner === 'blue';
+
   const hasStats = !!(fight._liveAggRed || fight._liveAggBlue);
-  const inProgress = !concluded && (hasStats || fight.has_stats === 1);
-  const stateLabel = concluded ? 'FINAL' : (inProgress ? 'LIVE' : (fight.event_started ? 'PENDING' : 'UPCOMING'));
+  const inProgress = !concluded && (espnInProgress || hasStats || fight.has_stats === 1);
+  let stateLabel;
+  if (concluded) stateLabel = 'FINAL';
+  else if (inProgress) {
+    stateLabel = (espn && espn.period && espn.display_clock)
+      ? `LIVE · R${espn.period} ${espn.display_clock}`
+      : 'LIVE';
+  } else if (espnWalkouts) stateLabel = 'WALKOUTS';
+  else if (fight.event_started) stateLabel = 'PENDING';
+  else stateLabel = 'UPCOMING';
 
   const aggCell = (agg) => {
     if (!agg) return '<span class="live-card__agg-empty">—</span>';
@@ -5081,9 +5118,29 @@ function renderLiveEventCard(fight, pick){
       </div>`;
   };
 
-  const decision = concluded
-    ? `${escHtml(fight.method || '—')}${fight.round ? ' · R' + fight.round : ''}${fight.time ? ' · ' + escHtml(fight.time) : ''}`
-    : (inProgress ? 'In progress — stats refresh every 30s' : 'Bell hasn\'t rung');
+  // Decision/status line — concluded shows method/round/time;
+  // mid-fight shows ESPN's clock + a hint that ufcstats per-round
+  // breakdown will follow; pre-fight shows ESPN's intro/walkout marker
+  // when present so the user sees movement before the bell.
+  let decision;
+  if (concluded) {
+    const methodText = fight.method || (espnFinal ? 'Result final on ESPN' : '—');
+    decision = `${escHtml(methodText)}${fight.round ? ' · R' + fight.round : ''}${fight.time ? ' · ' + escHtml(fight.time) : ''}`;
+  } else if (inProgress) {
+    if (espn && espn.status_type === 'between_rounds' && espn.period) {
+      decision = `Between rounds (R${espn.period} just ended) — round-by-round stats publish in seconds.`;
+    } else if (espn && espn.period && espn.display_clock) {
+      decision = `Live · Round ${espn.period} · ${escHtml(espn.display_clock)} on the clock — round-by-round stats follow once the round ends.`;
+    } else {
+      decision = 'In progress — stats refresh every 30s.';
+    }
+  } else if (espnWalkouts) {
+    decision = 'Fighters walking out — bell imminent.';
+  } else if (espn && espn.status_type === 'scheduled') {
+    decision = 'Scheduled — bell hasn\'t rung.';
+  } else {
+    decision = 'Bell hasn\'t rung.';
+  }
 
   // User pick badge + correctness
   let pickHtml = '';
@@ -5112,7 +5169,7 @@ function renderLiveEventCard(fight, pick){
           <span class="live-card__pos">${fight.is_main ? 'MAIN EVENT' : (fight.is_title ? 'TITLE FIGHT' : (fight.card_position ? '#' + fight.card_position : ''))}</span>
           <span class="live-card__weight">${escHtml(fight.weight_class || '')}</span>
         </div>
-        <span class="live-card__state live-card__state--${stateLabel.toLowerCase()}">${stateLabel}</span>
+        <span class="live-card__state live-card__state--${(stateLabel.split(' ')[0] || 'upcoming').toLowerCase()}">${escHtml(stateLabel)}</span>
       </div>
       <div class="live-card__body">
         ${cornerHtml('red')}

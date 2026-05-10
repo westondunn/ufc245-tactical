@@ -239,6 +239,47 @@ app.get('/api/events/:id/card', apiHandler(async (req, res) => {
   res.json({ event, card });
 }));
 
+// ESPN-backed live status for an event. Cheap public endpoint that hits
+// site.api.espn.com/.../scoreboard once per call and merges per-bout
+// status (FINAL / IN_PROGRESS / WALKOUTS / SCHEDULED), live period +
+// clock, and winner flags onto our card by matching event names + each
+// fighter-pair. Cached in-process for 10s so a flock of frontend tabs
+// doesn't hammer ESPN.
+const { fetchLiveScoreboard, matchEvent, mergeOntoCard } = require('./data/scrapers/espn-mma');
+let _espnCache = { ts: 0, data: null };
+async function getEspnScoreboard() {
+  const now = Date.now();
+  if (_espnCache.data && now - _espnCache.ts < 10_000) return _espnCache.data;
+  const fresh = await fetchLiveScoreboard({ timeoutMs: 6000 });
+  _espnCache = { ts: now, data: fresh };
+  return fresh;
+}
+app.get('/api/events/:id/live-status', apiHandler(async (req, res) => {
+  const eventId = parseInt(req.params.id, 10);
+  if (isNaN(eventId)) return res.status(400).json({ error: 'invalid_id' });
+  res.setHeader('Cache-Control', 'public, max-age=5, stale-while-revalidate=20');
+  const event = await db.getEvent(eventId);
+  if (!event) return res.status(404).json({ error: 'event_not_found' });
+  const card = await db.getEventCard(eventId);
+  const espn = await getEspnScoreboard();
+  if (!espn || !espn.ok) {
+    return res.json({
+      event_id: eventId, source: 'espn', ok: false, error: espn && espn.error,
+      fetched_at: espn && espn.fetched_at, by_fight_id: {}, espn_event: null,
+    });
+  }
+  const espnEvent = matchEvent(espn.events, event);
+  const byFightId = espnEvent ? mergeOntoCard(card, espnEvent) : {};
+  res.json({
+    event_id: eventId, source: 'espn', ok: true,
+    fetched_at: espn.fetched_at,
+    espn_event: espnEvent ? {
+      name: espnEvent.name, date: espnEvent.date, status_type: espnEvent.status_type,
+    } : null,
+    by_fight_id: byFightId,
+  });
+}));
+
 // Event by UFC number (e.g., /api/events/number/245)
 app.get('/api/events/number/:num', apiHandler(async (req, res) => {
   const num = parseInt(req.params.num, 10);
