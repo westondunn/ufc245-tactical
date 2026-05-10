@@ -17,10 +17,14 @@ jobs:
   version-bump:
     name: Bump Version (PR)
     runs-on: ubuntu-latest
-    # Skip on the bot's own [skip-version] commit (avoids the bump loop)
-    # and on commits whose subject is itself a version-bump squash from
-    # the bot PR landing on main — both cases are handled by tag-and-release.
-    if: "!contains(github.event.head_commit.message, '[skip-version]')"
+    # Skip when the SUBJECT (first line of the squash commit) starts with
+    # the [skip-version] token — i.e. this is the bot's own release PR
+    # landing back on main. We use startsWith on the message rather than
+    # contains() because the squash commit's body is the PR description,
+    # which can legitimately quote '[skip-version]' in code examples and
+    # would falsely match contains(). See PR #24 for the regression that
+    # motivated this.
+    if: "!startsWith(github.event.head_commit.message, '[skip-version]')"
     outputs:
       new_version: ${{ steps.bump.outputs.new_version }}
 
@@ -143,11 +147,13 @@ jobs:
           fi
           git checkout -b "$BRANCH"
           git add package.json package-lock.json
-          # The [skip-version] token in the subject is what tag-and-release
-          # keys off of. The [skip-e2e] token tells the e2e selector that
-          # this mechanical version-string change doesn't need the full
-          # Playwright suite. Quality gates still run.
-          git commit -m "v${NEW_VERSION} [skip-version] [skip-e2e]" --no-verify
+          # Token order matters — [skip-version] must be at the START of
+          # the subject so deploy.yml's startsWith() check on the squash
+          # commit message matches reliably. The [skip-e2e] token tells
+          # the e2e selector that this mechanical version-string change
+          # doesn't need the full Playwright suite. Quality gates still
+          # run on the bot PR.
+          git commit -m "[skip-version] [skip-e2e] v${NEW_VERSION}" --no-verify
           git push -u origin "$BRANCH"
 
           # Body is a HEREDOC so newlines + special chars survive.
@@ -164,7 +170,7 @@ jobs:
           gh pr create \
             --base main \
             --head "$BRANCH" \
-            --title "v${NEW_VERSION} [skip-version] [skip-e2e]" \
+            --title "[skip-version] [skip-e2e] v${NEW_VERSION}" \
             --body "$BODY" \
             --label "automated,version-bump"
           gh pr merge "$BRANCH" --auto --squash --delete-branch
@@ -172,11 +178,12 @@ jobs:
   tag-and-release:
     name: Tag + GitHub Release
     runs-on: ubuntu-latest
-    # Fires on the bot PR's squash-merge commit landing on main.
-    # Tags are separate refs (refs/tags/*); the branch-protection
-    # pull_request rule applies to branches, not tags, so the bot can
-    # push the tag directly using GITHUB_TOKEN.
-    if: "contains(github.event.head_commit.message, '[skip-version]')"
+    # Fires on the bot PR's squash-merge commit landing on main. The
+    # bot's PR title starts with [skip-version], so the squash subject
+    # (first line of the commit message) does too. Using startsWith on
+    # the message — not contains() — avoids false matches from human
+    # PR bodies that happen to quote the token in documentation.
+    if: "startsWith(github.event.head_commit.message, '[skip-version]')"
     outputs:
       version: ${{ steps.ver.outputs.version }}
 
