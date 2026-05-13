@@ -1705,6 +1705,12 @@ async function run() {
   passed += integrationResult.passed;
   failed += integrationResult.failed;
 
+  // ── Scheduler: liveEventPoller ──
+  const schedulerSuite = require('./audit/scheduler.test');
+  const schedulerResult = await schedulerSuite.run();
+  passed += schedulerResult.passed;
+  failed += schedulerResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
