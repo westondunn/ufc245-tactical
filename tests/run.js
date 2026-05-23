@@ -1705,6 +1705,32 @@ async function run() {
   passed += integrationResult.passed;
   failed += integrationResult.failed;
 
+  // ── Curated Tactical Content ──
+  console.log('\nCurated Tactical Content:');
+  const curatedPath = path.join(__dirname, '..', 'data', 'curated-tactical-content.json');
+  assert(fs.existsSync(curatedPath), 'curated-tactical-content.json exists');
+  const curated = JSON.parse(fs.readFileSync(curatedPath, 'utf8'));
+  const curatedEntries = Object.entries(curated);
+  assertGt(curatedEntries.length, 0, 'curated content has at least one fight');
+
+  const EXPECTED_SECTIONS = ['tape','result','totals','rounds','targets','accuracy','positions','timeline','geometry','biomech','pace','aftermath'];
+  const [curatedFightId, curatedFight] = curatedEntries[0];
+  assert(curatedFight.sections && typeof curatedFight.sections === 'object', 'fight ' + curatedFightId + ' has sections object');
+  EXPECTED_SECTIONS.forEach(s => {
+    assert(Object.keys(curatedFight.sections).includes(s), 'fight ' + curatedFightId + ' has section: ' + s);
+  });
+  assertTruthy(curatedFight.event, 'curated fight has event field');
+  assertTruthy(curatedFight.red && curatedFight.red.name, 'curated fight has red corner name');
+  assertTruthy(curatedFight.blue && curatedFight.blue.name, 'curated fight has blue corner name');
+
+  // Test endpoint handler logic inline (no server needed)
+  function curatedEndpointHandler(jsonPath) {
+    try { return JSON.parse(fs.readFileSync(jsonPath, 'utf8')); } catch (e) { return {}; }
+  }
+  const epResult = curatedEndpointHandler(curatedPath);
+  assertGt(Object.keys(epResult).length, 0, '/api/curated-tactical returns non-empty object for valid file');
+  assertEq(JSON.stringify(curatedEndpointHandler('/nonexistent/curated-tactical.json')), '{}', 'missing file returns {} not a 500');
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);

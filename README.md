@@ -370,6 +370,10 @@ the identity gap and the profile gaps instead of taking two nights.
 See the design doc at `docs/superpowers/specs/2026-04-29-etl-data-gap-audit-and-backfill-design.md`
 for source precedence, gate rules, and v1 scope.
 
+## Curated Frame-Level Breakdowns
+
+Curated frame-level breakdowns live in `data/curated-tactical-content.json`. Add a new fight by adding a top-level entry keyed by `fight_id` (the database integer ID); the dashboard will pick it up on next reload. UFC 245 · Usman vs Covington I is the seed example.
+
 ---
 
 ## Data sources & credits

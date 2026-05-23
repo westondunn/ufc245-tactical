@@ -443,3 +443,55 @@ test.describe('Mobile Layout', () => {
     expect(scrollW).toBeGreaterThan(clientW);
   });
 });
+
+// ============================================================
+// CURATED TACTICAL CONTENT
+// ============================================================
+test.describe('Curated Tactical Content', () => {
+  test('selecting a non-curated fight shows scope-msg', async ({ page }) => {
+    await page.goto('/');
+    const dropdown = await waitForDropdown(page);
+
+    // Switch to UFC 300 (non-curated)
+    const ufc300 = await dropdown.locator('option').evaluateAll(opts =>
+      opts.find(o => o.textContent.includes('UFC 300'))?.value
+    );
+    if (!ufc300) return; // skip if not in DB
+    await dropdown.selectOption(ufc300);
+    await expect(page.locator('#eventFightStrip .fight-chip')).not.toHaveCount(0, { timeout: 5000 });
+    await expect(page.locator('#eventFightStrip .fight-chip.active')).toHaveCount(1, { timeout: 5000 });
+
+    await expect(page.locator('#scopeMsg')).toBeVisible({ timeout: 3000 });
+    await expect(page.locator('#scopeMsg')).toContainText('Frame-level tactical breakdown not available');
+  });
+
+  test('selecting UFC 245 main event hides scope-msg and shows all 12 sections', async ({ page }) => {
+    await page.goto('/');
+    const dropdown = await waitForDropdown(page);
+
+    const ufc245 = await dropdown.locator('option').evaluateAll(opts =>
+      opts.find(o => o.textContent.includes('UFC 245'))?.value
+    );
+    expect(ufc245).toBeTruthy();
+    await dropdown.selectOption(ufc245);
+    await expect(page.locator('#eventFightStrip .fight-chip')).not.toHaveCount(0, { timeout: 5000 });
+    // Click the main event chip (fight 186)
+    const mainChip = page.locator('#eventFightStrip .fight-chip[data-main="1"]');
+    if (await mainChip.count() > 0) {
+      await mainChip.click();
+    } else {
+      await page.locator('#eventFightStrip .fight-chip').first().click();
+    }
+
+    // scope-msg should be hidden
+    await expect(page.locator('#scopeMsg')).not.toBeVisible({ timeout: 3000 });
+
+    // All 12 sections should be visible (not dimmed)
+    for (const sectionId of ['tape','result','totals','rounds','targets','accuracy','positions','timeline','geometry','biomech','pace','aftermath']) {
+      const sec = page.locator('#' + sectionId);
+      if (await sec.count() > 0) {
+        await expect(sec).not.toHaveCSS('opacity', '0.18', { timeout: 2000 });
+      }
+    }
+  });
+});

@@ -2585,18 +2585,11 @@ function setupRecreation(){
 /* -----------------------------------------------------------
    FIGHT DATABASE · MULTI-EVENT SELECTOR
 ----------------------------------------------------------- */
-const FIGHTS = {
-  ufc245: {
-    event: 'UFC 245 · Welterweight Title', date: 'Dec 14, 2019', venue: 'T-Mobile Arena, Las Vegas',
-    red: { tag:'Red Corner · Champion', nick:'"The Nigerian Nightmare"', name:'Kamaru<br>Usman', record:'<strong>15 – 1 – 0</strong> · 10-0 UFC', style:'Pressure Wrestler · Power Striker' },
-    blue: { tag:'Blue Corner · Challenger', nick:'"Chaos"', name:'Colby<br>Covington', record:'<strong>15 – 1 – 0</strong> · 10-1 UFC', style:'Volume Striker · Elite Wrestler' },
-    result: 'TKO · R5 4:10', full: true
-  }
-};
+// Map of fight_id (number) → curated fight data; populated on startup from /api/curated-tactical
+const CURATED_MAP = new Map();
 
-let _currentFight = 'ufc245';
+let _currentFightId = null; // DB fight id of the currently selected fight
 
-// Sections that require full UFC 245 data
 const SCOPED_SECTIONS = ['tape','result','totals','rounds','targets','accuracy','positions','timeline','geometry','biomech','pace','aftermath'];
 
 function setHeroMeta(venueText, cells){
@@ -2608,13 +2601,39 @@ function setHeroMeta(venueText, cells){
   });
 }
 
-function selectFight(fightId){
-  const fight = FIGHTS[fightId];
-  if (!fight) return;
-  _currentFight = fightId;
+function setScopeMsgState(show) {
+  document.querySelectorAll('.scope-msg').forEach(e => {
+    if (show) {
+      const exEntry = CURATED_MAP.size > 0 ? Array.from(CURATED_MAP.entries())[0] : null;
+      let linkHtml = '';
+      if (exEntry) {
+        const [exId] = exEntry;
+        linkHtml = ' See <a href="#" data-load-curated="' + exId + '" style="color:var(--cyan);text-decoration:underline">UFC 245 example</a>.';
+      }
+      e.innerHTML = 'Stats below are pulled from UFCStats.com.<br><span style="font-size:10px;color:var(--muted-dim);margin-top:8px;display:inline-block">Frame-level tactical breakdown not available for this fight — the dashboard above shows official stats.' + linkHtml + '</span>';
+      e.classList.add('show');
+    } else {
+      e.classList.remove('show');
+    }
+  });
+}
 
-  // Update selector chips
-  document.querySelectorAll('.fight-chip').forEach(c => c.classList.toggle('active', c.dataset.fight === fightId));
+async function loadCuratedFightById(fightId) {
+  const fight = CURATED_MAP.get(fightId);
+  if (!fight || !fight.event_id) return;
+  const dropdown = document.getElementById('eventDropdown');
+  if (dropdown) {
+    dropdown.value = String(fight.event_id);
+    await loadEventFightStrip(fight.event_id);
+    const chip = document.querySelector('.fight-chip[data-dbfight="' + fightId + '"]');
+    if (chip) chip.click();
+  }
+}
+
+function selectCuratedFight(fightId){
+  const fight = CURATED_MAP.get(fightId);
+  if (!fight) return;
+  _currentFightId = fightId;
 
   // ── RESET ALL ANIMATIONS & COUNTERS ──
 
@@ -2686,27 +2705,18 @@ function selectFight(fightId){
   setHtml('heroBlueStyle', fight.blue.style);
   setHeroMeta(
     (fight.date || '') + (fight.venue ? ' · ' + fight.venue : ''),
-    ['TKO · Punches', 'R5 · 4:10', 'Fight of the Night']
+    fight.resultCells || [fight.result || '', '', '']
   );
 
   // ── SCOPE DETAILED SECTIONS ──
-  // Hide generic stats panel when viewing full UFC 245 breakdown
   const gsp = document.getElementById('genericStatsPanel');
   if (gsp) gsp.style.display = 'none';
 
-  if (fight.full){
-    SCOPED_SECTIONS.forEach(id => {
-      const sec = document.getElementById(id);
-      if (sec){ sec.style.opacity = ''; sec.style.pointerEvents = ''; }
-    });
-    document.querySelectorAll('.scope-msg').forEach(e => e.classList.remove('show'));
-  } else {
-    SCOPED_SECTIONS.forEach(id => {
-      const sec = document.getElementById(id);
-      if (sec){ sec.style.opacity = '0.18'; sec.style.pointerEvents = 'none'; }
-    });
-    document.querySelectorAll('.scope-msg').forEach(e => e.classList.add('show'));
-  }
+  SCOPED_SECTIONS.forEach(id => {
+    const sec = document.getElementById(id);
+    if (sec){ sec.style.opacity = ''; sec.style.pointerEvents = ''; }
+  });
+  setScopeMsgState(false);
 
   // Scroll to top
   document.getElementById('hero').scrollIntoView({ behavior: 'smooth' });
@@ -2801,6 +2811,15 @@ function setupFightSelector(){
     document.getElementById('fighterPanel').style.display = 'none';
   });
 }
+
+// Handle clicks on the "UFC 245 example" link inside scope-msg
+document.addEventListener('click', (e) => {
+  const link = e.target.closest('[data-load-curated]');
+  if (!link) return;
+  e.preventDefault();
+  const fightId = parseInt(link.dataset.loadCurated, 10);
+  if (Number.isFinite(fightId)) loadCuratedFightById(fightId);
+});
 
 // Load fight card into the horizontal strip
 async function loadEventFightStrip(eventId){
@@ -3039,10 +3058,9 @@ async function selectDbFight(fightId, chipEl){
   document.querySelectorAll('.fight-chip').forEach(c => c.classList.remove('active'));
   if (chipEl) chipEl.classList.add('active');
 
-  // Check if this is the hardcoded UFC 245 main event
-  const eventNum = chipEl ? parseInt(chipEl.dataset.event, 10) : 0;
-  if (eventNum === 245 && chipEl && chipEl.dataset.main === '1' && FIGHTS.ufc245) {
-    selectFight('ufc245');
+  // Check if this fight has curated deep-tactical content
+  if (CURATED_MAP.has(fightId)) {
+    selectCuratedFight(fightId);
     return;
   }
 
@@ -3075,12 +3093,12 @@ async function selectDbFight(fightId, chipEl){
       ]
     );
 
-    // Dim hardcoded sections
+    // Dim sections — no curated content for this fight
     SCOPED_SECTIONS.forEach(id => {
       const sec = document.getElementById(id);
       if (sec){ sec.style.opacity = '0.18'; sec.style.pointerEvents = 'none'; }
     });
-    document.querySelectorAll('.scope-msg').forEach(e => e.classList.add('show'));
+    setScopeMsgState(true);
 
     // Show generic stats panel if fight has data
     renderGenericStatsPanel(f);
@@ -7132,6 +7150,13 @@ function rescheduleLivePoll(ev) {
 }
 // First call schedules its own poll loop (30 s on event-day, 2 min otherwise).
 updateTopBarLiveIndicator();
+
+// Load curated per-fight tactical content into CURATED_MAP on startup
+fetch('/api/curated-tactical').then(r => r.json()).then(data => {
+  Object.entries(data).forEach(([id, fight]) => {
+    CURATED_MAP.set(parseInt(id, 10), fight);
+  });
+}).catch(() => {});
 
 // Fetch and display version from API
 fetch('/api/version').then(r=>r.json()).then(v=>{

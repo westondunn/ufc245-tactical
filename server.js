@@ -360,6 +360,19 @@ app.get('/api/events/:id/prediction-review', apiHandler(async (req, res) => {
   res.json(review);
 }));
 
+// Curated per-fight frame-level tactical content.
+// Serves data/curated-tactical-content.json as-is; returns {} if file is absent.
+app.get('/api/curated-tactical', (req, res) => {
+  try {
+    const p = path.join(__dirname, 'data', 'curated-tactical-content.json');
+    const raw = fs.readFileSync(p, 'utf8');
+    res.set('Cache-Control', 'public, max-age=3600, stale-while-revalidate=86400');
+    res.json(JSON.parse(raw));
+  } catch (e) {
+    res.json({});
+  }
+});
+
 // All tactical breakdowns (bulk)
 app.get('/api/tactical/all', apiHandler(async (req, res) => {
   res.setHeader('Cache-Control', 'public, max-age=3600, stale-while-revalidate=7200');

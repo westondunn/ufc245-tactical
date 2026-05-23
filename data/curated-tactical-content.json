@@ -1,0 +1,39 @@
+{
+  "186": {
+    "slug": "ufc245-main",
+    "event_id": 36,
+    "event": "UFC 245 · Welterweight Title",
+    "date": "Dec 14, 2019",
+    "venue": "T-Mobile Arena, Las Vegas",
+    "red": {
+      "tag": "Red Corner · Champion",
+      "nick": "\"The Nigerian Nightmare\"",
+      "name": "Kamaru<br>Usman",
+      "record": "<strong>15 – 1 – 0</strong> · 10-0 UFC",
+      "style": "Pressure Wrestler · Power Striker"
+    },
+    "blue": {
+      "tag": "Blue Corner · Challenger",
+      "nick": "\"Chaos\"",
+      "name": "Colby<br>Covington",
+      "record": "<strong>15 – 1 – 0</strong> · 10-1 UFC",
+      "style": "Volume Striker · Elite Wrestler"
+    },
+    "result": "TKO · R5 4:10",
+    "resultCells": ["TKO · Punches", "R5 · 4:10", "Fight of the Night"],
+    "sections": {
+      "tape": {},
+      "result": {},
+      "totals": {},
+      "rounds": {},
+      "targets": {},
+      "accuracy": {},
+      "positions": {},
+      "timeline": {},
+      "geometry": {},
+      "biomech": {},
+      "pace": {},
+      "aftermath": {}
+    }
+  }
+}
