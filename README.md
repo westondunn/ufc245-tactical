@@ -187,6 +187,14 @@ Every pick snapshots the current model prediction at the moment of
 writing, so "beating the model" is measurable per-pick and
 leaderboard-visible.
 
+When a fighter is replaced on a card after you've saved a pick, a bell
+badge will appear in the header. Clicking the bell shows a dropdown with
+a brief note ("Fighter changed on your pick — Event Name"); clicking that
+row navigates directly to the affected fight so you can make a new
+selection before the event locks.
+
+### Notifications
+
 ### Enabling the feature
 
 The entire stack is gated by a single env var:

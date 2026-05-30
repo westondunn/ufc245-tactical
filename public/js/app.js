@@ -4372,6 +4372,7 @@ async function submitProfile(){
       setLocalProfile(_currentUser);
     }
     renderProfileChip();
+    if (_currentUser) showNotifBell();
     closeModal('profileModal');
   } catch (err) {
     showProfileError(err.message || 'Something went wrong');
@@ -4427,6 +4428,7 @@ async function applySwitchProfile(){
   _currentUser = user;
   setLocalProfile(user);
   renderProfileChip();
+  showNotifBell();
   closeSwitchProfileForm();
   closeModal('profileActionsModal');
 }
@@ -4457,6 +4459,7 @@ function signOutProfile(){
   _currentUser = null;
   setLocalProfile(null);
   renderProfileChip();
+  hideNotifBell();
   closeSignoutConfirm();
   closeModal('profileActionsModal');
 }
@@ -4565,8 +4568,239 @@ async function initPicksFeature(){
   }
   if (resolved) { _currentUser = resolved; setLocalProfile(resolved); }
   renderProfileChip();
+  if (_currentUser) showNotifBell();
   setupPicksSubnav();
   restoreStoredView();
+}
+
+/* -----------------------------------------------------------
+   NOTIFICATIONS — bell + dropdown + polling
+----------------------------------------------------------- */
+let _notifPollTimer = null;
+let _notifPanelOpen = false;
+const NOTIF_POLL_MS = 60000;
+const NOTIF_LIST_LIMIT = 15;
+const NOTIF_EXPANDED_LIMIT = 50;
+let _notifExpanded = false;
+
+function relTimeAgo(isoStr) {
+  if (!isoStr) return '';
+  const diff = Date.now() - new Date(isoStr).getTime();
+  const s = Math.floor(diff / 1000);
+  if (s < 60) return 'just now';
+  const m = Math.floor(s / 60);
+  if (m < 60) return m + 'm ago';
+  const h = Math.floor(m / 60);
+  if (h < 24) return h + 'h ago';
+  const d = Math.floor(h / 24);
+  return d + 'd ago';
+}
+
+function notifText(n) {
+  if (n.kind === 'roster_change') {
+    const p = n.payload || {};
+    const evName = p.event_name ? escHtml(p.event_name) : 'an event';
+    return 'Fighter changed on your pick — ' + evName;
+  }
+  return escHtml(n.kind);
+}
+
+function notifNavTarget(n) {
+  if (n.kind === 'roster_change' && n.payload) {
+    const { fight_id, event_id } = n.payload;
+    if (fight_id) return { tab: 'picks', picksView: 'event', fightId: fight_id, eventId: event_id };
+  }
+  return { tab: 'picks', picksView: 'event' };
+}
+
+function renderNotifList(notifications) {
+  const listEl = document.getElementById('notifList');
+  const emptyEl = document.getElementById('notifEmpty');
+  const footEl = document.getElementById('notifPanelFoot');
+  if (!listEl) return;
+
+  if (!notifications || !notifications.length) {
+    listEl.innerHTML = '';
+    if (emptyEl) emptyEl.style.display = '';
+    if (footEl) footEl.style.display = 'none';
+    return;
+  }
+  if (emptyEl) emptyEl.style.display = 'none';
+
+  const limit = _notifExpanded ? NOTIF_EXPANDED_LIMIT : NOTIF_LIST_LIMIT;
+  const shown = notifications.slice(0, limit);
+  const hasMore = !_notifExpanded && notifications.length >= NOTIF_LIST_LIMIT;
+
+  listEl.innerHTML = shown.map(n => {
+    const isUnread = !n.read_at;
+    return `<div class="notif-row ${isUnread ? 'notif-row--unread' : 'notif-row--read'}" data-notif-id="${n.id}" data-notif-kind="${escHtml(n.kind)}">
+      <span class="notif-row__dot"></span>
+      <div class="notif-row__content">
+        <div class="notif-row__text">${notifText(n)}</div>
+        <div class="notif-row__time">${escHtml(relTimeAgo(n.created_at))}</div>
+      </div>
+    </div>`;
+  }).join('');
+
+  listEl.querySelectorAll('.notif-row').forEach(row => {
+    row.addEventListener('click', async () => {
+      const id = parseInt(row.dataset.notifId, 10);
+      const n = notifications.find(x => x.id === id);
+      if (!n) return;
+      if (!n.read_at) {
+        row.classList.remove('notif-row--unread');
+        row.classList.add('notif-row--read');
+        n.read_at = new Date().toISOString();
+        try {
+          await fetch('/api/notifications/read', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            credentials: 'include',
+            body: JSON.stringify({ ids: [id] })
+          });
+        } catch { /* non-fatal */ }
+        refreshNotifBadge();
+      }
+      closeNotifPanel();
+      const target = notifNavTarget(n);
+      if (target.tab) {
+        activatePrimaryTab(target.tab, { persist: true });
+        if (target.picksView && typeof activatePicksView === 'function') {
+          activatePicksView(target.picksView);
+        }
+        if (target.eventId && _picksState) {
+          _picksState.eventId = Number(target.eventId);
+          if (typeof loadPicksEventView === 'function') loadPicksEventView();
+        }
+      }
+    });
+  });
+
+  if (footEl) footEl.style.display = hasMore ? '' : 'none';
+}
+
+let _notifCache = [];
+
+async function fetchAndRenderNotifs() {
+  if (!_currentUser) return;
+  try {
+    const limit = _notifExpanded ? NOTIF_EXPANDED_LIMIT : NOTIF_LIST_LIMIT;
+    const res = await fetch(`/api/notifications?limit=${limit}`, { credentials: 'include' });
+    if (!res.ok) return;
+    const data = await res.json();
+    _notifCache = data.notifications || [];
+    renderNotifList(_notifCache);
+    refreshNotifBadge();
+  } catch { /* non-fatal */ }
+}
+
+async function refreshNotifBadge() {
+  const badgeEl = document.getElementById('notifBadge');
+  if (!badgeEl || !_currentUser) return;
+  try {
+    const res = await fetch('/api/notifications/unread-count', { credentials: 'include' });
+    if (!res.ok) return;
+    const { count } = await res.json();
+    if (count > 0) {
+      badgeEl.textContent = count > 9 ? '9+' : String(count);
+      badgeEl.style.display = '';
+    } else {
+      badgeEl.style.display = 'none';
+    }
+  } catch { /* non-fatal */ }
+}
+
+function openNotifPanel() {
+  const panel = document.getElementById('notifPanel');
+  const btn = document.getElementById('notifBellBtn');
+  if (!panel || !btn) return;
+  _notifPanelOpen = true;
+  _notifExpanded = false;
+  panel.style.display = '';
+  btn.setAttribute('aria-expanded', 'true');
+  fetchAndRenderNotifs();
+}
+
+function closeNotifPanel() {
+  const panel = document.getElementById('notifPanel');
+  const btn = document.getElementById('notifBellBtn');
+  if (!panel || !btn) return;
+  _notifPanelOpen = false;
+  panel.style.display = 'none';
+  btn.setAttribute('aria-expanded', 'false');
+}
+
+function startNotifPolling() {
+  if (_notifPollTimer) return;
+  refreshNotifBadge();
+  _notifPollTimer = setInterval(() => {
+    if (!document.hidden && _currentUser) refreshNotifBadge();
+  }, NOTIF_POLL_MS);
+}
+
+function stopNotifPolling() {
+  if (_notifPollTimer) { clearInterval(_notifPollTimer); _notifPollTimer = null; }
+}
+
+function initNotifBell() {
+  const bellEl = document.getElementById('notifBell');
+  const bellBtn = document.getElementById('notifBellBtn');
+  const markAllBtn = document.getElementById('notifMarkAllBtn');
+  const viewAllBtn = document.getElementById('notifViewAllBtn');
+  if (!bellEl || !bellBtn) return;
+
+  bellBtn.addEventListener('click', (e) => {
+    e.stopPropagation();
+    if (_notifPanelOpen) closeNotifPanel();
+    else openNotifPanel();
+  });
+
+  document.addEventListener('click', (e) => {
+    if (_notifPanelOpen && !bellEl.contains(e.target)) closeNotifPanel();
+  });
+
+  if (markAllBtn) {
+    markAllBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      try {
+        await fetch('/api/notifications/read', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'include',
+          body: JSON.stringify({ all: true })
+        });
+        _notifCache.forEach(n => { n.read_at = n.read_at || new Date().toISOString(); });
+        renderNotifList(_notifCache);
+        refreshNotifBadge();
+      } catch { /* non-fatal */ }
+    });
+  }
+
+  if (viewAllBtn) {
+    viewAllBtn.addEventListener('click', async (e) => {
+      e.stopPropagation();
+      _notifExpanded = true;
+      await fetchAndRenderNotifs();
+    });
+  }
+
+  document.addEventListener('visibilitychange', () => {
+    if (document.hidden) stopNotifPolling();
+    else if (_currentUser) startNotifPolling();
+  });
+}
+
+function showNotifBell() {
+  const bellEl = document.getElementById('notifBell');
+  if (bellEl) bellEl.style.display = '';
+  startNotifPolling();
+}
+
+function hideNotifBell() {
+  const bellEl = document.getElementById('notifBell');
+  if (bellEl) bellEl.style.display = 'none';
+  closeNotifPanel();
+  stopNotifPolling();
 }
 
 /* -----------------------------------------------------------
@@ -6806,7 +7040,8 @@ const _inits = [
   ['setupFightSelector', setupFightSelector],
   ['setupComparePanel', setupComparePanel],
   ['startTicker', startTicker],
-  ['initPicksFeature', initPicksFeature]
+  ['initPicksFeature', initPicksFeature],
+  ['initNotifBell', initNotifBell]
 ];
 _inits.forEach(([name, fn]) => {
   try { fn(); }

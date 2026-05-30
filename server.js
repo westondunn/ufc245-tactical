@@ -952,6 +952,45 @@ app.delete('/api/picks/:pickId', requirePicksFlag, requireUser, apiHandler(async
   res.json({ deleted: true });
 }));
 
+// ── Notification endpoints ──
+
+app.get('/api/notifications/unread-count', requirePicksFlag, requireUser, apiHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const count = await db.unreadCount(req.user.id);
+  res.json({ count });
+}));
+
+app.get('/api/notifications', requirePicksFlag, requireUser, apiHandler(async (req, res) => {
+  const unreadOnly = req.query.unread_only === 'true' || req.query.unread_only === '1';
+  const limit = Math.min(parseInt(req.query.limit, 10) || 25, 50);
+  const beforeId = req.query.before_id ? parseInt(req.query.before_id, 10) : null;
+  res.setHeader('Cache-Control', 'no-store');
+  const notifications = await db.listNotifications({
+    user_id: req.user.id,
+    unread_only: unreadOnly,
+    limit,
+    before_id: Number.isFinite(beforeId) ? beforeId : null
+  });
+  res.json({ notifications });
+}));
+
+app.post('/api/notifications/read', requirePicksFlag, requireUser, apiHandler(async (req, res) => {
+  res.setHeader('Cache-Control', 'no-store');
+  const body = req.body || {};
+  let updated;
+  if (body.all === true) {
+    updated = await db.markAllRead(req.user.id);
+  } else if (Array.isArray(body.ids) && body.ids.length > 0) {
+    const numIds = body.ids.map(id => parseInt(id, 10)).filter(n => Number.isFinite(n));
+    if (!numIds.length) return res.status(400).json({ error: 'invalid_ids' });
+    updated = await db.markRead(req.user.id, numIds);
+  } else {
+    return res.status(400).json({ error: 'missing_ids' });
+  }
+  await db.save();
+  res.json({ updated: Number(updated) || 0 });
+}));
+
 // All-time leaderboard
 app.get('/api/leaderboard', requirePicksFlag, apiHandler(async (req, res) => {
   const limit = req.query.limit ? Math.min(parseInt(req.query.limit, 10) || 50, 500) : 50;

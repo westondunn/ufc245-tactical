@@ -285,6 +285,20 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_admin_action_log_created ON admin_action_log(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_admin_action_log_target ON admin_action_log(target_table, target_key);
+
+  -- ── Notifications ──
+  CREATE TABLE IF NOT EXISTS notifications (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    user_id TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    payload TEXT,
+    read_at TEXT,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX IF NOT EXISTS idx_notifications_user_unread ON notifications(user_id, read_at);
+  CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at);
 `;
 
 /* ── INIT ── */
@@ -686,8 +700,14 @@ function upsertEvent(e) {
 }
 
 function upsertFight(f) {
+  const existing = f.id ? oneRow('SELECT red_fighter_id, blue_fighter_id FROM fights WHERE id = ?', [f.id]) : null;
   run('INSERT OR REPLACE INTO fights (id,event_id,event_number,red_fighter_id,blue_fighter_id,red_name,blue_name,weight_class,is_title,is_main,card_position,method,method_detail,round,time,winner_id,referee,has_stats,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
     [f.id,f.event_id,f.event_number||null,f.red_fighter_id,f.blue_fighter_id,f.red_name||null,f.blue_name||null,f.weight_class,f.is_title?1:0,f.is_main?1:0,f.card_position,f.method,f.method_detail,f.round,f.time,f.winner_id,f.referee,f.has_stats?1:0,f.ufcstats_hash||null]);
+  if (existing && f.event_id &&
+      (Number(existing.red_fighter_id) !== Number(f.red_fighter_id) ||
+       Number(existing.blue_fighter_id) !== Number(f.blue_fighter_id))) {
+    try { voidPicksOrphanedByCardChange(f.event_id); } catch { /* non-fatal */ }
+  }
 }
 
 function upsertFightStats(s) {
@@ -1840,6 +1860,110 @@ function reconcileAllPicks() {
   return { events_processed: eventsProcessed, reconciled: totalReconciled, points_awarded: totalPoints };
 }
 
+/* ── NOTIFICATIONS ── */
+
+function createNotification({ user_id, kind, subject_type, subject_id, payload }) {
+  const now = new Date().toISOString();
+  const payloadStr = payload != null ? JSON.stringify(payload) : null;
+  run(
+    'INSERT INTO notifications (user_id, kind, subject_type, subject_id, payload, created_at) VALUES (?,?,?,?,?,?)',
+    [user_id, kind, subject_type, String(subject_id), payloadStr, now]
+  );
+  const row = oneRow(
+    'SELECT id, created_at FROM notifications WHERE user_id = ? AND kind = ? AND subject_id = ? ORDER BY id DESC LIMIT 1',
+    [user_id, kind, String(subject_id)]
+  );
+  return { id: row ? row.id : null, created_at: row ? row.created_at : now };
+}
+
+function listNotifications({ user_id, unread_only = false, limit = 25, before_id = null } = {}) {
+  let sql = 'SELECT * FROM notifications WHERE user_id = ?';
+  const params = [user_id];
+  if (unread_only) { sql += ' AND read_at IS NULL'; }
+  if (before_id != null) { sql += ' AND id < ?'; params.push(before_id); }
+  sql += ' ORDER BY created_at DESC, id DESC LIMIT ?';
+  params.push(Math.min(Number(limit) || 25, 100));
+  const rows = allRows(sql, params);
+  return rows.map(r => {
+    let payload = null;
+    if (r.payload) { try { payload = JSON.parse(r.payload); } catch { payload = null; } }
+    return { ...r, payload };
+  });
+}
+
+function unreadCount(user_id) {
+  const row = oneRow('SELECT COUNT(*) as c FROM notifications WHERE user_id = ? AND read_at IS NULL', [user_id]);
+  return row ? Number(row.c) : 0;
+}
+
+function markRead(user_id, ids) {
+  if (!Array.isArray(ids) || !ids.length) return 0;
+  const now = new Date().toISOString();
+  const placeholders = ids.map(() => '?').join(',');
+  run(
+    `UPDATE notifications SET read_at = ? WHERE user_id = ? AND id IN (${placeholders}) AND read_at IS NULL`,
+    [now, user_id, ...ids]
+  );
+  return db && db.getRowsModified ? db.getRowsModified() : 0;
+}
+
+function markAllRead(user_id) {
+  const now = new Date().toISOString();
+  run('UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL', [now, user_id]);
+  return db && db.getRowsModified ? db.getRowsModified() : 0;
+}
+
+function voidPicksOrphanedByCardChange(eventId) {
+  const orphaned = allRows(`
+    SELECT p.id AS pick_id, p.user_id, p.fight_id, p.picked_fighter_id,
+           f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name,
+           e.name AS event_name, e.id AS event_id
+    FROM user_picks p
+    JOIN fights f ON f.id = p.fight_id
+    JOIN events e ON e.id = p.event_id
+    WHERE p.event_id = ? AND p.correct IS NULL
+      AND p.picked_fighter_id NOT IN (f.red_fighter_id, f.blue_fighter_id)
+  `, [eventId]);
+
+  if (!orphaned.length) return { voided: 0, notified: 0 };
+
+  let voided = 0;
+  let notified = 0;
+
+  for (const pick of orphaned) {
+    run(
+      `UPDATE user_picks SET correct = NULL, method_correct = NULL, round_correct = NULL,
+         points = 0, actual_winner_id = NULL WHERE id = ?`,
+      [pick.pick_id]
+    );
+    if (db && db.getRowsModified && db.getRowsModified() > 0) voided++;
+
+    const lockState = getPickLockState(pick.user_id, pick.fight_id);
+    const canRepick = !lockState.locked;
+    const fightLabel = [pick.red_name, pick.blue_name].filter(Boolean).join(' vs ');
+
+    createNotification({
+      user_id: pick.user_id,
+      kind: 'roster_change',
+      subject_type: 'pick',
+      subject_id: String(pick.pick_id),
+      payload: {
+        fight_id: pick.fight_id,
+        event_id: pick.event_id,
+        old_fighter_id: pick.picked_fighter_id,
+        new_red_fighter_id: pick.red_fighter_id,
+        new_blue_fighter_id: pick.blue_fighter_id,
+        can_repick: canRepick,
+        event_name: pick.event_name,
+        fight_label: fightLabel
+      }
+    });
+    notified++;
+  }
+
+  return { voided, notified };
+}
+
 /* ── LEADERBOARDS + STATS ── */
 
 function getLeaderboard(opts = {}) {
@@ -2392,6 +2516,8 @@ module.exports = {
   createUser, getUser, updateUser, deleteUser, claimGuestProfile,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
   lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,
+  voidPicksOrphanedByCardChange,
+  createNotification, listNotifications, unreadCount, markRead, markAllRead,
   getLeaderboard, getUserStats, getUserTrends, getEventPickComparison,
   nextId, run, allRows, oneRow
 };

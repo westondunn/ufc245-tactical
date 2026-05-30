@@ -1633,6 +1633,111 @@ async function run() {
   const noEvent = await buildPredictionReview({ db, eventId: 99999999, officialDate: null });
   assertEq(noEvent, null, 'unknown event id returns null');
 
+  // ── Notifications ──
+  console.log('\nNotifications:');
+
+  const notifUserA = await db.createUser({ display_name: 'NotifA', avatar_key: 'a1' });
+  const notifUserB = await db.createUser({ display_name: 'NotifB', avatar_key: 'a2' });
+
+  // createNotification + listNotifications + unreadCount
+  const n1 = await db.createNotification({
+    user_id: notifUserA.id,
+    kind: 'roster_change',
+    subject_type: 'pick',
+    subject_id: '99001',
+    payload: { fight_id: 1, event_id: 1, event_name: 'UFC Test', fight_label: 'A vs B', can_repick: true }
+  });
+  assertTruthy(n1.id, 'createNotification returns id');
+  assertTruthy(n1.created_at, 'createNotification returns created_at');
+
+  const n2 = await db.createNotification({
+    user_id: notifUserA.id,
+    kind: 'roster_change',
+    subject_type: 'pick',
+    subject_id: '99002',
+    payload: { fight_id: 2, event_id: 2, event_name: 'UFC Test 2', fight_label: 'C vs D', can_repick: false }
+  });
+  assertTruthy(n2.id, 'createNotification second notification');
+
+  const listAll = await db.listNotifications({ user_id: notifUserA.id });
+  assertEq(listAll.length, 2, 'listNotifications returns 2 notifications');
+  assertEq(listAll[0].kind, 'roster_change', 'notification kind round-trips');
+  assertTruthy(listAll[0].payload && listAll[0].payload.event_name, 'payload parsed as object');
+  assertEq(listAll[0].payload.can_repick, false, 'payload boolean field preserved (newest first)');
+
+  const listUnread = await db.listNotifications({ user_id: notifUserA.id, unread_only: true });
+  assertEq(listUnread.length, 2, 'listNotifications unread_only returns 2 unread');
+
+  const count0 = await db.unreadCount(notifUserA.id);
+  assertEq(count0, 2, 'unreadCount returns 2 before any reads');
+
+  // markRead — only affects requesting user
+  const markResult = await db.markRead(notifUserA.id, [n1.id]);
+  assertGt(markResult, -1, 'markRead returns updated count');
+  const count1 = await db.unreadCount(notifUserA.id);
+  assertEq(count1, 1, 'unreadCount decrements after markRead');
+
+  // markRead by user B on user A's notification — must have no effect
+  await db.markRead(notifUserB.id, [n2.id]);
+  const count2 = await db.unreadCount(notifUserA.id);
+  assertEq(count2, 1, "markRead by wrong user doesn't affect owner's unread count");
+  const n2row = (await db.listNotifications({ user_id: notifUserA.id })).find(r => String(r.id) === String(n2.id));
+  assertEq(n2row && n2row.read_at, null, "markRead by wrong user leaves notification unread for owner");
+
+  // markAllRead
+  const markAllResult = await db.markAllRead(notifUserA.id);
+  assertGt(markAllResult, -1, 'markAllRead returns updated count');
+  const count3 = await db.unreadCount(notifUserA.id);
+  assertEq(count3, 0, 'unreadCount is 0 after markAllRead');
+
+  // Roster change generates notifications via upsertFight
+  const notifEventId = (await db.nextId('events')) + 4000;
+  const notifFightId = (await db.nextId('fights')) + 4000;
+  const notifUserC = await db.createUser({ display_name: 'NotifC', avatar_key: 'a3' });
+  const notifRed = mainEvent.red_id;
+  const notifBlue = mainEvent.blue_id;
+  // Use a known third fighter from seed (not red or blue) as initial blue, then swap
+  const allF2 = db.getAllFighters(10);
+  const notifAlt = allF2.find(f => f.id !== notifRed && f.id !== notifBlue);
+
+  await db.upsertEvent({ id: notifEventId, number: 9980, name: 'Notif Test Event', date: '2099-12-31' });
+  await db.upsertFight({
+    id: notifFightId, event_id: notifEventId, event_number: 9980,
+    red_fighter_id: notifRed, blue_fighter_id: notifAlt.id,
+    red_name: 'Fighter Red', blue_name: notifAlt.name,
+    weight_class: 'Heavyweight', is_title: 0, is_main: 1, card_position: 1,
+    method: null, method_detail: null, round: null, time: null,
+    winner_id: null, referee: null, has_stats: 0, ufcstats_hash: null
+  });
+
+  // User C picks notifAlt (the blue who will be swapped out)
+  await db.upsertPick({
+    user_id: notifUserC.id, event_id: notifEventId, fight_id: notifFightId,
+    picked_fighter_id: notifAlt.id, confidence: 60
+  });
+
+  const beforeNotifCount = await db.unreadCount(notifUserC.id);
+
+  // Swap blue fighter — triggers voidPicksOrphanedByCardChange
+  await db.upsertFight({
+    id: notifFightId, event_id: notifEventId, event_number: 9980,
+    red_fighter_id: notifRed, blue_fighter_id: notifBlue,
+    red_name: 'Fighter Red', blue_name: 'Fighter Blue',
+    weight_class: 'Heavyweight', is_title: 0, is_main: 1, card_position: 1,
+    method: null, method_detail: null, round: null, time: null,
+    winner_id: null, referee: null, has_stats: 0, ufcstats_hash: null
+  });
+
+  const afterNotifCount = await db.unreadCount(notifUserC.id);
+  assertGt(afterNotifCount, beforeNotifCount, 'roster change via upsertFight creates unread notification for affected user');
+
+  const notifCList = await db.listNotifications({ user_id: notifUserC.id, unread_only: true });
+  assertEq(notifCList.length, 1, 'exactly one roster_change notification created');
+  assertEq(notifCList[0].kind, 'roster_change', 'notification kind is roster_change');
+  assertTruthy(notifCList[0].payload && notifCList[0].payload.fight_id, 'notification payload includes fight_id');
+  assertTruthy(notifCList[0].payload.event_name, 'notification payload includes event_name');
+  assertEq(notifCList[0].payload.can_repick, true, 'can_repick true for future unlocked event');
+
   // ── Audit Schema (extension) ──
   const auditSchemaSuite = require('./audit/schema.test');
   const auditSchemaResult = await auditSchemaSuite.run();

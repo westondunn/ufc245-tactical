@@ -386,6 +386,25 @@ async function ensureSchema() {
   `);
   await run('CREATE INDEX IF NOT EXISTS idx_admin_action_log_created ON admin_action_log(created_at DESC)');
   await run('CREATE INDEX IF NOT EXISTS idx_admin_action_log_target ON admin_action_log(target_table, target_key)');
+
+  // ── Notifications ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS notifications (
+      id BIGSERIAL PRIMARY KEY,
+      user_id TEXT NOT NULL REFERENCES users(id) ON DELETE CASCADE,
+      kind TEXT NOT NULL,
+      subject_type TEXT NOT NULL,
+      subject_id TEXT NOT NULL,
+      payload JSONB,
+      read_at TIMESTAMPTZ,
+      created_at TIMESTAMPTZ NOT NULL
+    )
+  `);
+  await run(`
+    CREATE INDEX IF NOT EXISTS idx_notifications_user_unread
+    ON notifications(user_id, read_at) WHERE read_at IS NULL
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_notifications_user_created ON notifications(user_id, created_at DESC)');
 }
 
 /**
@@ -1373,6 +1392,9 @@ async function upsertEvent(e) {
 }
 
 async function upsertFight(f) {
+  const existing = f.id ? await oneRow(
+    'SELECT red_fighter_id, blue_fighter_id FROM fights WHERE id = ?', [f.id]
+  ) : null;
   await run(
     `INSERT INTO fights (id,event_id,event_number,red_fighter_id,blue_fighter_id,red_name,blue_name,weight_class,is_title,is_main,card_position,method,method_detail,round,time,winner_id,referee,has_stats,ufcstats_hash)
      VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
@@ -1397,6 +1419,11 @@ async function upsertFight(f) {
        ufcstats_hash = EXCLUDED.ufcstats_hash`,
     [f.id, f.event_id, f.event_number || null, f.red_fighter_id, f.blue_fighter_id, f.red_name || null, f.blue_name || null, f.weight_class || null, f.is_title ? 1 : 0, f.is_main ? 1 : 0, f.card_position || null, f.method || null, f.method_detail || null, f.round || null, f.time || null, f.winner_id || null, f.referee || null, f.has_stats ? 1 : 0, f.ufcstats_hash || null]
   );
+  if (existing && f.event_id &&
+      (Number(existing.red_fighter_id) !== Number(f.red_fighter_id) ||
+       Number(existing.blue_fighter_id) !== Number(f.blue_fighter_id))) {
+    try { await voidPicksOrphanedByCardChange(f.event_id); } catch { /* non-fatal */ }
+  }
 }
 
 async function upsertFightStats(s) {
@@ -2062,6 +2089,107 @@ async function reconcileAllPicks() {
   return { events_processed: eventsProcessed, reconciled: totalReconciled, points_awarded: totalPoints };
 }
 
+/* ── NOTIFICATIONS ── */
+
+async function createNotification({ user_id, kind, subject_type, subject_id, payload }) {
+  const now = new Date().toISOString();
+  const payloadJson = payload != null ? JSON.stringify(payload) : null;
+  const row = await oneRow(
+    `INSERT INTO notifications (user_id, kind, subject_type, subject_id, payload, created_at)
+     VALUES (?,?,?,?,?::jsonb,?)
+     RETURNING id, created_at`,
+    [user_id, kind, subject_type, String(subject_id), payloadJson, now]
+  );
+  return { id: row ? row.id : null, created_at: row ? row.created_at : now };
+}
+
+async function listNotifications({ user_id, unread_only = false, limit = 25, before_id = null } = {}) {
+  let sql = 'SELECT * FROM notifications WHERE user_id = ?';
+  const params = [user_id];
+  if (unread_only) { sql += ' AND read_at IS NULL'; }
+  if (before_id != null) { sql += ' AND id < ?'; params.push(before_id); }
+  sql += ' ORDER BY created_at DESC, id DESC LIMIT ?';
+  params.push(Math.min(Number(limit) || 25, 100));
+  return allRows(sql, params);
+}
+
+async function unreadCount(user_id) {
+  const row = await oneRow(
+    'SELECT COUNT(*)::int AS c FROM notifications WHERE user_id = ? AND read_at IS NULL',
+    [user_id]
+  );
+  return row ? Number(row.c) : 0;
+}
+
+async function markRead(user_id, ids) {
+  if (!Array.isArray(ids) || !ids.length) return 0;
+  const now = new Date().toISOString();
+  const placeholders = ids.map(() => '?').join(',');
+  return run(
+    `UPDATE notifications SET read_at = ? WHERE user_id = ? AND id IN (${placeholders}) AND read_at IS NULL`,
+    [now, user_id, ...ids]
+  );
+}
+
+async function markAllRead(user_id) {
+  const now = new Date().toISOString();
+  return run(
+    'UPDATE notifications SET read_at = ? WHERE user_id = ? AND read_at IS NULL',
+    [now, user_id]
+  );
+}
+
+async function voidPicksOrphanedByCardChange(eventId) {
+  const orphaned = await allRows(`
+    SELECT p.id AS pick_id, p.user_id, p.fight_id, p.picked_fighter_id,
+           f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name,
+           e.name AS event_name, e.id AS event_id
+    FROM user_picks p
+    JOIN fights f ON f.id = p.fight_id
+    JOIN events e ON e.id = p.event_id
+    WHERE p.event_id = ? AND p.correct IS NULL
+      AND p.picked_fighter_id NOT IN (f.red_fighter_id, f.blue_fighter_id)
+  `, [eventId]);
+
+  if (!orphaned.length) return { voided: 0, notified: 0 };
+
+  let voided = 0;
+  let notified = 0;
+
+  for (const pick of orphaned) {
+    const rc = await run(
+      `UPDATE user_picks SET correct = NULL, method_correct = NULL, round_correct = NULL,
+         points = 0, actual_winner_id = NULL WHERE id = ?`,
+      [pick.pick_id]
+    );
+    if (rc) voided++;
+
+    const lockState = await getPickLockState(pick.user_id, pick.fight_id);
+    const canRepick = !lockState.locked;
+    const fightLabel = [pick.red_name, pick.blue_name].filter(Boolean).join(' vs ');
+
+    await createNotification({
+      user_id: pick.user_id,
+      kind: 'roster_change',
+      subject_type: 'pick',
+      subject_id: String(pick.pick_id),
+      payload: {
+        fight_id: pick.fight_id,
+        event_id: pick.event_id,
+        old_fighter_id: pick.picked_fighter_id,
+        new_red_fighter_id: pick.red_fighter_id,
+        new_blue_fighter_id: pick.blue_fighter_id,
+        can_repick: canRepick,
+        event_name: pick.event_name,
+        fight_label: fightLabel
+      }
+    });
+    notified++;
+  }
+
+  return { voided, notified };
+}
+
 /* ── LEADERBOARDS + STATS ── */
 
 async function getLeaderboard(opts = {}) {
@@ -2620,6 +2748,8 @@ module.exports = {
   createUser, getUser, updateUser, deleteUser, claimGuestProfile,
   getPickLockState, upsertPick, deletePick, getPicksForUser,
   lockPicksForEvent, reconcilePicksForEvent, reconcileAllPicks,
+  voidPicksOrphanedByCardChange,
+  createNotification, listNotifications, unreadCount, markRead, markAllRead,
   getLeaderboard, getUserStats, getUserTrends, getEventPickComparison,
   nextId, run, allRows, oneRow
 };

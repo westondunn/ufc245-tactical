@@ -45,6 +45,27 @@
     <button class="units-toggle" id="unitsToggle" type="button" title="Toggle measurement units" aria-label="Toggle units between imperial and metric">
       <span class="units-toggle__opt" data-units="imp">IMP</span><span class="units-toggle__sep">/</span><span class="units-toggle__opt" data-units="met">MET</span>
     </button>
+    <div class="notif-bell" id="notifBell" style="display:none" aria-label="Notifications">
+      <button class="notif-bell__btn" id="notifBellBtn" type="button" title="Notifications" aria-haspopup="true" aria-expanded="false">
+        <svg class="notif-bell__icon" viewBox="0 0 20 20" fill="none" aria-hidden="true">
+          <path d="M10 2a6 6 0 0 0-6 6v3.586l-.707.707A1 1 0 0 0 4 14h12a1 1 0 0 0 .707-1.707L16 11.586V8a6 6 0 0 0-6-6zm0 16a2 2 0 0 1-2-2h4a2 2 0 0 1-2 2z" fill="currentColor"/>
+        </svg>
+        <span class="notif-bell__badge" id="notifBadge" style="display:none" aria-label="unread notifications"></span>
+      </button>
+      <div class="notif-panel" id="notifPanel" style="display:none" role="dialog" aria-label="Notifications">
+        <div class="notif-panel__head">
+          <span class="notif-panel__title">Notifications</span>
+          <button class="notif-panel__mark-all" id="notifMarkAllBtn" type="button">Mark all read</button>
+        </div>
+        <div class="notif-panel__body" id="notifPanelBody">
+          <div class="notif-empty" id="notifEmpty" style="display:none">You&rsquo;re all caught up.</div>
+          <div class="notif-list" id="notifList"></div>
+        </div>
+        <div class="notif-panel__foot" id="notifPanelFoot" style="display:none">
+          <button class="notif-panel__view-all" id="notifViewAllBtn" type="button">View all</button>
+        </div>
+      </div>
+    </div>
     <span class="auth-ind" id="authIndicator" aria-live="polite"></span>
   </div>
 </header>
