@@ -343,12 +343,22 @@ npm run backfill:review -- --auto-approve-cosmetic
 The scheduler runs automatically on server boot (disable with
 `AUDIT_SCHEDULER=off`):
 
-| Trigger        | When             | Scope                              |
-|----------------|------------------|------------------------------------|
-| Nightly sweep  | 03:00 daily      | all columns                        |
-| Pre-event      | 04:00 daily      | events 7d / 1d out                 |
-| Post-event 1h  | every 5 min      | events ending in last hour today   |
-| Post-event 24h | 05:00 daily      | events that ended yesterday        |
+| Trigger          | When             | Scope                                        |
+|------------------|------------------|----------------------------------------------|
+| Integrity        | 02:00 daily      | all 17 integrity scanners                    |
+| Nightly sweep    | 03:00 daily      | all columns                                  |
+| Pre-event        | 04:00 daily      | events 7d / 1d out                           |
+| Live event poll  | every 5 min      | events in progress (start_time → end_time+1h)|
+| Post-event 1–24h | every 5 min      | events 1–24 h after end_time                 |
+| Post-event 24h   | 05:00 daily      | events that ended yesterday                  |
+
+**Live event polling** fires every 5 minutes while an event is in the live window
+(`start_time` through 1 hour past `end_time`). Each tick scrapes ufcstats.com for
+newly finished fights, POSTs them to `POST /api/events/:id/official-outcomes`
+(which upserts and reconciles user picks), then calls `db.reconcilePrediction`
+to score model predictions. Fights already resolved in the DB are skipped
+(idempotent). Requires `PREDICTION_SERVICE_KEY` to be set; logs and skips if
+unset. Tune the cadence with `LIVE_EVENT_POLL_INTERVAL_MIN` (default `5`).
 
 Manual HTTP endpoints (require `x-prediction-key`):
 

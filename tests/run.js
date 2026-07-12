@@ -1711,6 +1711,12 @@ async function run() {
   passed += integrityResult.passed;
   failed += integrityResult.failed;
 
+  // ── Scheduler: live-event poller ──
+  const schedulerSuite = require('./audit/scheduler.test');
+  const schedulerResult = await schedulerSuite.run();
+  passed += schedulerResult.passed;
+  failed += schedulerResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);
