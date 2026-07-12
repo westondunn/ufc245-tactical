@@ -4,10 +4,19 @@ const { test, expect } = require('@playwright/test');
 async function resolveFutureOpenFight(request) {
   const events = await (await request.get('/api/events')).json();
   const today = new Date().toISOString().slice(0, 10);
-  const futureEvents = events
-    .filter(e => e.date && e.date > today)
-    .sort((a, b) => String(a.date).localeCompare(String(b.date)));
-  for (const event of futureEvents) {
+  // Prefer genuinely future events (soonest first), but fall back to past
+  // events (most recent first): curated upcoming cards keep winner_id null
+  // until results are backfilled, so the fixture doesn't rot the day after
+  // the latest seeded card happens.
+  const candidates = events
+    .filter(e => e.date)
+    .sort((a, b) => {
+      const aFuture = a.date > today, bFuture = b.date > today;
+      if (aFuture !== bFuture) return aFuture ? -1 : 1;
+      const cmp = String(a.date).localeCompare(String(b.date));
+      return aFuture ? cmp : -cmp;
+    });
+  for (const event of candidates) {
     const cardRes = await request.get(`/api/events/${event.id}/card`);
     if (!cardRes.ok()) continue;
     const { card } = await cardRes.json();

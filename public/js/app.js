@@ -2193,7 +2193,13 @@ function recCycleSpeed(){
 const REC_3D = { ready: false };
 
 function init3DScene(){
-  if (typeof THREE === 'undefined') { console.warn('[3D] Three.js not loaded — skipping'); return; }
+  if (typeof THREE === 'undefined') {
+    // three loads as a deferred ES module (see index.html), which lands
+    // after this classic script evaluates — retry once it announces itself.
+    window.addEventListener('three:ready', () => init3DScene(), { once: true });
+    console.warn('[3D] Three.js not loaded yet — deferring init');
+    return;
+  }
   const canvas = document.getElementById('recCanvas3d');
   if (!canvas) return;
   try {
