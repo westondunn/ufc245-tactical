@@ -62,6 +62,24 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Diagnose connection user + privileges
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          node -e "
+          const { Pool } = require('pg');
+          const pool = new Pool({ connectionString: process.env.DATABASE_URL, ssl: { rejectUnauthorized: false } });
+          (async () => {
+            const who = await pool.query('SELECT current_user, current_database()');
+            console.log('connected as:', JSON.stringify(who.rows[0]));
+            const priv = await pool.query(\"SELECT has_table_privilege(current_user,'fighters','INSERT') AS can_insert_fighters, has_table_privilege(current_user,'events','INSERT') AS can_insert_events, has_table_privilege(current_user,'fights','INSERT') AS can_insert_fights\");
+            console.log('privileges:', JSON.stringify(priv.rows[0]));
+            const own = await pool.query(\"SELECT tablename, tableowner FROM pg_tables WHERE tablename IN ('fighters','events','fights')\");
+            console.log('table owners:', JSON.stringify(own.rows));
+            await pool.end();
+          })().catch(e => { console.error(e.message); process.exit(1); });
+          "
+
       - name: Insert card
         env:
           DATABASE_URL: ${{ secrets.DATABASE_URL }}
