@@ -1545,7 +1545,10 @@ async function run() {
   console.log('\nHTML:');
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   assert(html.includes('<!DOCTYPE html>'), 'HTML has doctype');
-  assert(html.includes('/vendor/three/three.min.js'), 'self-hosted Three.js included');
+  assert(html.includes('/js/three-shim.js'), 'self-hosted Three.js shim included');
+  const threeShim = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'three-shim.js'), 'utf8');
+  assert(threeShim.includes('/vendor/three/three.module.min.js'), 'three shim imports self-hosted ES module build');
+  assert(fs.existsSync(path.join(__dirname, '..', 'node_modules', 'three', 'build', 'three.module.min.js')), 'three.module.min.js exists in installed three build');
   assert(html.includes('appVersion'), 'version display element present');
   assert(html.includes('comparePanel'), 'comparison panel present');
   assert(html.includes('fighterSearch'), 'fighter search input present');
