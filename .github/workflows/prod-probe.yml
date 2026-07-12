@@ -1,0 +1,60 @@
+name: Prod Probe
+
+# Read-only diagnostic: reports what production is actually serving.
+# Runs on PRs that touch this file (the maintenance session's only vantage
+# point on prod — its own network policy can't reach railway.app) and on
+# manual dispatch from the Actions tab.
+
+on:
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - '.github/workflows/prod-probe.yml'
+
+permissions:
+  contents: read
+
+jobs:
+  probe:
+    name: Probe production state
+    runs-on: ubuntu-latest
+    timeout-minutes: 3
+    env:
+      WEB_URL: https://web-production-96d6e.up.railway.app
+    steps:
+      - name: /healthz (version + build)
+        run: |
+          echo "── /healthz ──"
+          curl -sS --max-time 15 "$WEB_URL/healthz" | python3 -m json.tool || true
+
+      - name: /api/events (count, latest, UFC 329 presence)
+        run: |
+          echo "── /api/events ──"
+          curl -sS --max-time 30 "$WEB_URL/api/events" -o /tmp/events.json
+          python3 - <<'EOF'
+          import json
+          evs = json.load(open('/tmp/events.json'))
+          print(f"total events: {len(evs)}")
+          latest = sorted([e for e in evs if e.get('date')], key=lambda e: e['date'])[-5:]
+          print("latest 5 by date:")
+          for e in latest:
+              print(f"  {e['id']}  {e['date']}  {e.get('name')}")
+          m = [e for e in evs if '329' in (e.get('name') or '') or 'McGregor vs. Holloway' in (e.get('name') or '')]
+          print("UFC 329 rows:", json.dumps(m, indent=1) if m else "NOT PRESENT")
+          if m:
+              open('/tmp/event_id.txt', 'w').write(str(m[0]['id']))
+          EOF
+
+      - name: /api/events/:id/card (if UFC 329 present)
+        run: |
+          if [ ! -f /tmp/event_id.txt ]; then echo "UFC 329 not in prod DB — skipping card probe"; exit 0; fi
+          EVENT_ID=$(cat /tmp/event_id.txt)
+          echo "── /api/events/${EVENT_ID}/card ──"
+          curl -sS --max-time 30 "$WEB_URL/api/events/${EVENT_ID}/card" | python3 -c "
+          import json, sys
+          d = json.load(sys.stdin)
+          card = d.get('card') or []
+          print(f'{len(card)} fights')
+          for f in sorted(card, key=lambda x: x.get('card_position') or 99):
+              print(f\"  {f.get('card_position')}: {f.get('red_name')} vs {f.get('blue_name')} ({f.get('weight_class')})\")
+          "

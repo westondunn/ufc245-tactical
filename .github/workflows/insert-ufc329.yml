@@ -1,0 +1,66 @@
+name: Insert UFC 329 card into prod DB
+
+# One-click runner for scripts/insert-card-2026-07-11-ufc329-pg.js (merged in
+# #60). Exists because Railway deploys are stalled (prod is a 2026-05-10
+# build), so the normal deploy → import-seed path can't deliver tonight's
+# card; this inserts it straight into the production Postgres.
+#
+# Setup: add the app's production DATABASE_URL (Railway → Postgres →
+# DATABASE_PUBLIC_URL) as the DATABASE_URL repository secret, then run this
+# workflow from the Actions tab. The script is idempotent — safe to re-run.
+
+on:
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry run (report only, write nothing)'
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: insert-ufc329
+  cancel-in-progress: false
+
+jobs:
+  insert:
+    name: Run insert script against prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Check DATABASE_URL secret
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret not set. Add the Railway DATABASE_PUBLIC_URL value as a repository secret named DATABASE_URL (Settings → Secrets and variables → Actions), then re-run."
+            exit 1
+          fi
+          echo "DATABASE_URL secret present."
+
+      - name: Checkout
+        uses: actions/checkout@v6
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Insert card
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            node scripts/insert-card-2026-07-11-ufc329-pg.js --dry-run
+          else
+            node scripts/insert-card-2026-07-11-ufc329-pg.js
+          fi
