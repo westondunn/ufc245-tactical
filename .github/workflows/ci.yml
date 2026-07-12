@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # gitleaks-action needs to scan the diff between the previous
           # commit and the current one; with depth:1 the parent ref is
@@ -179,7 +179,7 @@ jobs:
     needs: quality
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Need the merge-base for diff computation on PRs and the
           # parent commit for push events.
