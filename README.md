@@ -232,6 +232,10 @@ score 0. Draws / No Contest void every pick on that fight
 (`correct = 0, points = 0`). Re-running reconcile produces identical
 point totals.
 
+If a fighter on your pick's card is scratched and replaced, your pick is
+automatically voided — no points, no penalty. If the fight has not started
+yet, you'll see a re-pick CTA next to the voided pick.
+
 ### User flow
 
 1. User clicks the **Picks** tab → create-profile modal auto-opens

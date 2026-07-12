@@ -5743,6 +5743,8 @@ function renderPickWidget(fight){
 
   const pickedRed  = pick && pick.picked_fighter_id === fight.red_fighter_id;
   const pickedBlue = pick && pick.picked_fighter_id === fight.blue_fighter_id;
+  const pickVoided = pick && Number(pick.pick_voided) === 1;
+  const canRepick  = pick && Number(pick.can_repick) === 1;
   // Once the fight is decided, mark which corner actually won. Used to apply
   // is-winner styling on the corner header + the Pick button + a small WINNER
   // badge so you can read the result at a glance even when scrolling past.
@@ -5956,6 +5958,16 @@ function renderPickWidget(fight){
           </div>
         </div>
       </details>
+      ${pickVoided ? `
+        <div class="pick-roster-change">
+          <span class="pick-roster-change__icon">⚠️</span>
+          <span class="pick-roster-change__msg">Fighter changed — pick voided</span>
+          ${canRepick
+            ? `<button class="rec-btn rec-btn--primary pick-roster-change__repick" data-pick-action="repick">Re-submit pick</button>`
+            : `<span class="pick-roster-change__locked">Pick voided — fight already started.</span>`
+          }
+        </div>
+      ` : ''}
       ${outcomeHtml}
       ${statusHtml}
 
@@ -6150,6 +6162,13 @@ function attachPickHandlers(container){
     // Delete
     const delBtn = card.querySelector('[data-pick-action="delete"]');
     if (delBtn) delBtn.addEventListener('click', () => deletePickFromCard(card, fightId));
+
+    // Re-pick (roster change CTA): scroll to picker buttons so user can choose the new corner
+    const repickBtn = card.querySelector('[data-pick-action="repick"]');
+    if (repickBtn) repickBtn.addEventListener('click', () => {
+      const pickers = card.querySelector('.pick-fighters');
+      if (pickers) pickers.scrollIntoView({ behavior: 'smooth', block: 'center' });
+    });
   });
 }
 
