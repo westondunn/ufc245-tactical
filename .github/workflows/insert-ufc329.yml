@@ -16,6 +16,14 @@ on:
         description: 'Dry run (report only, write nothing)'
         type: boolean
         default: false
+  # Explicitly user-authorized (2026-07-12): also run on PRs touching this
+  # file, so the insert can be triggered by pushing a commit — the
+  # maintenance credential cannot use workflow_dispatch. Same-repo PRs get
+  # repository secrets; the guard step still fails with setup instructions
+  # when DATABASE_URL is absent.
+  pull_request:
+    paths:
+      - '.github/workflows/insert-ufc329.yml'
 
 permissions:
   contents: read
