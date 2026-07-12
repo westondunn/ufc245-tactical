@@ -347,12 +347,26 @@ npm run backfill:review -- --auto-approve-cosmetic
 The scheduler runs automatically on server boot (disable with
 `AUDIT_SCHEDULER=off`):
 
-| Trigger        | When             | Scope                              |
-|----------------|------------------|------------------------------------|
-| Nightly sweep  | 03:00 daily      | all columns                        |
-| Pre-event      | 04:00 daily      | events 7d / 1d out                 |
-| Post-event 1h  | every 5 min      | events ending in last hour today   |
-| Post-event 24h | 05:00 daily      | events that ended yesterday        |
+| Trigger           | When                           | Scope                                     |
+|-------------------|--------------------------------|-------------------------------------------|
+| Nightly sweep     | 03:00 daily                    | all columns                               |
+| Pre-event         | 04:00 daily                    | events 7d / 1d out                        |
+| **Live event**    | **every 5 min while live**     | **events in progress (see below)**        |
+| Post-event 1–24 h | every 5 min                    | events 1–24 h past end_time               |
+| Post-event 24h    | 05:00 daily                    | events that ended yesterday               |
+
+**Live event polling.** While a UFC card is in progress the scheduler scrapes
+ufcstats.com every 5 minutes and pushes any newly-finished fights through the
+canonical `/api/events/:id/official-outcomes` write path (upsert + pick
+reconciliation + prediction scoring). This means user picks are reconciled and
+model predictions are scored within roughly 5 minutes of a cage closing rather
+than waiting for the next nightly job. An event is considered "live" from its
+`start_time` until 1 hour after its `end_time` (or indefinitely when `end_time`
+is not yet set). The post-event 1–24 h poller then handles any late-arriving
+stats published by ufcstats after the card concludes. Set
+`AUDIT_SCHEDULER=off` to disable all pollers, or set
+`LIVE_EVENT_POLL_INTERVAL_MIN` to adjust the live-poll cadence without a
+redeploy (default `5`).
 
 Manual HTTP endpoints (require `x-prediction-key`):
 
