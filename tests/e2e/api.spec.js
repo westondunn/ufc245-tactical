@@ -1,29 +1,27 @@
 // @ts-check
 const { test, expect } = require('@playwright/test');
 
+// Prediction ingest locks once an event has started (getPredictionLockState),
+// so the fixture must be an event that hasn't started yet: judge by start_time
+// when present, else by date strictly after today. Returns null when the seed
+// has no such event (the between-cards state after the latest seeded card has
+// happened) — callers test.skip() rather than fail, and the skip goes away as
+// soon as the next upcoming card is seeded.
 async function resolveFutureOpenFight(request) {
   const events = await (await request.get('/api/events')).json();
+  const now = Date.now();
   const today = new Date().toISOString().slice(0, 10);
-  // Prefer genuinely future events (soonest first), but fall back to past
-  // events (most recent first): curated upcoming cards keep winner_id null
-  // until results are backfilled, so the fixture doesn't rot the day after
-  // the latest seeded card happens.
-  const candidates = events
-    .filter(e => e.date)
-    .sort((a, b) => {
-      const aFuture = a.date > today, bFuture = b.date > today;
-      if (aFuture !== bFuture) return aFuture ? -1 : 1;
-      const cmp = String(a.date).localeCompare(String(b.date));
-      return aFuture ? cmp : -cmp;
-    });
-  for (const event of candidates) {
+  const notStarted = events
+    .filter(e => (e.start_time ? Date.parse(e.start_time) > now : (e.date && e.date > today)))
+    .sort((a, b) => String(a.date || '').localeCompare(String(b.date || '')));
+  for (const event of notStarted) {
     const cardRes = await request.get(`/api/events/${event.id}/card`);
     if (!cardRes.ok()) continue;
     const { card } = await cardRes.json();
     const fight = (card || []).find(f => f.id && f.red_id && f.blue_id && f.winner_id == null);
     if (fight) return { event, fight };
   }
-  throw new Error('No future open fight fixture found');
+  return null;
 }
 
 // Use Playwright's request context (no browser needed for API tests)
@@ -544,7 +542,9 @@ test.describe('Predictions API', () => {
   });
 
   test('POST /api/predictions/ingest upserts by (fight_id, model_version)', async ({ request }) => {
-    const { event, fight } = await resolveFutureOpenFight(request);
+    const fixture = await resolveFutureOpenFight(request);
+    test.skip(!fixture, 'no not-yet-started event in seed — seed the next upcoming card to re-enable');
+    const { event, fight } = fixture;
     const pred = {
       fight_id: fight.id,
       red_fighter_id: fight.red_id,
@@ -616,7 +616,9 @@ test.describe('Predictions API', () => {
   });
 
   test('POST /api/predictions/reconcile with key sets actual_winner_id', async ({ request }) => {
-    const { event, fight } = await resolveFutureOpenFight(request);
+    const fixture = await resolveFutureOpenFight(request);
+    test.skip(!fixture, 'no not-yet-started event in seed — seed the next upcoming card to re-enable');
+    const { event, fight } = fixture;
     const pred = {
       fight_id: fight.id,
       red_fighter_id: fight.red_id,
