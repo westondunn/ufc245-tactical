@@ -40,7 +40,7 @@ jobs:
     steps:
       - name: Check DATABASE_URL secret
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.PROD_DB_URL || secrets.DATABASE_URL }}
         run: |
           if [ -z "$DATABASE_URL" ]; then
             echo "::error::DATABASE_URL secret not set. Add the Railway DATABASE_PUBLIC_URL value as a repository secret named DATABASE_URL (Settings → Secrets and variables → Actions), then re-run."
@@ -64,7 +64,7 @@ jobs:
 
       - name: Diagnose connection user + privileges
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.PROD_DB_URL || secrets.DATABASE_URL }}
         run: |
           node -e "
           const u = new URL(process.env.DATABASE_URL);
@@ -84,7 +84,7 @@ jobs:
 
       - name: Insert card
         env:
-          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DATABASE_URL: ${{ secrets.PROD_DB_URL || secrets.DATABASE_URL }}
           DRY_RUN: ${{ inputs.dry_run }}
         run: |
           if [ "$DRY_RUN" = "true" ]; then
