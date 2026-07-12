@@ -285,6 +285,28 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_admin_action_log_created ON admin_action_log(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_admin_action_log_target ON admin_action_log(target_table, target_key);
+
+  -- ── Data integrity issue tracker ──
+  -- Persistent queue of open integrity findings. Each (category, subject_type,
+  -- subject_id) triple is unique so re-scans upsert rather than duplicate.
+  -- resolved_at IS NULL = open; set = resolved (fixed/wont_fix/auto_resolved/duplicate).
+  CREATE TABLE IF NOT EXISTS data_integrity_issues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    details TEXT,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolution TEXT,
+    resolution_note TEXT,
+    resolution_run_id TEXT,
+    UNIQUE(category, subject_type, subject_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_integrity_open ON data_integrity_issues(category, severity);
+  CREATE INDEX IF NOT EXISTS idx_integrity_subject ON data_integrity_issues(subject_type, subject_id);
 `;
 
 /* ── INIT ── */

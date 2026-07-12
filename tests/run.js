@@ -1705,6 +1705,12 @@ async function run() {
   passed += integrationResult.passed;
   failed += integrationResult.failed;
 
+  // ── Integrity Runner ──
+  const integritySuite = require('./integrity/runner.test');
+  const integrityResult = await integritySuite.run();
+  passed += integrityResult.passed;
+  failed += integrityResult.failed;
+
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);
   process.exit(failed > 0 ? 1 : 0);

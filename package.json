@@ -10,6 +10,7 @@
     "dev:prod-db": "node --env-file=.env server.js",
     "test": "node tests/run.js && node tests/auth.test.js",
     "audit": "node scripts/audit-run.js",
+    "integrity": "node scripts/integrity.js",
     "backfill": "node scripts/backfill-run.js",
     "backfill:review": "node scripts/backfill-review.js",
     "test:e2e": "npx playwright test",

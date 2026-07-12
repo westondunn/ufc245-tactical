@@ -386,6 +386,31 @@ async function ensureSchema() {
   `);
   await run('CREATE INDEX IF NOT EXISTS idx_admin_action_log_created ON admin_action_log(created_at DESC)');
   await run('CREATE INDEX IF NOT EXISTS idx_admin_action_log_target ON admin_action_log(target_table, target_key)');
+
+  // ── Data integrity issue tracker ──
+  await run(`
+    CREATE TABLE IF NOT EXISTS data_integrity_issues (
+      id            BIGSERIAL PRIMARY KEY,
+      category      TEXT NOT NULL,
+      severity      TEXT NOT NULL,
+      subject_type  TEXT NOT NULL,
+      subject_id    TEXT NOT NULL,
+      details       JSONB,
+      first_seen_at TIMESTAMPTZ NOT NULL,
+      last_seen_at  TIMESTAMPTZ NOT NULL,
+      resolved_at   TIMESTAMPTZ,
+      resolution    TEXT,
+      resolution_note TEXT,
+      resolution_run_id TEXT,
+      UNIQUE(category, subject_type, subject_id)
+    )
+  `);
+  await run(`
+    CREATE INDEX IF NOT EXISTS idx_integrity_open
+    ON data_integrity_issues(category, severity)
+    WHERE resolved_at IS NULL
+  `);
+  await run('CREATE INDEX IF NOT EXISTS idx_integrity_subject ON data_integrity_issues(subject_type, subject_id)');
 }
 
 /**
