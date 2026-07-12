@@ -5,10 +5,11 @@
  * mutex to skip overlapping runs.
  *
  * Triggers (override times by editing here):
+ *   - nightly integrity    02:00 daily, all integrity scanners
  *   - nightly sweep        03:00 daily, all columns
  *   - pre-event            04:00 daily, events 7d / 1d out
  *   - live-event poller    every 5 min (LIVE_EVENT_POLL_INTERVAL_MIN), events in live window
- *   - post-event 1h poll   every 5 min, events 1–24 h after end_time
+ *   - post-event 1–24 h    every 5 min, events 1–24 h after end_time
  *   - post-event 24h       05:00 daily, events that ended yesterday
  *
  * Set AUDIT_SCHEDULER=off to disable all triggers.
@@ -18,6 +19,7 @@ const cron = require('node-cron');
 const db = require('../../db');
 const { runAudit } = require('./runner');
 const { runBackfill } = require('../backfill/dispatcher');
+const { runIntegrityScan } = require('../integrity/runner');
 const { fetchEvent } = require('../scrapers/ufcstats-event');
 const { isInLivePollWindow } = require('../../lib/eventState');
 
@@ -48,6 +50,21 @@ async function trigger(triggerKey, scopeArg = null) {
   const backfill = await runBackfill({ runId: audit.run_id });
   console.log(`[scheduler] ${triggerKey} run=${audit.run_id} audit=${audit.summary.length} bf:auto=${backfill.auto} q=${backfill.queued} r=${backfill.rejected}`);
   return { audit, backfill };
+}
+
+// Runs all 17 integrity scanners nightly at 02:00 UTC — one hour before the
+// coverage audit (03:00) to avoid overlap. Replaces the former hourly
+// fighter-integrity-gate remote-agent routine; findings persist in DB instead
+// of opening GitHub issues.
+function nightlyIntegrity() {
+  return cron.schedule('0 2 * * *', () => withMutex('nightly-integrity', async () => {
+    try {
+      const result = await runIntegrityScan();
+      console.log(`[scheduler] integrity run=${result.run_id} opened=${result.opened} refreshed=${result.refreshed} resolved=${result.resolved}`);
+    } catch (e) {
+      console.error('[scheduler] nightly-integrity error:', e.message);
+    }
+  }));
 }
 
 function nightlySweep() {
@@ -242,8 +259,8 @@ function startScheduler() {
     console.log('[scheduler] disabled by AUDIT_SCHEDULER=off');
     return [];
   }
-  console.log('[scheduler] starting nightly + pre/post-event triggers + live-event poller');
-  return [nightlySweep(), preEventDaily(), liveEventPoller(), postEventPoller(), postEventT24()];
+  console.log('[scheduler] starting integrity + nightly + pre/post-event triggers + live-event poller');
+  return [nightlyIntegrity(), nightlySweep(), preEventDaily(), liveEventPoller(), postEventPoller(), postEventT24()];
 }
 
 module.exports = { startScheduler, trigger, liveEventPollerTick, _mutexes: mutexes };
