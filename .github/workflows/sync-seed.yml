@@ -1,0 +1,70 @@
+name: Sync Seed to Production
+
+# Pushes new data/seed.json rows (upcoming events, fighters, fights) into the
+# live DB via POST /api/admin/import-seed. The endpoint is idempotent — rows
+# whose id already exists are left alone, so re-running is always safe.
+#
+# Runs:
+#   - manually from the Actions tab (workflow_dispatch), e.g. right after a
+#     new card lands on main
+#   - automatically after every Railway deploy verification (workflow_run on
+#     Deploy), so seeded cards reach prod without a manual step
+#
+# Requires the ADMIN_KEY repository secret (the app's ADMIN_KEY env var on
+# Railway). Missing secret → the job skips with a warning instead of failing.
+
+on:
+  workflow_dispatch:
+  workflow_run:
+    workflows: ["Deploy · Version Bump + Railway"]
+    types: [completed]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: sync-seed
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    name: Import seed into live DB
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # For workflow_run triggers, only sync after a successful deploy chain.
+    if: github.event_name == 'workflow_dispatch' || github.event.workflow_run.conclusion == 'success'
+
+    steps:
+      - name: Check ADMIN_KEY secret
+        id: precheck
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+        run: |
+          if [ -z "$ADMIN_KEY" ]; then
+            echo "::warning::ADMIN_KEY secret not set — skipping seed sync. Add the app's ADMIN_KEY as a repository secret to enable."
+            echo "skip=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "skip=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: POST /api/admin/import-seed
+        if: steps.precheck.outputs.skip == 'false'
+        env:
+          ADMIN_KEY: ${{ secrets.ADMIN_KEY }}
+          # Same hardcoded public-URL fallback as deploy.yml's verify step.
+          WEB_URL: ${{ secrets.RAILWAY_WEB_URL || 'https://web-production-96d6e.up.railway.app' }}
+        run: |
+          set -euo pipefail
+          echo "Syncing seed to ${WEB_URL}"
+          RESPONSE=$(curl -fsS --max-time 120 -X POST "${WEB_URL}/api/admin/import-seed" \
+            -H "x-admin-key: ${ADMIN_KEY}" \
+            -H "x-admin-actor: sync-seed-workflow")
+          echo "$RESPONSE"
+          echo "$RESPONSE" | python3 -c "
+          import json, sys
+          r = json.load(sys.stdin)
+          if r.get('status') != 'ok':
+              print('::error::import-seed returned non-ok status'); sys.exit(1)
+          a = r.get('added', {})
+          print(f\"Added events={a.get('events',0)} fights={a.get('fights',0)} fighters={a.get('fighters',0)}\")
+          "
