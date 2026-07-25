@@ -33,6 +33,9 @@ model_store/
 # Dev mail stub output (auth/email.js)
 tmp/
 
+# Local SQLite DB file (generated from seed.json at runtime, not committed)
+data/db.sqlite3
+
 # Don't auto-commit pasted screenshots dropped in data/
 data/Screenshot*.png
 data/screenshot*.png
