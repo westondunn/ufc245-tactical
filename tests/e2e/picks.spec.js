@@ -288,9 +288,14 @@ test.describe('Picks UI — widget rendering', () => {
     await expect(page.locator('#profileChipBtn')).toBeVisible();
     await expect(page.locator('#picksViewEvent')).toBeVisible();
 
-    // Default event is the nearest upcoming (or most recent if none). Either
-    // a .pick-fight widget or the empty placeholder must render.
-    const widgetOrEmpty = page.locator('.pick-fight, .picks-fights .picks-placeholder').first();
+    // Default event is the nearest upcoming (or most recent if none). The picks
+    // area must render something — fight widgets (.pick-fight) when the event is
+    // upcoming/live, the empty-card placeholder when no open fights exist, or the
+    // history stats strip (.picks-stats-strip) when the selected event is in the
+    // past. All three are valid; the assertion just confirms the async load settled.
+    const widgetOrEmpty = page.locator(
+      '.pick-fight, .picks-fights .picks-placeholder, .picks-stats-strip, .picks-event-history__rows'
+    ).first();
     await expect(widgetOrEmpty).toBeVisible({ timeout: 8000 });
 
     // Hint line reflects open vs concluded counts (always populated after load)
