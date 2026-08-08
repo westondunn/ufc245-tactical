@@ -5,17 +5,19 @@
  * One-shot patch for late card movement on UFC Fight Night:
  * Song Yadong vs Deiveson Figueiredo (event 105, Galaxy Arena Macao,
  * 2026-05-30). Idempotent — safe to re-run; prints what it would do
- * (and skips) when a change is already applied.
+ * (and skips) when a change is already applied. All writes run in one
+ * transaction: any abort mid-run rolls back cleanly.
  *
  * Uses a direct pg Pool so it does not invoke ensureSchema() over the
  * remote connection (that pass is slow against Railway's public host).
  *
  * Changes (vs ufcstats.com / ufc.com on the morning of the event):
  *   1. Fight 794 (Welterweight): red 673 (Muslim Salikhov) →
- *      red 877 (Carlston Harris). Stale-mark predictions vs Salikhov.
+ *      red 877 (Carlston Harris). Stale-mark predictions vs Salikhov
+ *      and neutralize pick-model snapshots on the fight.
  *   2. Fight 799 (Flyweight → Bantamweight): blue 418 (Jesus Aguilar)
  *      → blue 669 (Luis Gurule); weight_class moves up to Bantamweight.
- *      Stale-mark predictions vs Aguilar.
+ *      Stale-mark predictions vs Aguilar and neutralize snapshots.
  *   3. New fighters: Ding Meng (Welterweight), José Souza
  *      (Welterweight), Zhu Kangjie (Featherweight), Rodrigo Vera
  *      (Featherweight). (Carlston Harris and Luis Gurule already
@@ -38,17 +40,27 @@
  *        NEW  Zhu vs Vera                  12   (insert)
  *        797  Lookboonmee vs Amorim        13   (was 8)
  *
- * Companion script scripts/void-orphaned-picks-2026-05-30.js voids
- * any user_picks whose picked_fighter_id is no longer either corner
- * after the swaps above. Run that after this script.
+ * New fighter/fight ids are pinned to the values hardcoded in
+ * data/seed.json (fighters 2704-2707, fights 8810-8811) so prod and
+ * fresh-seeded databases agree on which id names which row. The script
+ * aborts (before writing, thanks to the transaction) if a pinned id is
+ * already taken by a different row — that means the prod id-space has
+ * drifted from seed and must be reconciled by hand first.
  *
  * Run:
  *   $env:DATABASE_URL = (...DATABASE_PUBLIC_URL...)
- *   $env:PGSSLMODE = 'require'
  *   node scripts/patch-card-2026-05-30.js --dry-run
  *   node scripts/patch-card-2026-05-30.js
+ *   (PGSSLMODE=disable is honored for non-SSL targets, e.g. local rehearsal.)
+ *
+ * Required follow-ups after apply (also printed on success):
+ *   1. node scripts/void-orphaned-picks.js --event 105
+ *   2. POST /api/admin/save on the main app — its cache has no TTL, so a
+ *      running server keeps serving the old card from memory until then.
+ *   3. POST /admin/predict-event?event_id=105 on the predictions service —
+ *      scheduled jobs skip event-day cards, so nothing else re-predicts.
  */
-const { Pool } = require('pg');
+const { getPool } = require('./_db');
 
 const EVENT_ID = 105;
 
@@ -62,18 +74,18 @@ const AGUILAR_ID   = 418;   // out
 const GURULE_ID    = 669;   // in
 const TSURUYA_NEW_WC = 'Bantamweight'; // moves up from Flyweight
 
-// ── New fighters to ensure exist ──
+// ── New fighters to ensure exist (ids pinned to data/seed.json) ──
 const NEW_FIGHTERS = [
-  { name: 'Ding Meng',     weight_class: 'Welterweight' },
-  { name: 'José Souza',    weight_class: 'Welterweight' },
-  { name: 'Zhu Kangjie',   weight_class: 'Featherweight' },
-  { name: 'Rodrigo Vera',  weight_class: 'Featherweight' },
+  { id: 2704, name: 'Ding Meng',    weight_class: 'Welterweight' },
+  { id: 2705, name: 'José Souza',   weight_class: 'Welterweight' },
+  { id: 2706, name: 'Zhu Kangjie',  weight_class: 'Featherweight' },
+  { id: 2707, name: 'Rodrigo Vera', weight_class: 'Featherweight' },
 ];
 
-// ── New fight insertions (after fighter rows exist) ──
+// ── New fight insertions, after fighter rows exist (ids pinned to data/seed.json) ──
 const NEW_FIGHTS = [
-  { red_name: 'Ding Meng',   blue_name: 'José Souza',    weight_class: 'Welterweight', card_position: 8  },
-  { red_name: 'Zhu Kangjie', blue_name: 'Rodrigo Vera',  weight_class: 'Featherweight', card_position: 12 },
+  { id: 8810, red_name: 'Ding Meng',   blue_name: 'José Souza',   weight_class: 'Welterweight',  card_position: 8  },
+  { id: 8811, red_name: 'Zhu Kangjie', blue_name: 'Rodrigo Vera', weight_class: 'Featherweight', card_position: 12 },
 ];
 
 // ── Card-position renumber for existing fights (id → new position) ──
@@ -93,35 +105,53 @@ const POSITION_MAP = {
 
 const DRY = process.argv.includes('--dry-run');
 const log = (...a) => console.log(DRY ? '[dry-run]' : '[apply]', ...a);
+const fail = (code, msg) => { const e = new Error(msg); e.exitCode = code; throw e; };
+const stripAccents = (s) => String(s || '').normalize('NFD').replace(/[\u0300-\u036f]/g, '');
 
 async function main() {
-  if (!process.env.DATABASE_URL) {
-    console.error('ERROR: DATABASE_URL required (this script is prod-only).');
-    process.exit(2);
-  }
-  const pool = new Pool({
-    connectionString: process.env.DATABASE_URL,
-    ssl: { rejectUnauthorized: false },
-    connectionTimeoutMillis: 15000,
-  });
+  const pool = getPool();
+  const client = await pool.connect();
 
-  const q = (sql, params = []) => pool.query(sql, params);
+  const q = (sql, params = []) => client.query(sql, params);
   const oneRow = async (sql, params) => (await q(sql, params)).rows[0] || null;
   const allRows = async (sql, params) => (await q(sql, params)).rows;
 
+  // Locked picks on a swapped fight keep model-agreement snapshots taken
+  // against the pre-swap prediction; neutralize them so modelUpsetBonus
+  // can't score agreement with a matchup that never happened.
+  const neutralizeSnapshots = async (fightId) => {
+    const n = await oneRow(
+      `SELECT COUNT(*)::int AS c FROM pick_model_snapshots
+       WHERE user_agreed_with_model IS NOT NULL
+         AND user_pick_id IN (SELECT id FROM user_picks WHERE fight_id = $1)`,
+      [fightId]
+    );
+    if (!Number(n.c)) { log(`no pick-model snapshots to neutralize on fight ${fightId}`); return; }
+    log(`neutralizing ${n.c} pick-model snapshot(s) on fight ${fightId} (agreement was vs the pre-swap prediction)`);
+    if (!DRY) {
+      await q(
+        `UPDATE pick_model_snapshots SET user_agreed_with_model = NULL
+         WHERE user_agreed_with_model IS NOT NULL
+           AND user_pick_id IN (SELECT id FROM user_picks WHERE fight_id = $1)`,
+        [fightId]
+      );
+    }
+  };
+
   try {
+    if (!DRY) await q('BEGIN');
+
     // ── 1. Matthews fight: Salikhov → Harris (red corner) ──
     const f794 = await oneRow(
       `SELECT id, red_fighter_id, blue_fighter_id, red_name, blue_name FROM fights WHERE id = $1`,
       [MATTHEWS_FIGHT_ID]
     );
-    if (!f794) { console.error(`ERROR: fight ${MATTHEWS_FIGHT_ID} not found`); process.exit(3); }
+    if (!f794) fail(3, `fight ${MATTHEWS_FIGHT_ID} not found`);
 
     if (f794.red_fighter_id === HARRIS_ID) {
       log(`fight ${MATTHEWS_FIGHT_ID} already has Harris as red — skipping`);
     } else if (f794.red_fighter_id !== SALIKHOV_ID) {
-      console.error(`ERROR: fight ${MATTHEWS_FIGHT_ID} red_fighter_id is ${f794.red_fighter_id}, expected ${SALIKHOV_ID} (Salikhov). Aborting to avoid clobbering an unknown change.`);
-      process.exit(4);
+      fail(4, `fight ${MATTHEWS_FIGHT_ID} red_fighter_id is ${f794.red_fighter_id}, expected ${SALIKHOV_ID} (Salikhov). Aborting to avoid clobbering an unknown change (transaction rolled back).`);
     } else {
       log(`fight ${MATTHEWS_FIGHT_ID}: red ${f794.red_name} (id ${f794.red_fighter_id}) → Carlston Harris (id ${HARRIS_ID})`);
       if (!DRY) {
@@ -151,18 +181,19 @@ async function main() {
       }
     }
 
+    await neutralizeSnapshots(MATTHEWS_FIGHT_ID);
+
     // ── 2. Tsuruya fight: Aguilar → Gurule (blue corner) + weight class change ──
     const f799 = await oneRow(
       `SELECT id, red_fighter_id, blue_fighter_id, red_name, blue_name, weight_class FROM fights WHERE id = $1`,
       [TSURUYA_FIGHT_ID]
     );
-    if (!f799) { console.error(`ERROR: fight ${TSURUYA_FIGHT_ID} not found`); process.exit(3); }
+    if (!f799) fail(3, `fight ${TSURUYA_FIGHT_ID} not found`);
 
     if (f799.blue_fighter_id === GURULE_ID) {
       log(`fight ${TSURUYA_FIGHT_ID} already has Gurule as blue — skipping fighter swap`);
     } else if (f799.blue_fighter_id !== AGUILAR_ID) {
-      console.error(`ERROR: fight ${TSURUYA_FIGHT_ID} blue_fighter_id is ${f799.blue_fighter_id}, expected ${AGUILAR_ID} (Aguilar). Aborting to avoid clobbering an unknown change.`);
-      process.exit(4);
+      fail(4, `fight ${TSURUYA_FIGHT_ID} blue_fighter_id is ${f799.blue_fighter_id}, expected ${AGUILAR_ID} (Aguilar). Aborting to avoid clobbering an unknown change (transaction rolled back).`);
     } else {
       log(`fight ${TSURUYA_FIGHT_ID}: blue ${f799.blue_name} (id ${f799.blue_fighter_id}) → Luis Gurule (id ${GURULE_ID})`);
       if (!DRY) {
@@ -204,39 +235,42 @@ async function main() {
       }
     }
 
-    // ── 3. Ensure new fighter rows exist ──
+    await neutralizeSnapshots(TSURUYA_FIGHT_ID);
+
+    // ── 3. Ensure new fighter rows exist (ids pinned to seed.json) ──
     const fighterIdByName = {};
     for (const nf of NEW_FIGHTERS) {
-      const existing = await oneRow(`SELECT id, name FROM fighters WHERE name = $1`, [nf.name]);
+      // Accent/case-insensitive lookup: scrapers store names as scraped
+      // (ufcstats often unaccented), so exact equality would insert
+      // duplicates like the seed's "José Aldo" / "Jose Aldo" pair.
+      const existing = await oneRow(
+        `SELECT id, name FROM fighters WHERE lower(name) IN (lower($1), lower($2))`,
+        [nf.name, stripAccents(nf.name)]
+      );
       if (existing) {
         fighterIdByName[nf.name] = existing.id;
-        log(`fighter ${nf.name} already present (id ${existing.id})`);
+        log(`fighter ${nf.name} already present (id ${existing.id}${existing.name !== nf.name ? `, stored as ${JSON.stringify(existing.name)}` : ''})`);
         continue;
       }
-      const max = await oneRow(`SELECT COALESCE(MAX(id), 0) AS m FROM fighters`);
-      const newId = Number(max.m) + 1;
-      fighterIdByName[nf.name] = newId;
-      log(`creating fighter ${nf.name} with id ${newId} (${nf.weight_class})`);
+      const idHolder = await oneRow(`SELECT id, name FROM fighters WHERE id = $1`, [nf.id]);
+      if (idHolder) {
+        fail(6, `fighter id ${nf.id} (pinned for ${nf.name} to match data/seed.json) is already taken by ${JSON.stringify(idHolder.name)} — prod id-space has drifted from seed; reconcile before re-running.`);
+      }
+      fighterIdByName[nf.name] = nf.id;
+      log(`creating fighter ${nf.name} with id ${nf.id} (${nf.weight_class})`);
       if (!DRY) {
         await q(
           `INSERT INTO fighters (id, name, weight_class) VALUES ($1, $2, $3)`,
-          [newId, nf.name, nf.weight_class]
+          [nf.id, nf.name, nf.weight_class]
         );
       }
     }
 
-    // ── 4. Ensure new fight rows exist on event 105 ──
+    // ── 4. Ensure new fight rows exist on event 105 (ids pinned to seed.json) ──
     for (const nf of NEW_FIGHTS) {
       const redId = fighterIdByName[nf.red_name];
       const blueId = fighterIdByName[nf.blue_name];
-      if (!redId || !blueId) {
-        if (DRY) {
-          log(`would create fight ${nf.red_name} vs ${nf.blue_name} — fighter IDs not resolved yet in dry-run, will be assigned on apply`);
-          continue;
-        }
-        console.error(`ERROR: missing fighter id for ${nf.red_name} or ${nf.blue_name}`);
-        process.exit(5);
-      }
+      if (!redId || !blueId) fail(5, `missing fighter id for ${nf.red_name} or ${nf.blue_name}`);
       const existing = await oneRow(
         `SELECT id, red_fighter_id, blue_fighter_id, red_name, blue_name, card_position
          FROM fights
@@ -250,16 +284,21 @@ async function main() {
         log(`fight ${nf.red_name} vs ${nf.blue_name} already exists (id ${existing.id}, pos ${existing.card_position}) — skipping insert`);
         continue;
       }
-      const max = await oneRow(`SELECT COALESCE(MAX(id), 0) AS m FROM fights`);
-      const newFightId = Number(max.m) + 1;
-      log(`creating fight ${newFightId}: ${nf.red_name} vs ${nf.blue_name} (${nf.weight_class}, event ${EVENT_ID}, card_position ${nf.card_position})`);
+      const idHolder = await oneRow(
+        `SELECT id, event_id, red_name, blue_name FROM fights WHERE id = $1`,
+        [nf.id]
+      );
+      if (idHolder) {
+        fail(6, `fight id ${nf.id} (pinned for ${nf.red_name} vs ${nf.blue_name} to match data/seed.json) is already taken by ${idHolder.red_name} vs ${idHolder.blue_name} (event ${idHolder.event_id}) — prod id-space has drifted from seed; reconcile before re-running.`);
+      }
+      log(`creating fight ${nf.id}: ${nf.red_name} vs ${nf.blue_name} (${nf.weight_class}, event ${EVENT_ID}, card_position ${nf.card_position})`);
       if (!DRY) {
         await q(
           `INSERT INTO fights
              (id, event_id, red_fighter_id, blue_fighter_id, red_name, blue_name,
               weight_class, card_position, is_main, is_title)
            VALUES ($1, $2, $3, $4, $5, $6, $7, $8, 0, 0)`,
-          [newFightId, EVENT_ID, redId, blueId, nf.red_name, nf.blue_name, nf.weight_class, nf.card_position]
+          [nf.id, EVENT_ID, redId, blueId, nf.red_name, nf.blue_name, nf.weight_class, nf.card_position]
         );
       }
     }
@@ -291,10 +330,29 @@ async function main() {
     }
     if (touched === 0) log('  card positions already correct — nothing to renumber');
 
-    console.log(DRY ? '\n[dry-run] no changes written.' : '\nDone. Now run scripts/void-orphaned-picks-2026-05-30.js to handle picks on dropped fighters.');
+    if (!DRY) await q('COMMIT');
+
+    console.log(DRY
+      ? '\n[dry-run] no changes written.'
+      : [
+          '',
+          'Done. Required follow-ups:',
+          `  1. node scripts/void-orphaned-picks.js --event ${EVENT_ID}  (void picks on dropped fighters)`,
+          '  2. POST /api/admin/save on the main app — its cache has no TTL, so a',
+          '     running server keeps serving the old card from memory until then.',
+          `  3. POST /admin/predict-event?event_id=${EVENT_ID} on the predictions service —`,
+          '     scheduled jobs skip event-day cards, so nothing else re-predicts today.',
+        ].join('\n'));
+  } catch (e) {
+    if (!DRY) await client.query('ROLLBACK').catch(() => {});
+    throw e;
   } finally {
+    client.release();
     await pool.end();
   }
 }
 
-main().catch(e => { console.error(e); process.exit(1); });
+main().catch(e => {
+  console.error(e.exitCode ? `ERROR: ${e.message}` : e);
+  process.exit(e.exitCode || 1);
+});
