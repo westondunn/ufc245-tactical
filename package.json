@@ -1,6 +1,6 @@
 {
   "name": "ufc-tactical-dashboard",
-  "version": "4.27.2",
+  "version": "4.27.3",
   "description": "UFC Tactical Analysis Dashboard — SQLite API + Three.js 3D + biomechanics framework",
   "private": true,
   "main": "server.js",
@@ -10,6 +10,7 @@
     "dev:prod-db": "node --env-file=.env server.js",
     "test": "node tests/run.js && node tests/auth.test.js",
     "audit": "node scripts/audit-run.js",
+    "integrity": "node scripts/integrity.js",
     "backfill": "node scripts/backfill-run.js",
     "backfill:review": "node scripts/backfill-review.js",
     "test:e2e": "npx playwright test",
@@ -20,21 +21,21 @@
     "better-auth": "ESM-only from v1.6.9+. The better-auth/node adapter ships as .mjs and cannot be loaded via require() on Node.js v22+ (ERR_REQUIRE_ESM). server.js loads it via dynamic import() inside the async bootstrap. DO NOT downgrade below 1.6.9 or switch to require() without verifying a CJS build exists."
   },
   "dependencies": {
-    "better-auth": "^1.6.9",
+    "better-auth": "^1.6.18",
     "cheerio": "^1.2.0",
     "compression": "^1.7.4",
     "cookie-parser": "^1.4.7",
     "express": "^5.2.1",
     "node-cron": "^4.2.1",
-    "pg": "^8.20.0",
+    "pg": "^8.21.0",
     "sql.js": "^1.14.1",
-    "three": "^0.128.0"
+    "three": "^0.184.0"
   },
   "engines": {
     "node": ">=22.12.0"
   },
   "devDependencies": {
-    "@playwright/test": "^1.59.1",
+    "@playwright/test": "^1.60.0",
     "playwright": "^1.59.1"
   }
 }

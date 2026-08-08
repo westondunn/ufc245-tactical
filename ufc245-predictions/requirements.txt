@@ -1,11 +1,11 @@
-# fastapi 0.121.0 is the minimum version with `starlette<0.50.0` (older
-# 0.115.12 capped at `<0.47.0`, blocking the CVE patches in 0.49.x).
-fastapi==0.121.0
-# Pin starlette directly to a version that patches:
+# fastapi 0.133.0 is the minimum version that drops the starlette<1.0.0 cap
+# (0.132.x capped at <1.0.0, blocking PYSEC-2026-161 fix in 1.0.1).
+fastapi==0.133.0
+# Pin starlette to the minimum version that patches:
 #   CVE-2025-54121 (DoS, fix in 0.47.2)
 #   CVE-2025-62727 (HTTP smuggling, fix in 0.49.1)
-# fastapi 0.121.0's `<0.50.0` cap leaves the 0.49.x line, latest 0.49.3.
-starlette>=0.49.1,<0.50.0
+#   PYSEC-2026-161 (fix in 1.0.1)
+starlette>=1.0.1
 uvicorn[standard]==0.34.2
 apscheduler==3.11.0
 httpx==0.28.1

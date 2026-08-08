@@ -933,18 +933,93 @@ async function run() {
   const reconB2 = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userB.id, mainEvent.id]);
   assertEq(reconB2.points, 28, 'reconcile is idempotent');
 
-  // ── Orphaned picks (late fighter swap) stay voided through reconcile ──
-  const swapIn = db.oneRow('SELECT id FROM fighters WHERE id NOT IN (?, ?) LIMIT 1', [mainEvent.red_id, mainEvent.blue_id]);
-  db.run('UPDATE fights SET red_fighter_id = ? WHERE id = ?', [swapIn.id, mainEvent.id]);
-  const orphanRes = await db.reconcilePicksForEvent(ufc245.id);
-  assertGt(orphanRes.orphaned_voided, 0, 'reconcile voids picks orphaned by a fighter swap');
-  const orphanB = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userB.id, mainEvent.id]);
-  assertEq(orphanB.correct, null, 'orphaned pick is voided (correct=NULL), not scored as a loss');
-  assertEq(orphanB.points, 0, 'orphaned pick carries 0 points');
-  db.run('UPDATE fights SET red_fighter_id = ? WHERE id = ?', [mainEvent.red_id, mainEvent.id]);
-  await db.reconcilePicksForEvent(ufc245.id);
-  const restoredB = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userB.id, mainEvent.id]);
-  assertEq(restoredB.points, 28, 'restoring the corner re-scores the pick on the next reconcile');
+  // ── Roster change: voidPicksOrphanedByCardChange + upsertFight side-effect ──
+  console.log('\nRoster Change:');
+  {
+    const rcBaseEventId = (await db.nextId('events')) + 2000;
+    const rcBaseFightId = (await db.nextId('fights')) + 2000;
+    // Use two existing fighters from seed for corners, and a third for the "scratch"
+    const [rcFighter1, rcFighter2, rcFighter3] = db.getAllFighters(3).map(f => f.id);
+    await db.upsertEvent({ id: rcBaseEventId, number: 8001, name: 'RC Test Event', date: '2099-11-01' });
+    await db.upsertFight({
+      id: rcBaseFightId, event_id: rcBaseEventId, event_number: 8001,
+      red_fighter_id: rcFighter1, blue_fighter_id: rcFighter2,
+      red_name: 'RC Red', blue_name: 'RC Blue',
+      weight_class: 'Welterweight', is_title: 0, is_main: 0, card_position: 1,
+      method: null, method_detail: null, round: null, time: null,
+      winner_id: null, referee: null, has_stats: 0, ufcstats_hash: null
+    });
+    // Create a pick for the original blue fighter
+    const rcUser = await db.createUser({ display_name: 'RCUser', avatar_key: 'a3' });
+    await db.upsertPick({
+      user_id: rcUser.id, event_id: rcBaseEventId, fight_id: rcBaseFightId,
+      picked_fighter_id: rcFighter2, confidence: 60
+    });
+    const beforeSwap = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [rcUser.id, rcBaseFightId]);
+    assertEq(beforeSwap.picked_fighter_id, rcFighter2, 'pick recorded for original blue fighter');
+
+    // Swap blue corner — triggers voidPicksOrphanedByCardChange automatically
+    // (pick has correct=NULL, points=0 so the void UPDATE is a no-op for counts,
+    //  but roster_changed_at is set on the fight which enables the flag)
+    await db.upsertFight({
+      id: rcBaseFightId, event_id: rcBaseEventId, event_number: 8001,
+      red_fighter_id: rcFighter1, blue_fighter_id: rcFighter3,
+      red_name: 'RC Red', blue_name: 'RC Blue Replacement',
+      weight_class: 'Welterweight', is_title: 0, is_main: 0, card_position: 1,
+      method: null, method_detail: null, round: null, time: null,
+      winner_id: null, referee: null, has_stats: 0, ufcstats_hash: null
+    });
+
+    const fightAfterSwap = db.oneRow('SELECT roster_changed_at FROM fights WHERE id = ?', [rcBaseFightId]);
+    assertTruthy(fightAfterSwap.roster_changed_at, 'upsertFight sets roster_changed_at when corner changes');
+
+    // API flags: getPicksForUser surfaces pick_voided + can_repick
+    const rcPicks = await db.getPicksForUser(rcUser.id, { event_id: rcBaseEventId });
+    assertEq(rcPicks.length, 1, 'getPicksForUser returns the orphaned pick');
+    assertEq(rcPicks[0].pick_voided, 1, 'pick_voided=1 for orphaned pick with roster_changed_at set');
+    assertEq(rcPicks[0].can_repick, 1, 'can_repick=1 when event has not started');
+
+    // After event starts, can_repick becomes false
+    db.run('UPDATE events SET date = ? WHERE id = ?', ['2000-01-01', rcBaseEventId]);
+    const rcPicksStarted = await db.getPicksForUser(rcUser.id, { event_id: rcBaseEventId });
+    assertEq(rcPicksStarted[0].pick_voided, 1, 'pick_voided stays 1 after event starts');
+    assertEq(rcPicksStarted[0].can_repick, 0, 'can_repick=0 once event has started');
+    // Restore date for clean state
+    db.run('UPDATE events SET date = ? WHERE id = ?', ['2099-11-01', rcBaseEventId]);
+  }
+
+  // ── Reconcile guard: orphaned pick stays void even when fight has winner ──
+  console.log('\nReconcile Guard:');
+  {
+    const rgBaseEventId = (await db.nextId('events')) + 3000;
+    const rgBaseFightId = (await db.nextId('fights')) + 3000;
+    const [rgFighter1, rgFighter2, rgFighter3] = db.getAllFighters(3).map(f => f.id);
+    await db.upsertEvent({ id: rgBaseEventId, number: 8002, name: 'RG Test Event', date: '2099-12-01' });
+    await db.upsertFight({
+      id: rgBaseFightId, event_id: rgBaseEventId, event_number: 8002,
+      red_fighter_id: rgFighter1, blue_fighter_id: rgFighter2,
+      red_name: 'RG Red', blue_name: 'RG Blue',
+      weight_class: 'Lightweight', is_title: 0, is_main: 0, card_position: 1,
+      method: 'KO/TKO', method_detail: null, round: 1, time: '2:30',
+      winner_id: rgFighter1, referee: null, has_stats: 0, ufcstats_hash: null
+    });
+    // Bypass upsertPick to insert a pick for a third fighter (simulating pre-swap unreconciled pick)
+    const rgUser = await db.createUser({ display_name: 'RGUser', avatar_key: 'a4' });
+    const now = new Date().toISOString();
+    db.run(
+      `INSERT INTO user_picks (user_id, event_id, fight_id, picked_fighter_id, confidence, submitted_at, updated_at)
+       VALUES (?,?,?,?,?,?,?)`,
+      [rgUser.id, rgBaseEventId, rgBaseFightId, rgFighter3, 50, now, now]
+    );
+    const beforeReconcile = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [rgUser.id, rgBaseFightId]);
+    assertEq(beforeReconcile.picked_fighter_id, rgFighter3, 'orphaned pick inserted for third fighter');
+
+    const rgResult = await db.reconcilePicksForEvent(rgBaseEventId);
+    const afterReconcile = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [rgUser.id, rgBaseFightId]);
+    assertEq(afterReconcile.correct, null, 'reconcile guard: orphaned pick correct stays NULL');
+    assertEq(afterReconcile.points, 0, 'reconcile guard: orphaned pick points stays 0');
+    assertEq(afterReconcile.actual_winner_id, null, 'reconcile guard: actual_winner_id stays NULL for orphaned pick');
+  }
 
   // ── Leaderboard ──
   const eventBoard = await db.getLeaderboard({ event_id: ufc245.id });
@@ -1470,7 +1545,10 @@ async function run() {
   console.log('\nHTML:');
   const html = fs.readFileSync(path.join(__dirname, '..', 'public', 'index.html'), 'utf8');
   assert(html.includes('<!DOCTYPE html>'), 'HTML has doctype');
-  assert(html.includes('/vendor/three/three.min.js'), 'self-hosted Three.js included');
+  assert(html.includes('/js/three-shim.js'), 'self-hosted Three.js shim included');
+  const threeShim = fs.readFileSync(path.join(__dirname, '..', 'public', 'js', 'three-shim.js'), 'utf8');
+  assert(threeShim.includes('/vendor/three/three.module.min.js'), 'three shim imports self-hosted ES module build');
+  assert(fs.existsSync(path.join(__dirname, '..', 'node_modules', 'three', 'build', 'three.module.min.js')), 'three.module.min.js exists in installed three build');
   assert(html.includes('appVersion'), 'version display element present');
   assert(html.includes('comparePanel'), 'comparison panel present');
   assert(html.includes('fighterSearch'), 'fighter search input present');
@@ -1717,6 +1795,12 @@ async function run() {
   const integrationResult = await integrationSuite.run();
   passed += integrationResult.passed;
   failed += integrationResult.failed;
+
+  // ── Integrity Runner ──
+  const integritySuite = require('./integrity/runner.test');
+  const integrityResult = await integritySuite.run();
+  passed += integrityResult.passed;
+  failed += integrityResult.failed;
 
   // ── Summary ──
   console.log(`\n━━━ Results: ${passed} passed, ${failed} failed ━━━\n`);

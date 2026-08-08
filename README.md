@@ -232,6 +232,10 @@ score 0. Draws / No Contest void every pick on that fight
 (`correct = 0, points = 0`). Re-running reconcile produces identical
 point totals.
 
+If a fighter on your pick's card is scratched and replaced, your pick is
+automatically voided — no points, no penalty. If the fight has not started
+yet, you'll see a re-pick CTA next to the voided pick.
+
 ### User flow
 
 1. User clicks the **Picks** tab → create-profile modal auto-opens
@@ -369,6 +373,41 @@ the identity gap and the profile gaps instead of taking two nights.
 
 See the design doc at `docs/superpowers/specs/2026-04-29-etl-data-gap-audit-and-backfill-design.md`
 for source precedence, gate rules, and v1 scope.
+
+### Integrity issues
+
+The audit subsystem tracks *coverage* (% of rows with a field filled).
+The integrity subsystem tracks *open named issues* — each is a persistent row in
+`data_integrity_issues` that stays open until resolved.
+
+**17 scanner categories:** `missing_hash`, `missing_core_stats`, `fraction_scale`,
+`orphaned_pick`, `stale_prediction`, `fk_orphan_fighter`, `fk_orphan_event`,
+`card_position_collision`, `card_position_gap`, `main_event_collision`,
+`outcome_winner_drift`, `past_event_unresolved`, `prediction_unreconciled`,
+`pick_correct_winner_mismatch`, `pick_half_reconciled`, `duplicate_fighter`,
+`prob_sum_off`.
+
+The scanner runs nightly at **02:00 UTC** (one slot before the coverage audit).
+Issues that disappear between scans are auto-resolved.
+
+**CLI:**
+```bash
+npm run integrity scan              # run all scanners, print summary
+npm run integrity list              # table of open issues
+npm run integrity list -- --category=missing_hash --severity=warn
+npm run integrity resolve 42 -- --resolution=fixed --note="backfilled"
+npm run integrity resolve-batch -- --category=fraction_scale --resolution=fixed
+```
+
+**HTTP endpoints** (require `x-prediction-key`):
+- `GET  /api/integrity?status=open&category=&severity=&limit=&offset=`
+- `GET  /api/integrity/summary`
+- `POST /api/integrity/scan`
+- `POST /api/integrity/:id/resolve` body `{resolution, note?}`
+- `POST /api/integrity/resolve-batch` body `{category, subject_ids?, resolution, note?}`
+
+Allowed resolutions: `fixed` | `wont_fix` | `duplicate`.
+(`auto_resolved` is set by the scanner, not manually.)
 
 ---
 

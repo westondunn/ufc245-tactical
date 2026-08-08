@@ -71,7 +71,8 @@ const SCHEMA = `
     winner_id INTEGER REFERENCES fighters(id),
     referee TEXT,
     has_stats INTEGER DEFAULT 0,
-    ufcstats_hash TEXT
+    ufcstats_hash TEXT,
+    roster_changed_at TEXT
   );
   CREATE TABLE IF NOT EXISTS fight_stats (
     fight_id INTEGER REFERENCES fights(id),
@@ -285,6 +286,28 @@ const SCHEMA = `
   );
   CREATE INDEX IF NOT EXISTS idx_admin_action_log_created ON admin_action_log(created_at DESC);
   CREATE INDEX IF NOT EXISTS idx_admin_action_log_target ON admin_action_log(target_table, target_key);
+
+  -- ── Data integrity issue tracker ──
+  -- Persistent queue of open integrity findings. Each (category, subject_type,
+  -- subject_id) triple is unique so re-scans upsert rather than duplicate.
+  -- resolved_at IS NULL = open; set = resolved (fixed/wont_fix/auto_resolved/duplicate).
+  CREATE TABLE IF NOT EXISTS data_integrity_issues (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    category TEXT NOT NULL,
+    severity TEXT NOT NULL,
+    subject_type TEXT NOT NULL,
+    subject_id TEXT NOT NULL,
+    details TEXT,
+    first_seen_at TEXT NOT NULL,
+    last_seen_at TEXT NOT NULL,
+    resolved_at TEXT,
+    resolution TEXT,
+    resolution_note TEXT,
+    resolution_run_id TEXT,
+    UNIQUE(category, subject_type, subject_id)
+  );
+  CREATE INDEX IF NOT EXISTS idx_integrity_open ON data_integrity_issues(category, severity);
+  CREATE INDEX IF NOT EXISTS idx_integrity_subject ON data_integrity_issues(subject_type, subject_id);
 `;
 
 /* ── INIT ── */
@@ -300,6 +323,7 @@ async function init(options = {}) {
     ensurePredictionExplanationColumn();
     ensureEventTimingColumns();
     ensureFighterImageColumns();
+    ensureFightRosterColumn();
     backfillEventTimingFromSeed(options.seedPath);
     backfillFighterImagesFromJson();
     migratePredictionsUniqueness();
@@ -315,6 +339,7 @@ async function init(options = {}) {
   ensurePredictionExplanationColumn();
   ensureEventTimingColumns();
   ensureFighterImageColumns();
+  ensureFightRosterColumn();
 
   const seedPath = options.seedPath || path.join(__dirname, '..', 'data', 'seed.json');
   if (fs.existsSync(seedPath)) {
@@ -479,6 +504,11 @@ function ensureFighterImageColumns() {
   const cols = allRows('PRAGMA table_info(fighters)').map(c => c.name);
   if (!cols.includes('headshot_url')) run('ALTER TABLE fighters ADD COLUMN headshot_url TEXT');
   if (!cols.includes('body_url')) run('ALTER TABLE fighters ADD COLUMN body_url TEXT');
+}
+
+function ensureFightRosterColumn() {
+  const cols = allRows('PRAGMA table_info(fights)').map(c => c.name);
+  if (!cols.includes('roster_changed_at')) run('ALTER TABLE fights ADD COLUMN roster_changed_at TEXT');
 }
 
 // Re-applies event date / timing metadata from seed.json on every boot.
@@ -685,9 +715,57 @@ function upsertEvent(e) {
     [e.id,e.number||null,e.name,e.date||null,e.venue||null,e.city||null,e.country||null,e.start_time||null,e.end_time||null,e.timezone||null,e.ufcstats_hash||null]);
 }
 
+function voidPicksOrphanedByCardChange(eventId) {
+  run(`
+    UPDATE user_picks SET
+      correct = NULL, method_correct = NULL, round_correct = NULL,
+      points = 0, actual_winner_id = NULL
+    WHERE event_id = ?
+      AND (correct IS NOT NULL OR points != 0)
+      AND picked_fighter_id NOT IN (
+        SELECT f2.red_fighter_id FROM fights f2 WHERE f2.id = fight_id
+        UNION ALL
+        SELECT f2.blue_fighter_id FROM fights f2 WHERE f2.id = fight_id
+      )
+  `, [eventId]);
+  return db.getRowsModified();
+}
+
 function upsertFight(f) {
-  run('INSERT OR REPLACE INTO fights (id,event_id,event_number,red_fighter_id,blue_fighter_id,red_name,blue_name,weight_class,is_title,is_main,card_position,method,method_detail,round,time,winner_id,referee,has_stats,ufcstats_hash) VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)',
-    [f.id,f.event_id,f.event_number||null,f.red_fighter_id,f.blue_fighter_id,f.red_name||null,f.blue_name||null,f.weight_class,f.is_title?1:0,f.is_main?1:0,f.card_position,f.method,f.method_detail,f.round,f.time,f.winner_id,f.referee,f.has_stats?1:0,f.ufcstats_hash||null]);
+  const existing = oneRow('SELECT red_fighter_id, blue_fighter_id FROM fights WHERE id = ?', [f.id]);
+  const cornerChanged = existing != null &&
+    (existing.red_fighter_id !== f.red_fighter_id || existing.blue_fighter_id !== f.blue_fighter_id);
+  const rosterTs = cornerChanged ? new Date().toISOString() : null;
+
+  run(`INSERT INTO fights
+         (id,event_id,event_number,red_fighter_id,blue_fighter_id,red_name,blue_name,
+          weight_class,is_title,is_main,card_position,method,method_detail,round,time,
+          winner_id,referee,has_stats,ufcstats_hash,roster_changed_at)
+       VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+       ON CONFLICT(id) DO UPDATE SET
+         event_id=excluded.event_id, event_number=excluded.event_number,
+         red_fighter_id=excluded.red_fighter_id, blue_fighter_id=excluded.blue_fighter_id,
+         red_name=excluded.red_name, blue_name=excluded.blue_name,
+         weight_class=excluded.weight_class, is_title=excluded.is_title,
+         is_main=excluded.is_main, card_position=excluded.card_position,
+         method=excluded.method, method_detail=excluded.method_detail,
+         round=excluded.round, time=excluded.time, winner_id=excluded.winner_id,
+         referee=excluded.referee, has_stats=excluded.has_stats,
+         ufcstats_hash=excluded.ufcstats_hash,
+         roster_changed_at=CASE
+           WHEN excluded.red_fighter_id != fights.red_fighter_id
+             OR excluded.blue_fighter_id != fights.blue_fighter_id
+           THEN excluded.roster_changed_at
+           ELSE fights.roster_changed_at
+         END`,
+    [f.id, f.event_id, f.event_number||null, f.red_fighter_id, f.blue_fighter_id,
+     f.red_name||null, f.blue_name||null, f.weight_class, f.is_title?1:0, f.is_main?1:0,
+     f.card_position, f.method, f.method_detail, f.round, f.time, f.winner_id,
+     f.referee, f.has_stats?1:0, f.ufcstats_hash||null, rosterTs]);
+
+  if (cornerChanged) {
+    voidPicksOrphanedByCardChange(f.event_id);
+  }
 }
 
 function upsertFightStats(s) {
@@ -1635,6 +1713,16 @@ function annotatePickLockLifecycle(row) {
   delete row.event_start_time;
   delete row.event_end_time;
   delete row.event_timezone;
+
+  const rosterChangedAt = row.roster_changed_at || null;
+  const isOrphaned = row.picked_fighter_id != null &&
+    Number(row.picked_fighter_id) !== Number(row.red_fighter_id) &&
+    Number(row.picked_fighter_id) !== Number(row.blue_fighter_id);
+  const pickVoided = row.correct === null && Number(row.points) === 0 &&
+    rosterChangedAt !== null && isOrphaned;
+  row.pick_voided = pickVoided ? 1 : 0;
+  row.can_repick = pickVoided && row.is_locked === 0 ? 1 : 0;
+
   return row;
 }
 
@@ -1742,7 +1830,7 @@ function getPicksForUser(userId, opts = {}) {
     SELECT
       p.*,
       f.red_fighter_id, f.blue_fighter_id, f.red_name, f.blue_name, f.winner_id, f.method, f.round AS fight_round,
-      f.is_main, f.weight_class,
+      f.is_main, f.weight_class, f.roster_changed_at,
       fr.headshot_url AS red_headshot_url, fr.body_url AS red_body_url,
       fb.headshot_url AS blue_headshot_url, fb.body_url AS blue_body_url,
       ev.number AS event_number, ev.name AS event_name, ev.date AS event_date,
@@ -1775,13 +1863,12 @@ function lockPicksForEvent(eventId) {
 
 function reconcilePicksForEvent(eventId) {
   const fights = allRows(
-    'SELECT id, winner_id, method, round, red_fighter_id, blue_fighter_id FROM fights WHERE event_id = ?',
+    'SELECT id, red_fighter_id, blue_fighter_id, winner_id, method, round FROM fights WHERE event_id = ?',
     [eventId]
   );
   let reconciledCount = 0;
   let pointsAwarded = 0;
   let voidedCount = 0;
-  let orphanedCount = 0;
   let fightsSettled = 0;
 
   for (const fight of fights) {
@@ -1801,17 +1888,19 @@ function reconcilePicksForEvent(eventId) {
       [fight.id]
     );
     for (const pick of picks) {
-      if (pick.picked_fighter_id !== fight.red_fighter_id &&
-          pick.picked_fighter_id !== fight.blue_fighter_id) {
+      // Safety net: orphaned pick (fighter no longer in this fight's corners).
+      if (pick.picked_fighter_id !== fight.red_fighter_id && pick.picked_fighter_id !== fight.blue_fighter_id) {
         run(
           `UPDATE user_picks
-             SET actual_winner_id = NULL, correct = NULL, method_correct = NULL, round_correct = NULL, points = 0
+             SET correct = NULL, method_correct = NULL, round_correct = NULL,
+                 points = 0, actual_winner_id = NULL
            WHERE id = ?`,
           [pick.id]
         );
-        orphanedCount++;
+        voidedCount++;
         continue;
       }
+
       const correct = hasWinner ? (pick.picked_fighter_id === fight.winner_id ? 1 : 0) : 0;
       const methodCorrect = hasWinner && pick.method_pick
         ? (actualMethod && pick.method_pick === actualMethod ? 1 : 0)
@@ -1842,7 +1931,6 @@ function reconcilePicksForEvent(eventId) {
     reconciled: reconciledCount + voidedCount,
     scored: reconciledCount,
     voided: voidedCount,
-    orphaned_voided: orphanedCount,
     points_awarded: pointsAwarded,
     fights_with_results: fightsSettled
   };
@@ -2415,7 +2503,7 @@ module.exports = {
   getCareerStats, getHeadToHead, getFighterRecord,
   upsertOfficialOutcome, getOfficialOutcome, getOfficialOutcomesForEvent,
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters, getFunFacts,
-  upsertFighter, upsertEvent, upsertFight, upsertFightStats,
+  upsertFighter, upsertEvent, upsertFight, upsertFightStats, voidPicksOrphanedByCardChange,
   upsertPrediction, getPredictionLockState, getPredictions, prunePastPredictions, reconcilePrediction, getPredictionAccuracy, getPredictionTrends, getModelLeaderboard, getPredictionOutcomeDetails,
   createUser, getUser, updateUser, deleteUser, claimGuestProfile,
   getPickLockState, upsertPick, deletePick, getPicksForUser,

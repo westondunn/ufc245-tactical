@@ -18,7 +18,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           # gitleaks-action needs to scan the diff between the previous
           # commit and the current one; with depth:1 the parent ref is
@@ -26,7 +26,7 @@ jobs:
           fetch-depth: 0
 
       - name: Setup Node.js
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -83,7 +83,7 @@ jobs:
         run: node .github/scripts/select-e2e.test.js
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: '3.12'
 
@@ -105,7 +105,7 @@ jobs:
             const fs = require('fs');
             const html = fs.readFileSync('public/index.html','utf8');
             const htmlRequired = [
-              'comparePanel', 'fighterSearch', '/vendor/three/three.min.js', 'appVersion',
+              'comparePanel', 'fighterSearch', '/js/three-shim.js', 'appVersion',
               '/css/styles.css', '/js/app.js'
             ];
             const appJs = fs.readFileSync('public/js/app.js','utf8');
@@ -179,13 +179,13 @@ jobs:
     needs: quality
     timeout-minutes: 10
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@v6
         with:
           # Need the merge-base for diff computation on PRs and the
           # parent commit for push events.
           fetch-depth: 0
 
-      - uses: actions/setup-node@v4
+      - uses: actions/setup-node@v6
         with:
           node-version: '22'
           cache: 'npm'
@@ -275,7 +275,7 @@ jobs:
           echo "::notice::E2E suite skipped — no e2e-relevant paths in this diff. See selector summary above."
 
       - name: Upload test report
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-report
@@ -283,7 +283,7 @@ jobs:
           retention-days: 7
 
       - name: Upload screenshots
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: test-screenshots
