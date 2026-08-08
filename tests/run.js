@@ -933,6 +933,19 @@ async function run() {
   const reconB2 = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userB.id, mainEvent.id]);
   assertEq(reconB2.points, 28, 'reconcile is idempotent');
 
+  // ── Orphaned picks (late fighter swap) stay voided through reconcile ──
+  const swapIn = db.oneRow('SELECT id FROM fighters WHERE id NOT IN (?, ?) LIMIT 1', [mainEvent.red_id, mainEvent.blue_id]);
+  db.run('UPDATE fights SET red_fighter_id = ? WHERE id = ?', [swapIn.id, mainEvent.id]);
+  const orphanRes = await db.reconcilePicksForEvent(ufc245.id);
+  assertGt(orphanRes.orphaned_voided, 0, 'reconcile voids picks orphaned by a fighter swap');
+  const orphanB = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userB.id, mainEvent.id]);
+  assertEq(orphanB.correct, null, 'orphaned pick is voided (correct=NULL), not scored as a loss');
+  assertEq(orphanB.points, 0, 'orphaned pick carries 0 points');
+  db.run('UPDATE fights SET red_fighter_id = ? WHERE id = ?', [mainEvent.red_id, mainEvent.id]);
+  await db.reconcilePicksForEvent(ufc245.id);
+  const restoredB = db.oneRow('SELECT * FROM user_picks WHERE user_id = ? AND fight_id = ?', [userB.id, mainEvent.id]);
+  assertEq(restoredB.points, 28, 'restoring the corner re-scores the pick on the next reconcile');
+
   // ── Leaderboard ──
   const eventBoard = await db.getLeaderboard({ event_id: ufc245.id });
   assertGt(eventBoard.length, 1, 'event leaderboard has both users');

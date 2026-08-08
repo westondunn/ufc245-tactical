@@ -1425,8 +1425,17 @@ function predictionCorrect(pred, actualWinnerId) {
 }
 
 function reconcilePrediction(fightId, actualWinnerId) {
+  // Predictions whose corners no longer match the fight (late fighter swap)
+  // describe a matchup that never happened — exclude them from grading.
+  // Stale-by-supersession rows with matching corners ARE still graded:
+  // model evaluation depends on scoring every model's prediction.
   const preds = allRows(
-    'SELECT * FROM predictions WHERE fight_id = ? ORDER BY predicted_at DESC, id DESC',
+    `SELECT p.* FROM predictions p
+     JOIN fights f ON f.id = p.fight_id
+     WHERE p.fight_id = ?
+       AND ((p.red_fighter_id = f.red_fighter_id AND p.blue_fighter_id = f.blue_fighter_id)
+         OR (p.red_fighter_id = f.blue_fighter_id AND p.blue_fighter_id = f.red_fighter_id))
+     ORDER BY p.predicted_at DESC, p.id DESC`,
     [fightId]
   );
   if (!preds.length) return null;
@@ -1766,12 +1775,13 @@ function lockPicksForEvent(eventId) {
 
 function reconcilePicksForEvent(eventId) {
   const fights = allRows(
-    'SELECT id, winner_id, method, round FROM fights WHERE event_id = ?',
+    'SELECT id, winner_id, method, round, red_fighter_id, blue_fighter_id FROM fights WHERE event_id = ?',
     [eventId]
   );
   let reconciledCount = 0;
   let pointsAwarded = 0;
   let voidedCount = 0;
+  let orphanedCount = 0;
   let fightsSettled = 0;
 
   for (const fight of fights) {
@@ -1791,6 +1801,17 @@ function reconcilePicksForEvent(eventId) {
       [fight.id]
     );
     for (const pick of picks) {
+      if (pick.picked_fighter_id !== fight.red_fighter_id &&
+          pick.picked_fighter_id !== fight.blue_fighter_id) {
+        run(
+          `UPDATE user_picks
+             SET actual_winner_id = NULL, correct = NULL, method_correct = NULL, round_correct = NULL, points = 0
+           WHERE id = ?`,
+          [pick.id]
+        );
+        orphanedCount++;
+        continue;
+      }
       const correct = hasWinner ? (pick.picked_fighter_id === fight.winner_id ? 1 : 0) : 0;
       const methodCorrect = hasWinner && pick.method_pick
         ? (actualMethod && pick.method_pick === actualMethod ? 1 : 0)
@@ -1821,6 +1842,7 @@ function reconcilePicksForEvent(eventId) {
     reconciled: reconciledCount + voidedCount,
     scored: reconciledCount,
     voided: voidedCount,
+    orphaned_voided: orphanedCount,
     points_awarded: pointsAwarded,
     fights_with_results: fightsSettled
   };
@@ -2312,11 +2334,17 @@ function getEventPickComparison(eventId) {
   );
   const result = [];
   for (const fight of fights) {
-    const pred = oneRow(
+    let pred = oneRow(
       `SELECT * FROM predictions WHERE fight_id = ?
        ORDER BY is_stale ASC, predicted_at DESC, id DESC LIMIT 1`,
       [fight.id]
     );
+    // A stale prediction from before a fighter swap describes a different
+    // matchup — don't attribute its probabilities to the current corners.
+    if (pred && pred.is_stale && (pred.red_fighter_id !== fight.red_fighter_id ||
+        pred.blue_fighter_id !== fight.blue_fighter_id)) {
+      pred = null;
+    }
     const agg = oneRow(
       `SELECT
          COUNT(*) AS total,
