@@ -41,7 +41,7 @@ jobs:
           echo "DATABASE_URL secret present."
 
       - name: Checkout
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
         with:
           fetch-depth: 1
 
