@@ -149,15 +149,33 @@ async function reconcileEvent(db, event, scrapedFights) {
     const tb = b.split(' ').sort().join(' ');
     return ta === tb;
   };
-  // Accept a fuzzy pair only when at least one corner is equal under
-  // cornerEq and the candidate is unique among this card's unmatched
-  // fights — a single event card can't ambiguously reuse a fighter.
+  // The non-equal corner must still resemble its counterpart: sharing at
+  // least one token (exact, or a >=3-char prefix like Ben/Benjamin,
+  // Zach/Zachary). Without this, a late-replacement bout the DB never
+  // recorded ("Marcus McGhee vs John Yannis" scraped, "Marcus McGhee vs
+  // Jakub Wiklacz" in the card) would fuzzy-match on the returning corner
+  // and attach the result to the wrong opponent — those are roster
+  // discrepancies to fix on the card first, not name variants.
+  const sharesToken = (a, b) => {
+    const ta = a.split(' ').filter(Boolean);
+    const tb = b.split(' ').filter(Boolean);
+    return ta.some(x => tb.some(y =>
+      x === y ||
+      (x.length >= 3 && y.startsWith(x)) ||
+      (y.length >= 3 && x.startsWith(y))
+    ));
+  };
+  // Accept a fuzzy pair only when one corner is equal under cornerEq, the
+  // OTHER corner shares at least a token with its counterpart, and the
+  // candidate is unique among this card's unmatched fights.
   const fuzzyMatch = (r, b, unmatchedCard) => {
     const hits = unmatchedCard.filter(f => {
       const fr = normalizeName(f.red_name);
       const fb = normalizeName(f.blue_name);
-      const straight = cornerEq(r, fr) || cornerEq(b, fb);
-      const swapped = cornerEq(r, fb) || cornerEq(b, fr);
+      const straight = (cornerEq(r, fr) && sharesToken(b, fb)) ||
+                       (cornerEq(b, fb) && sharesToken(r, fr));
+      const swapped = (cornerEq(r, fb) && sharesToken(b, fr)) ||
+                      (cornerEq(b, fr) && sharesToken(r, fb));
       return straight || swapped;
     });
     return hits.length === 1 ? hits[0] : null;
