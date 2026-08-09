@@ -99,6 +99,14 @@ jobs:
           python ufc245-predictions/tests/test_jobs.py
           python ufc245-predictions/tests/test_app.py
 
+      - name: Run forecasting evaluation harness tests
+        # ml/ reuses scikit-learn/numpy/joblib/httpx from the prediction
+        # service deps installed above; only pytest is extra. Kept out of
+        # requirements.txt so the pip-audit step stays scoped to runtime deps.
+        run: |
+          pip install pytest
+          python -m pytest ml/tests/ -v
+
       - name: Check HTML structure
         run: |
           node -e "
