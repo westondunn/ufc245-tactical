@@ -39,10 +39,12 @@ def test_orchestrator_runs_one_event_end_to_end(tmp_path, monkeypatch):
     Path(tmp_path / "model_store" / "latest.txt").write_text(f"{version}\n{blob}\n0.6\n")
 
     class StubProvider:
+        def chat_typed(self, system, user, *, response_type, **kwargs):
+            return response_type.model_validate({
+                "fighters_mentioned": [], "signals": [], "irrelevant": True,
+            })
+
         def chat_json(self, system, user, **kwargs):
-            # Stage 1: irrelevant
-            if "fighters_in_scope" in user:
-                return {"fighters_mentioned": [], "signals": [], "irrelevant": True}
             # Stage 2: fixed reasoning
             return {
                 "predicted_winner": "red", "win_probability": 0.61,

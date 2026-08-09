@@ -83,5 +83,5 @@ def trigger_enrich(
     event_id: int | None = None,
 ):
     _require_key(x_prediction_key)
-    orch = Orchestrator.from_env(store=_store)
-    return orch.run(dry_run=dry_run, only_event=event_id)
+    with Orchestrator.from_env(store=_store) as orchestrator:
+        return orchestrator.run(dry_run=dry_run, only_event=event_id)

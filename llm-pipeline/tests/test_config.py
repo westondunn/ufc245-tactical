@@ -1,4 +1,5 @@
-import os
+import pytest
+
 from config import Config
 
 
@@ -8,6 +9,10 @@ def test_config_defaults(monkeypatch):
     cfg = Config.from_env()
     assert cfg.llm_provider == "ollama"
     assert cfg.llm_model == "llama3.1:8b"
+    assert cfg.ollama_timeout_seconds == 180.0
+    assert cfg.ollama_context_length == 4096
+    assert cfg.ollama_keep_alive == "15m"
+    assert cfg.ollama_gpu_concurrency == 1
     assert cfg.enrich_horizon_days == 14
     assert cfg.max_concurrent_fights == 4
     assert cfg.require_audit_pass is False
@@ -55,3 +60,37 @@ def test_config_requires_prediction_service_key(monkeypatch):
         assert "PREDICTION_SERVICE_KEY" in str(e)
         return
     raise AssertionError("expected ValueError for missing PREDICTION_SERVICE_KEY")
+
+
+def test_config_parses_ollama_overrides(monkeypatch):
+    monkeypatch.setenv("MAIN_APP_URL", "http://example.test")
+    monkeypatch.setenv("PREDICTION_SERVICE_KEY", "secret")
+    monkeypatch.setenv("OLLAMA_TIMEOUT_SECONDS", "45.5")
+    monkeypatch.setenv("OLLAMA_CONTEXT_LENGTH", "8192")
+    monkeypatch.setenv("OLLAMA_KEEP_ALIVE", "2m")
+    monkeypatch.setenv("OLLAMA_GPU_CONCURRENCY", "3")
+    cfg = Config.from_env()
+    assert cfg.ollama_timeout_seconds == 45.5
+    assert cfg.ollama_context_length == 8192
+    assert cfg.ollama_keep_alive == "2m"
+    assert cfg.ollama_gpu_concurrency == 3
+
+
+@pytest.mark.parametrize(
+    ("name", "value"),
+    [
+        ("OLLAMA_TIMEOUT_SECONDS", "0"),
+        ("OLLAMA_TIMEOUT_SECONDS", "-1"),
+        ("OLLAMA_TIMEOUT_SECONDS", "nan"),
+        ("OLLAMA_CONTEXT_LENGTH", "0"),
+        ("OLLAMA_CONTEXT_LENGTH", "-1"),
+        ("OLLAMA_GPU_CONCURRENCY", "0"),
+        ("OLLAMA_GPU_CONCURRENCY", "-1"),
+    ],
+)
+def test_config_rejects_non_positive_ollama_values(monkeypatch, name, value):
+    monkeypatch.setenv("MAIN_APP_URL", "http://example.test")
+    monkeypatch.setenv("PREDICTION_SERVICE_KEY", "secret")
+    monkeypatch.setenv(name, value)
+    with pytest.raises(ValueError, match=name):
+        Config.from_env()

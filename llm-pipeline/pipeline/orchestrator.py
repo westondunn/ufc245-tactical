@@ -32,7 +32,8 @@ def _slugify_fighter(name: str) -> str:
 
 
 class Orchestrator:
-    def __init__(self, *, cfg: Config, store: Store, provider, runner: LRRunner):
+    def __init__(self, *, cfg: Config, store: Store, provider, runner: LRRunner,
+                 owns_provider: bool = False):
         self.cfg = cfg
         self.store = store
         self.provider = provider
@@ -41,16 +42,39 @@ class Orchestrator:
         self.reasoner = StageTwoReasoner(provider=provider)
         self.sync = RailwaySync(base_url=cfg.main_app_url, key=cfg.prediction_service_key, store=store)
         self.scrapers_enabled = cfg.scrapers_enabled
+        self._owns_provider = owns_provider
+        self._closed = False
 
     @classmethod
-    def from_env(cls, *, store: Store, provider=None) -> "Orchestrator":
+    def from_env(cls, *, store: Store, provider=None,
+                 owns_provider: bool | None = None) -> "Orchestrator":
         cfg = Config.from_env()
+        created_provider = provider is None
+        if created_provider:
+            provider = get_provider(cfg)
         return cls(
             cfg=cfg,
             store=store,
-            provider=provider or get_provider(cfg),
+            provider=provider,
             runner=LRRunner.from_env(),
+            owns_provider=True if created_provider else bool(owns_provider),
         )
+
+    def close(self) -> None:
+        if self._closed:
+            return
+        self._closed = True
+        if self._owns_provider:
+            close = getattr(self.provider, "close", None)
+            if callable(close):
+                close()
+
+    def __enter__(self) -> "Orchestrator":
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback) -> bool:
+        self.close()
+        return False
 
     # ---------- model ----------
     def _load_model(self):

@@ -9,13 +9,11 @@ import logging
 from pathlib import Path
 
 from db.store import Store
+from pipeline.contracts import ExtractionResult
 
 logger = logging.getLogger(__name__)
 
 PROMPT = (Path(__file__).resolve().parents[1] / "prompts" / "extract.md").read_text()
-
-ALLOWED_TYPES = {"injury", "camp_change", "weight_cut_concern", "motivation",
-                 "style_note", "recent_form_note", "layoff", "personal", "other"}
 
 
 class StageOneExtractor:
@@ -40,33 +38,28 @@ class StageOneExtractor:
             "text": body[:8000],  # cap to keep prompts small
         })
         try:
-            data = self.provider.chat_json(system=PROMPT, user=user_payload, max_tokens=800)
+            result = self.provider.chat_typed(
+                system=PROMPT,
+                user=user_payload,
+                response_type=ExtractionResult,
+                max_tokens=800,
+            )
         except Exception as e:
             logger.warning("extract LLM failed for %s: %s", url, e)
             return 0
 
-        if data.get("irrelevant"):
+        if result.irrelevant:
             return 0
-        signals = data.get("signals") or []
-        cleaned = []
-        for s in signals[:8]:
-            stype = (s.get("type") or "other").lower()
-            if stype not in ALLOWED_TYPES:
-                stype = "other"
-            try:
-                severity = max(0, min(3, int(s.get("severity") or 0)))
-            except (TypeError, ValueError):
-                severity = 0
-            evidence = (s.get("evidence") or "").strip()[:1000]
-            if not evidence:
-                continue
-            cleaned.append({
-                "fighter": (s.get("fighter") or None),
+        cleaned = [
+            {
+                "fighter": signal.fighter,
                 "fighter_side": None,  # caller fills this from fight context
-                "type": stype,
-                "severity": severity,
-                "evidence": evidence,
-            })
+                "type": signal.type.value,
+                "severity": signal.severity,
+                "evidence": signal.evidence,
+            }
+            for signal in result.signals
+        ]
         if not cleaned:
             return 0
         self.store.write_signals(url, fight_id, cleaned)
