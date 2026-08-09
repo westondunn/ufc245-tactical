@@ -177,7 +177,15 @@ jobs:
             --head "$BRANCH" \
             --title "[skip-version] [skip-e2e] v${NEW_VERSION}" \
             --body "$BODY"
-          gh pr merge "$BRANCH" --auto --squash --delete-branch
+          # Direct merge, not --auto: GitHub rejects arming auto-merge when
+          # the base branch has no required checks ("Branch does not have
+          # required protected branch rules"), and this repo intentionally
+          # has none — the release branch is pushed with GITHUB_TOKEN, so
+          # workflows never run on it and a required check would wait
+          # forever. The bump is mechanical and its source sha already
+          # passed CI (the wait step above), so merging immediately is the
+          # exact behavior --auto would have had with zero required checks.
+          gh pr merge "$BRANCH" --squash --delete-branch
 
   tag-and-release:
     name: Tag + GitHub Release
