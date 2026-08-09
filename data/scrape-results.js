@@ -101,7 +101,11 @@ function classifyMethod(text) {
   if (/submission/.test(t)) return { method: 'Submission', detail: text };
   if (/ko|tko/.test(t)) return { method: 'KO/TKO', detail: text };
   if (/dq|disqualif/.test(t)) return { method: 'DQ', detail: text };
-  if (/no\s*contest|nc/.test(t)) return { method: 'No Contest', detail: text };
+  // "Could Not Continue" / "Overturned" are ufc.com's no-contest renderings
+  // (accidental-foul stoppages). They must canonicalize to 'No Contest' or
+  // reconcilePicksForEvent's /DRAW|NO CONTEST|NC/ void check never fires and
+  // the fight's picks stay unreconciled forever (Perez–Sumudaerji, 2026-05-30).
+  if (/no\s*contest|nc|could\s*not\s*continue|overturned/.test(t)) return { method: 'No Contest', detail: text };
   if (/draw/.test(t)) return { method: 'Draw', detail: text };
   return { method: text.split(' ')[0], detail: text };
 }
@@ -134,23 +138,59 @@ async function reconcileEvent(db, event, scrapedFights) {
     fightsByKey.set(`${b}|${r}`, f);   // tolerate corner swap
   }
 
+  // Corner-level equality tolerant of the ways ufc.com and our curated names
+  // drift apart: spacing ("YiSak Lee" vs "Yi Sak Lee") and token order
+  // ("Xiong Jingnan" vs "Jingnan Xiong"). Exact-pair matching runs first;
+  // this only decides fights the strict key missed.
+  const cornerEq = (a, b) => {
+    if (a === b) return true;
+    if (a.replace(/ /g, '') === b.replace(/ /g, '')) return true;
+    const ta = a.split(' ').sort().join(' ');
+    const tb = b.split(' ').sort().join(' ');
+    return ta === tb;
+  };
+  // Accept a fuzzy pair only when at least one corner is equal under
+  // cornerEq and the candidate is unique among this card's unmatched
+  // fights — a single event card can't ambiguously reuse a fighter.
+  const fuzzyMatch = (r, b, unmatchedCard) => {
+    const hits = unmatchedCard.filter(f => {
+      const fr = normalizeName(f.red_name);
+      const fb = normalizeName(f.blue_name);
+      const straight = cornerEq(r, fr) || cornerEq(b, fb);
+      const swapped = cornerEq(r, fb) || cornerEq(b, fr);
+      return straight || swapped;
+    });
+    return hits.length === 1 ? hits[0] : null;
+  };
+
   const outcomes = [];
+  const matchedFightIds = new Set();
   let matched = 0, missed = 0;
   for (const sf of scrapedFights) {
     const r = normalizeName(sf.red);
     const b = normalizeName(sf.blue);
-    const fight = fightsByKey.get(`${r}|${b}`) || fightsByKey.get(`${b}|${r}`);
+    let fight = fightsByKey.get(`${r}|${b}`) || fightsByKey.get(`${b}|${r}`);
+    if (!fight) {
+      const unmatchedCard = card.filter(f => !matchedFightIds.has(f.id));
+      fight = fuzzyMatch(r, b, unmatchedCard);
+      if (fight) {
+        console.log(`  ≈ fuzzy-matched "${sf.red} vs ${sf.blue}" → "${fight.red_name} vs ${fight.blue_name}" (fight ${fight.id})`);
+      }
+    }
     if (!fight) {
       console.warn(`  ⚠ no DB match for: ${sf.red} vs ${sf.blue}`);
       missed++;
       continue;
     }
+    matchedFightIds.add(fight.id);
     let winnerId = null;
     if (sf.redOutcome === 'win') winnerId = fight.red_id;
     else if (sf.blueOutcome === 'win') winnerId = fight.blue_id;
     const { method, detail } = classifyMethod(sf.method);
     const round = sf.round ? parseInt(sf.round, 10) : null;
-    const isFinal = winnerId != null || /draw|no\s*contest|nc/i.test(sf.method);
+    // Derive finality from the CANONICAL method, not the raw text — the raw
+    // regex missed 'Could Not Continue' and left such fights 'in_progress'.
+    const isFinal = winnerId != null || method === 'Draw' || method === 'No Contest';
     outcomes.push({
       fight_id: fight.id,
       red_id: fight.red_id,
