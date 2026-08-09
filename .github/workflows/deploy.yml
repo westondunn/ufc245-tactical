@@ -124,11 +124,16 @@ jobs:
           fi
 
       - name: Open release PR
+        id: release_pr
         # Push the bumped package.json + package-lock.json to a release/vX.Y.Z
-        # branch and open a PR. Auto-merge keeps the human flow unchanged
-        # (the bot's PR squash-merges the second its required checks pass);
-        # the tag + GitHub Release job fires on the squashed commit landing
-        # on main via the [skip-version] subject.
+        # branch, open a PR, and squash-merge it immediately. The merge uses
+        # GITHUB_TOKEN, and GitHub suppresses workflow triggers for pushes
+        # made with that token — the squash commit gets NO workflow runs, so
+        # the tag-and-release job below can never fire on this path (v4.27.6
+        # had to be tagged by hand). The tag + GitHub Release are created
+        # inline by the next step instead; tag-and-release still covers
+        # manually-merged release PRs, where a human token DOES trigger
+        # workflows.
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           NEW_VERSION: ${{ steps.bump.outputs.new_version }}
@@ -163,8 +168,9 @@ jobs:
           Source commit: ${SOURCE_SHA}
           Bump type: ${{ steps.bump_type.outputs.type }}
 
-          Auto-merges once required checks pass. The tag and GitHub Release
-          land on the squash commit via the tag-and-release job.
+          Merged automatically by the version-bump job, which also creates
+          the tag + GitHub Release inline (GITHUB_TOKEN merges suppress
+          workflow triggers, so tag-and-release cannot fire on this path).
           EOF
           )
           # No --label here: 'gh pr create --label' fails the whole step
@@ -177,6 +183,11 @@ jobs:
             --head "$BRANCH" \
             --title "[skip-version] [skip-e2e] v${NEW_VERSION}" \
             --body "$BODY"
+          # Capture the PR number BEFORE merging: --delete-branch removes
+          # the head branch on merge, so branch-name lookups stop working
+          # and the number is the only stable handle for the squash sha.
+          PR_NUMBER=$(gh pr view "$BRANCH" --json number -q .number)
+          echo "pr_number=${PR_NUMBER}" >> "$GITHUB_OUTPUT"
           # Direct merge, not --auto: GitHub rejects arming auto-merge when
           # the base branch has no required checks ("Branch does not have
           # required protected branch rules"), and this repo intentionally
@@ -187,11 +198,65 @@ jobs:
           # exact behavior --auto would have had with zero required checks.
           gh pr merge "$BRANCH" --squash --delete-branch
 
+      - name: Tag + GitHub Release (inline)
+        # The squash commit from the merge above has zero workflow runs
+        # (GITHUB_TOKEN push), so tag-and-release never sees it. Create the
+        # tag + Release right here. Skips gracefully when the tag already
+        # exists, so this path and tag-and-release (manual-merge fallback)
+        # never fight over the same version.
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          NEW_VERSION: ${{ steps.bump.outputs.new_version }}
+          PR_NUMBER: ${{ steps.release_pr.outputs.pr_number }}
+        run: |
+          set -euo pipefail
+          if gh api "repos/${GITHUB_REPOSITORY}/git/ref/tags/v${NEW_VERSION}" >/dev/null 2>&1; then
+            echo "Tag v${NEW_VERSION} already exists — skipping inline tag + release."
+            exit 0
+          fi
+          # Resolve the squash sha by PR number (the head branch is already
+          # deleted). mergeCommit can lag the merge API call by a moment,
+          # so poll briefly instead of failing on the first empty read.
+          MERGE_SHA=""
+          for i in $(seq 1 10); do
+            MERGE_SHA=$(gh pr view "$PR_NUMBER" --json mergeCommit -q '.mergeCommit.oid // empty')
+            if [ -n "$MERGE_SHA" ]; then break; fi
+            echo "mergeCommit not visible yet (attempt $i/10)…"
+            sleep 3
+          done
+          if [ -z "$MERGE_SHA" ]; then
+            echo "::error::Could not resolve squash sha for release PR #${PR_NUMBER} — tag v${NEW_VERSION} was NOT created"
+            exit 1
+          fi
+          echo "Tagging v${NEW_VERSION} at squash commit ${MERGE_SHA}"
+          NOTES=$(cat <<EOF
+          Automated release from commit ${MERGE_SHA}
+
+          **Commit:** [skip-version] [skip-e2e] v${NEW_VERSION}
+
+          **Deploy:** Railway auto-deploys from main branch.
+          EOF
+          )
+          # gh release create makes the tag at --target when it doesn't
+          # exist yet, then publishes the Release — one call, both outputs.
+          gh release create "v${NEW_VERSION}" \
+            --target "$MERGE_SHA" \
+            --title "v${NEW_VERSION}" \
+            --generate-notes \
+            --notes "$NOTES"
+
   tag-and-release:
     name: Tag + GitHub Release
     runs-on: ubuntu-latest
-    # Fires on the bot PR's squash-merge commit landing on main. The
-    # bot's PR title starts with [skip-version], so the squash subject
+    # Manual-merge fallback. On the normal path the version-bump job
+    # squash-merges the release PR with GITHUB_TOKEN, whose pushes get no
+    # workflow runs — this job never fires there; the tag + Release are
+    # created inline by version-bump instead. This job only runs when a
+    # human merges a release PR (human token → workflows DO trigger on
+    # the squash commit). Its force-recreate tag logic re-points at the
+    # same squash sha, so even overlap with the inline path is harmless.
+    #
+    # The bot's PR title starts with [skip-version], so the squash subject
     # (first line of the commit message) does too. Using startsWith on
     # the message — not contains() — avoids false matches from human
     # PR bodies that happen to quote the token in documentation.
@@ -246,14 +311,17 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   # Railway deploys automatically via GitHub integration — no action needed.
-  # This job just verifies the deployment happened. Runs only on the
-  # [skip-version] squash-merge that tag-and-release also keys off, so
-  # we know the package.json version matches what Railway should serve.
+  # This job just verifies the deployment happened. Runs after EITHER
+  # release path: version-bump (bot squash-merge + inline tag — the normal
+  # path) or tag-and-release (manually-merged release PR). The two upstream
+  # jobs are mutually exclusive per run — their `if` guards key off the
+  # same [skip-version] token in opposite directions — so exactly one of
+  # them carries the version for any given push.
   verify-deploy:
     name: Verify Railway Deploy
     runs-on: ubuntu-latest
-    needs: tag-and-release
-    if: always() && needs.tag-and-release.result == 'success'
+    needs: [version-bump, tag-and-release]
+    if: always() && (needs.version-bump.result == 'success' || needs.tag-and-release.result == 'success')
     timeout-minutes: 20
     # Must NOT fail the workflow run: Railway's "wait for CI" skips the
     # deploy whenever any check suite on the commit fails, and this job
@@ -267,6 +335,8 @@ jobs:
       RAILWAY_PREDICTIONS_URL: ${{ secrets.RAILWAY_PREDICTIONS_URL }}
       PREDICTION_SERVICE_KEY: ${{ secrets.PREDICTION_SERVICE_KEY }}
       RUN_LIVE_PREDICTION_TRIGGERS: ${{ vars.RUN_LIVE_PREDICTION_TRIGGERS }}
+      # Whichever upstream job ran carries the version to verify.
+      NEW_VERSION: ${{ needs.tag-and-release.outputs.version || needs.version-bump.outputs.new_version }}
     steps:
       - name: Check deploy-verification secrets
         id: check_secrets
@@ -292,9 +362,7 @@ jobs:
       # secrets are missing, so future deploy regressions can't silently
       # sit on prod for days.
       - name: Verify prod is on the new version (public URL)
-        if: needs.tag-and-release.outputs.version != ''
-        env:
-          NEW_VERSION: ${{ needs.tag-and-release.outputs.version }}
+        if: env.NEW_VERSION != ''
         run: |
           set -euo pipefail
           URL="https://web-production-96d6e.up.railway.app/api/version"
