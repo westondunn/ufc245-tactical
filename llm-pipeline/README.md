@@ -13,7 +13,7 @@ cp .env.local.example .env.local
 # Set MAIN_APP_URL and PREDICTION_SERVICE_KEY (must match Railway main app's key)
 docker compose build
 docker compose up -d ollama llm-pipeline
-docker compose exec ollama ollama pull llama3.1:8b
+docker compose exec ollama ollama pull qwen3:8b
 ```
 
 ## Train LR locally
@@ -76,6 +76,8 @@ HTTP scraping and CPU feature work remain concurrent.
 Stage 1 extraction uses a Pydantic JSON Schema structured response. Stage 2 and
 all numeric prediction behavior are unchanged. Unit tests use fake SDK clients
 and need no Ollama server or GPU. The pipeline never pulls a model automatically.
+The local default is `qwen3:8b`; thinking is disabled for pipeline calls so the
+bounded Stage 1/2 output budgets are reserved for the required final JSON.
 For an optional live smoke test, first confirm the configured model already exists
 with `docker compose exec ollama ollama list`, then run a single-event dry run:
 

@@ -52,13 +52,19 @@ class Orchestrator:
         created_provider = provider is None
         if created_provider:
             provider = get_provider(cfg)
-        return cls(
-            cfg=cfg,
-            store=store,
-            provider=provider,
-            runner=LRRunner.from_env(),
-            owns_provider=True if created_provider else bool(owns_provider),
-        )
+        provider_owned = created_provider or bool(owns_provider)
+        try:
+            return cls(
+                cfg=cfg,
+                store=store,
+                provider=provider,
+                runner=LRRunner.from_env(),
+                owns_provider=provider_owned,
+            )
+        except BaseException:
+            if provider_owned:
+                provider.close()
+            raise
 
     def close(self) -> None:
         if self._closed:

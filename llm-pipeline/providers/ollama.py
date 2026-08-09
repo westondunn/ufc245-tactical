@@ -142,6 +142,10 @@ class OllamaProvider(LLMProvider):
                 {"role": "user", "content": user},
             ],
             "stream": False,
+            # Reserve bounded output budgets for the required final JSON/text.
+            # Thinking-capable models can otherwise consume the allowance before
+            # emitting any final content.
+            "think": False,
             "keep_alive": self.keep_alive,
             "options": self._options(
                 max_tokens=max_tokens, temperature=temperature,

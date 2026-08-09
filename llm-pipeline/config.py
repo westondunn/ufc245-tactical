@@ -93,7 +93,7 @@ class Config:
 
         return cls(
             llm_provider=os.getenv("LLM_PROVIDER", "ollama").lower(),
-            llm_model=os.getenv("LLM_MODEL", "llama3.1:8b"),
+            llm_model=os.getenv("LLM_MODEL", "qwen3:8b"),
             ollama_url=os.getenv("OLLAMA_URL", "http://ollama:11434"),
             ollama_timeout_seconds=_positive_float_env("OLLAMA_TIMEOUT_SECONDS", 180.0),
             ollama_context_length=_positive_int_env("OLLAMA_CONTEXT_LENGTH", 4096),

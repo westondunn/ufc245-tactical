@@ -147,6 +147,7 @@ def test_chat_text_passes_sdk_options_and_returns_content(tmp_path):
             {"role": "user", "content": "user prompt"},
         ],
         "stream": False,
+        "think": False,
         "keep_alive": "9m",
         "options": {
             "temperature": 0.35,

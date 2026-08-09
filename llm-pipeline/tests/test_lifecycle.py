@@ -5,6 +5,7 @@ import pytest
 import app
 import cli
 import scheduler
+from pipeline import orchestrator as orchestrator_module
 from pipeline.orchestrator import Orchestrator
 
 
@@ -56,6 +57,80 @@ def test_orchestrator_closes_on_exception():
     with pytest.raises(RuntimeError, match="boom"):
         with _orchestrator(provider, owns_provider=True):
             raise RuntimeError("boom")
+    assert provider.close_calls == 1
+
+
+def test_from_env_closes_created_provider_when_runner_setup_fails(monkeypatch):
+    provider = _ClosableProvider()
+    monkeypatch.setattr(
+        orchestrator_module.Config,
+        "from_env",
+        lambda: SimpleNamespace(),
+    )
+    monkeypatch.setattr(orchestrator_module, "get_provider", lambda _cfg: provider)
+
+    def fail_runner_setup():
+        raise RuntimeError("runner setup failed")
+
+    monkeypatch.setattr(
+        orchestrator_module.LRRunner,
+        "from_env",
+        fail_runner_setup,
+    )
+
+    with pytest.raises(RuntimeError, match="runner setup failed"):
+        Orchestrator.from_env(store=object())
+
+    assert provider.close_calls == 1
+
+
+def test_from_env_leaves_injected_provider_open_when_runner_setup_fails(monkeypatch):
+    provider = _ClosableProvider()
+    monkeypatch.setattr(
+        orchestrator_module.Config,
+        "from_env",
+        lambda: SimpleNamespace(),
+    )
+
+    def fail_runner_setup():
+        raise RuntimeError("runner setup failed")
+
+    monkeypatch.setattr(
+        orchestrator_module.LRRunner,
+        "from_env",
+        fail_runner_setup,
+    )
+
+    with pytest.raises(RuntimeError, match="runner setup failed"):
+        Orchestrator.from_env(store=object(), provider=provider)
+
+    assert provider.close_calls == 0
+
+
+def test_from_env_closes_transferred_provider_when_runner_setup_fails(monkeypatch):
+    provider = _ClosableProvider()
+    monkeypatch.setattr(
+        orchestrator_module.Config,
+        "from_env",
+        lambda: SimpleNamespace(),
+    )
+
+    def fail_runner_setup():
+        raise RuntimeError("runner setup failed")
+
+    monkeypatch.setattr(
+        orchestrator_module.LRRunner,
+        "from_env",
+        fail_runner_setup,
+    )
+
+    with pytest.raises(RuntimeError, match="runner setup failed"):
+        Orchestrator.from_env(
+            store=object(),
+            provider=provider,
+            owns_provider=True,
+        )
+
     assert provider.close_calls == 1
 
 
