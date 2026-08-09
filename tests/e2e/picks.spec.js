@@ -288,9 +288,11 @@ test.describe('Picks UI — widget rendering', () => {
     await expect(page.locator('#profileChipBtn')).toBeVisible();
     await expect(page.locator('#picksViewEvent')).toBeVisible();
 
-    // Default event is the nearest upcoming (or most recent if none). Either
-    // a .pick-fight widget or the empty placeholder must render.
-    const widgetOrEmpty = page.locator('.pick-fight, .picks-fights .picks-placeholder').first();
+    // Default event is the nearest upcoming (or most recent if none). An
+    // upcoming default renders .pick-fight widgets (or the empty placeholder);
+    // once every seeded card is in the past, the default is a history-state
+    // event and renders the results scoreboard instead — all three are valid.
+    const widgetOrEmpty = page.locator('.pick-fight, .picks-fights .picks-placeholder, .picks-event-history__rows').first();
     await expect(widgetOrEmpty).toBeVisible({ timeout: 8000 });
 
     // Hint line reflects open vs concluded counts (always populated after load)
