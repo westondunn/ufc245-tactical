@@ -64,6 +64,27 @@ ANTHROPIC_API_KEY=sk-ant-...
 
 Restart the pipeline service after editing `.env.local`.
 
+## Ollama SDK integration (local only)
+
+The local pipeline uses the official Ollama Python SDK. Configure generation with
+`OLLAMA_TIMEOUT_SECONDS` (default `180`), `OLLAMA_CONTEXT_LENGTH` (default `4096`),
+`OLLAMA_KEEP_ALIVE` (default `15m`), and `OLLAMA_GPU_CONCURRENCY` (default `1`).
+GPU calls from the local service and CLI containers share file-backed slots under
+the existing pipeline data volume, so generation is serialized by default while
+HTTP scraping and CPU feature work remain concurrent.
+
+Stage 1 extraction uses a Pydantic JSON Schema structured response. Stage 2 and
+all numeric prediction behavior are unchanged. Unit tests use fake SDK clients
+and need no Ollama server or GPU. The pipeline never pulls a model automatically.
+For an optional live smoke test, first confirm the configured model already exists
+with `docker compose exec ollama ollama list`, then run a single-event dry run:
+
+```bash
+docker compose run --rm pipeline-shell enrich --dry-run --event 99
+```
+
+This service is for local prediction and analysis; it is not deployed to Railway.
+
 ## Endpoints (when running as a server)
 
 - `GET http://localhost:8787/healthz` — health check

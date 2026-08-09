@@ -18,7 +18,8 @@ def build_scheduler(store: Store) -> BackgroundScheduler:
     sched = BackgroundScheduler(timezone="UTC")
 
     def job_enrich():
-        Orchestrator.from_env(store=store).run(dry_run=False)
+        with Orchestrator.from_env(store=store) as orchestrator:
+            orchestrator.run(dry_run=False)
 
     def job_drain():
         RailwaySync.from_env(store=store).drain_pending()

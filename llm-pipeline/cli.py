@@ -25,8 +25,8 @@ def _store() -> Store:
 
 
 def cmd_enrich(args) -> int:
-    orch = Orchestrator.from_env(store=_store())
-    result = orch.run(dry_run=args.dry_run, only_event=args.event)
+    with Orchestrator.from_env(store=_store()) as orch:
+        result = orch.run(dry_run=args.dry_run, only_event=args.event)
     print(json.dumps(result, indent=2, default=str))
     return 0 if result.get("status") in {"ok", "partial"} else 1
 

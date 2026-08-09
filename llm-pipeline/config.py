@@ -1,5 +1,6 @@
 """Environment-backed configuration. Validated on startup."""
 from __future__ import annotations
+import math
 import os
 from dataclasses import dataclass, field
 
@@ -21,6 +22,26 @@ def _int_env(name: str, default: int) -> int:
         raise ValueError(f"{name} must be an integer, got {raw!r}") from e
 
 
+def _positive_int_env(name: str, default: int) -> int:
+    value = _int_env(name, default)
+    if value < 1:
+        raise ValueError(f"{name} must be greater than zero")
+    return value
+
+
+def _positive_float_env(name: str, default: float) -> float:
+    raw = os.getenv(name)
+    if raw is None or raw.strip() == "":
+        return default
+    try:
+        value = float(raw)
+    except ValueError as e:
+        raise ValueError(f"{name} must be numeric, got {raw!r}") from e
+    if not math.isfinite(value) or value <= 0:
+        raise ValueError(f"{name} must be a finite number greater than zero")
+    return value
+
+
 SCRAPER_ENV_VARS: dict[str, str] = {
     "news": "ENABLE_SCRAPER_NEWS",
     "ufc_preview": "ENABLE_SCRAPER_UFC_PREVIEW",
@@ -33,6 +54,10 @@ class Config:
     llm_provider: str
     llm_model: str
     ollama_url: str
+    ollama_timeout_seconds: float
+    ollama_context_length: int
+    ollama_keep_alive: str
+    ollama_gpu_concurrency: int
     anthropic_api_key: str
     openai_api_key: str
 
@@ -70,6 +95,10 @@ class Config:
             llm_provider=os.getenv("LLM_PROVIDER", "ollama").lower(),
             llm_model=os.getenv("LLM_MODEL", "llama3.1:8b"),
             ollama_url=os.getenv("OLLAMA_URL", "http://ollama:11434"),
+            ollama_timeout_seconds=_positive_float_env("OLLAMA_TIMEOUT_SECONDS", 180.0),
+            ollama_context_length=_positive_int_env("OLLAMA_CONTEXT_LENGTH", 4096),
+            ollama_keep_alive=os.getenv("OLLAMA_KEEP_ALIVE", "15m").strip() or "15m",
+            ollama_gpu_concurrency=_positive_int_env("OLLAMA_GPU_CONCURRENCY", 1),
             anthropic_api_key=os.getenv("ANTHROPIC_API_KEY", ""),
             openai_api_key=os.getenv("OPENAI_API_KEY", ""),
             main_app_url=main_url.rstrip("/"),
