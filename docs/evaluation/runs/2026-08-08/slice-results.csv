@@ -1,0 +1,2 @@
+slice,metric,baseline,candidate,risk
+# No slice analysis was possible: no measured fold-level predictions exist to slice. Status: blocked.

@@ -1,0 +1,9 @@
+{
+  "evaluation_id": "eval-2026-08-08-blocked-baseline",
+  "status": "blocked",
+  "reason": "Calibration cannot be measured: no reproducible baseline model, no temporal fold manifest, no pinned dataset, and the published probability is LLM-generated (F-003), which the spec prohibits from being treated as calibrated.",
+  "calibration_slope": null,
+  "calibration_intercept": null,
+  "expected_calibration_error": null,
+  "reliability_table": null
+}
