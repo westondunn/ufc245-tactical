@@ -1,6 +1,9 @@
 services:
   ollama:
-    image: ollama/ollama:latest
+    # Pinned by registry digest for reproducibility (REPRO-1). Update
+    # deliberately, not implicitly. Digest matches ollama/ollama:latest as
+    # pulled 2026-08; re-pin intentionally when upgrading the runtime.
+    image: ollama/ollama@sha256:cd33c5656285ca365c9c5495fe0240a70aef642088c6427c461fd54b62f80ffb
     container_name: ufc-ollama
     volumes:
       - ollama_models:/root/.ollama
