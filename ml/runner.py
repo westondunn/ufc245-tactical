@@ -161,7 +161,6 @@ def _pit2_holds(snapshot: dict, ds) -> bool:
     mutated = copy.deepcopy(snapshot)
     if not mutated.get("events"):
         return True
-    last = max(mutated["events"], key=lambda e: e["date"])
     future_date = "9999-01-01"
     mutated["events"].append({"id": -1, "date": future_date, "name": "synthetic-future"})
     mutated["cards"]["-1"] = {"event": {"id": -1, "date": future_date}, "card": []}
