@@ -1,0 +1,313 @@
+spec_version: "1.0"
+name: "ufc245-tactical local forecasting improvement evaluation"
+repository: "westondunn/ufc245-tactical"
+baseline_review_commit: "0c3afc3fb48e37b1098f2febd1e86ec380cbc5a2"
+constraints:
+  local_inference_only: true
+  target_gpu_vram_gb: 12
+  cloud_llm_allowed: false
+  final_probability_may_be_generated_by_llm: false
+
+verdicts:
+  - promote
+  - shadow
+  - reject
+  - blocked
+
+scorecard:
+  scale:
+    min: 0
+    max: 5
+  domains:
+    - id: point_in_time_data_integrity
+      weight: 18
+      baseline_provisional_score: 1.5
+    - id: validation_and_experimental_design
+      weight: 15
+      baseline_provisional_score: 1.0
+    - id: winner_model_quality_and_calibration
+      weight: 15
+      baseline_provisional_score: 2.0
+    - id: ollama_evidence_pipeline
+      weight: 12
+      baseline_provisional_score: 2.5
+    - id: method_and_round_modeling
+      weight: 8
+      baseline_provisional_score: 1.0
+    - id: local_gpu_runtime
+      weight: 8
+      baseline_provisional_score: 2.5
+    - id: mlops_and_reproducibility
+      weight: 8
+      baseline_provisional_score: 2.0
+    - id: testing_and_quality_gates
+      weight: 8
+      baseline_provisional_score: 2.5
+    - id: observability
+      weight: 5
+      baseline_provisional_score: 2.0
+    - id: security_and_governance
+      weight: 3
+      baseline_provisional_score: 2.5
+
+hard_gates:
+  - id: PIT-1
+    name: "No known point-in-time leakage"
+    required: true
+    failure_verdict: reject
+  - id: PIT-2
+    name: "Future-data mutation tests pass"
+    required: true
+    failure_verdict: reject
+  - id: SPLIT-1
+    name: "Event-grouped temporal evaluation"
+    required: true
+    failure_verdict: reject
+  - id: SPLIT-2
+    name: "Final holdout untouched during development"
+    required: true
+    failure_verdict: reject
+  - id: SYM-1
+    name: "Mean corner-swap probability error"
+    operator: "<="
+    threshold: 0.01
+    required: true
+    failure_verdict: reject
+  - id: SYM-2
+    name: "P99 corner-swap probability error"
+    operator: "<="
+    threshold: 0.03
+    required: true
+    failure_verdict: reject
+  - id: EVID-1
+    name: "Every qualitative signal has an immutable source snapshot"
+    required: true
+    failure_verdict: reject
+  - id: EVID-2
+    name: "Every source predates the prediction cutoff"
+    required: true
+    failure_verdict: reject
+  - id: EVID-3
+    name: "Published evidence offsets validate"
+    operator: "=="
+    threshold: 1.0
+    required: true
+    failure_verdict: reject
+  - id: NUM-1
+    name: "Numeric probabilities are independent of Ollama"
+    required: true
+    failure_verdict: reject
+  - id: RUNTIME-1
+    name: "Full event card completes without GPU OOM"
+    required: true
+    failure_verdict: reject
+  - id: FALLBACK-1
+    name: "Ollama failure yields quantitative-only output"
+    required: true
+    failure_verdict: reject
+  - id: REPRO-1
+    name: "Complete artifact lineage recorded"
+    required: true
+    failure_verdict: reject
+  - id: TEST-1
+    name: "Required quality suites pass"
+    required: true
+    failure_verdict: reject
+
+winner_metrics:
+  primary:
+    - log_loss
+    - brier_score
+    - calibration_slope
+    - calibration_intercept
+    - expected_calibration_error
+  secondary:
+    - accuracy
+    - roc_auc
+  provisional_thresholds:
+    calibration_slope:
+      min: 0.80
+      max: 1.20
+    absolute_calibration_intercept_max: 0.10
+    expected_calibration_error_max: 0.07
+    recent_fold_relative_log_loss_regression_max: 0.10
+    bootstrap_probability_candidate_improves_log_loss_min: 0.80
+
+method_metrics:
+  - multiclass_log_loss
+  - multiclass_brier_score
+  - macro_f1
+  - per_class_precision
+  - per_class_recall
+
+round_metrics:
+  - ranked_probability_score
+  - conditional_round_mae
+  - time_dependent_brier_score
+
+required_slices:
+  - weight_class
+  - gender_division_when_supported
+  - main_event_status
+  - scheduled_rounds
+  - debutant_status
+  - historical_fight_count_band
+  - feature_completeness_band
+  - short_notice_status
+  - weight_class_change_status
+  - prediction_confidence_band
+  - qualitative_source_coverage
+
+extraction_metrics:
+  schema_validity_min: 0.995
+  evidence_offset_validity_required: 1.0
+  unsupported_signal_rate_max: 0.02
+  high_severity_precision_min: 0.90
+  relevance_precision_min: 0.90
+  fighter_assignment_accuracy_min: 0.98
+  required_metrics:
+    - relevance_precision
+    - relevance_recall
+    - fighter_assignment_accuracy
+    - signal_type_precision
+    - signal_type_recall
+    - signal_type_f1
+    - high_severity_precision
+    - unsupported_signal_rate
+    - evidence_exact_match_rate
+    - evidence_offset_validity
+    - negation_accuracy
+    - temporal_validity_accuracy
+    - schema_validity
+    - deterministic_repeat_agreement
+    - latency_p50_ms
+    - latency_p95_ms
+    - prompt_tokens
+    - completion_tokens
+
+runtime_metrics:
+  - gpu_model_residency
+  - peak_vram_mb
+  - gpu_queue_wait_p50_ms
+  - gpu_queue_wait_p95_ms
+  - extraction_latency_p50_ms
+  - extraction_latency_p95_ms
+  - prompt_tokens
+  - completion_tokens
+  - tokens_per_second
+  - model_load_duration_ms
+  - full_event_duration_ms
+  - oom_count
+  - cpu_offload_count
+  - retry_rate
+  - fallback_rate
+
+required_artifacts:
+  - evaluation-summary.md
+  - scorecard.json
+  - metric-comparison.csv
+  - calibration-report.json
+  - temporal-fold-results.csv
+  - slice-results.csv
+  - hard-gates.json
+  - runtime-profile.json
+  - artifact-manifest.json
+  - extraction-eval.json
+
+artifact_manifest_required_fields:
+  - evaluation_id
+  - base_commit
+  - candidate_commit
+  - database_snapshot_hash
+  - source_snapshot_hash
+  - feature_schema_hash
+  - fold_manifest_hash
+  - training_data_cutoff
+  - numeric_model_artifact_hashes
+  - stacker_artifact_hash
+  - calibrator_artifact_hash
+  - ollama_runtime_digest
+  - ollama_model_name
+  - ollama_model_digest
+  - prompt_hash
+  - extraction_schema_version
+  - hardware_profile
+  - execution_timestamp
+
+required_test_suites:
+  data:
+    - source_cutoff
+    - fight_stat_cutoff
+    - future_data_mutation
+    - event_fold_isolation
+    - fighter_identity
+    - feature_missingness_contract
+  model:
+    - corner_swap_invariance
+    - probability_range_and_sum
+    - deterministic_artifact_inference
+    - fold_local_preprocessing
+    - train_validation_id_disjointness
+    - calibrator_compatibility
+    - method_distribution_coherence
+  llm:
+    - structured_schema
+    - evidence_offsets
+    - entity_scope
+    - negation
+    - temporality
+    - prompt_injection_resistance
+    - cache_body_invalidation
+    - cache_prompt_invalidation
+    - cache_model_digest_invalidation
+    - extraction_transaction_failure
+  integration:
+    - historical_replay
+    - numeric_only_without_ollama
+    - frozen_numeric_with_narrative
+    - prediction_lineage
+    - result_reconciliation
+    - model_rollback
+  capacity:
+    - full_event_12gb_gpu
+    - gpu_queue_backpressure
+    - ollama_restart_recovery
+    - malformed_response_recovery
+    - pending_sync_recovery
+
+promotion_logic:
+  reject_when:
+    - any_required_hard_gate_fails
+    - known_point_in_time_leakage
+    - llm_changes_numeric_probability
+    - artifact_lineage_incomplete
+    - final_holdout_used_for_tuning
+  blocked_when:
+    - required_data_unavailable
+    - target_hardware_unavailable
+    - baseline_cannot_be_reproduced
+    - required_source_timestamps_unavailable
+  shadow_when:
+    - hard_gates_pass_but_sample_size_is_insufficient
+    - metrics_are_directionally_positive_but_confidence_is_low
+    - recent_fold_regression_requires_more_observation
+  promote_when:
+    - all_hard_gates_pass
+    - temporal_log_loss_improves_or_approved_noninferiority_case
+    - brier_score_within_tolerance
+    - calibration_within_thresholds
+    - no_material_slice_regression
+    - runtime_within_12gb_constraint
+    - artifacts_reproducible
+
+agent_rules:
+  - "Do not claim improvement from training metrics."
+  - "Do not use shuffled cross-validation as promotion evidence."
+  - "Do not use post-cutoff sources or statistics."
+  - "Do not treat LLM confidence as calibrated probability."
+  - "Do not allow narrative generation to modify numeric predictions."
+  - "Do not count syndicated articles as independent corroboration."
+  - "Do not hide slice regressions behind aggregate gains."
+  - "Do not tune against the final holdout."
+  - "Do not mark missing evidence as passed."
+  - "Do not recommend a larger local model without measured quality and runtime evidence."
