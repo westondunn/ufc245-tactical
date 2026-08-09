@@ -33,3 +33,8 @@ def test_corner_swap_error_is_measured(snapshot_file, tmp_path):
     run_evaluation(snap, out_dir=out, min_train_events=1, step=1, n_boot=25, seed=5)
     gates = {g["id"]: g for g in json.loads((out / "hard-gates.json").read_text())["gates"]}
     assert "mean_swap_error" in gates["SYM-1"]["evidence_detail"]
+
+
+def test_cli_module_exposes_main():
+    from ml.__main__ import main
+    assert callable(main)
