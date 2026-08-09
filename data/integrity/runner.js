@@ -14,6 +14,18 @@ const defaultScanners = require('./scanners');
 
 function newRunId() { return 'int-' + crypto.randomBytes(6).toString('hex'); }
 
+// Monotonic ISO timestamps. Auto-resolve compares `last_seen_at < runStartAt`
+// strictly, so two scans landing in the same millisecond (common back-to-back
+// in-process, e.g. the test suite or an admin double-trigger) would silently
+// skip resolution. Bump equal timestamps by 1ms to keep every stamp unique.
+let _lastTs = 0;
+function nowIso() {
+  let t = Date.now();
+  if (t <= _lastTs) t = _lastTs + 1;
+  _lastTs = t;
+  return new Date(t).toISOString();
+}
+
 function pRun(sql, params) {
   try { return Promise.resolve(db.run(sql, params)); }
   catch (e) { return Promise.reject(e); }
@@ -29,7 +41,7 @@ function pAllRows(sql, params) {
 
 async function runIntegrityScan({ scanners = defaultScanners, runId } = {}) {
   const run_id = runId || newRunId();
-  const runStartAt = new Date().toISOString();
+  const runStartAt = nowIso();
 
   let opened = 0;
   let refreshed = 0;
@@ -50,7 +62,7 @@ async function runIntegrityScan({ scanners = defaultScanners, runId } = {}) {
       continue;
     }
 
-    const now = new Date().toISOString();
+    const now = nowIso();
     for (const { subjectId, details } of findings) {
       const detailsJson = JSON.stringify(details ?? null);
 
@@ -97,7 +109,7 @@ async function runIntegrityScan({ scanners = defaultScanners, runId } = {}) {
     `, [...catList, runStartAt]);
 
     if (toResolve.length > 0) {
-      const resolvedAt = new Date().toISOString();
+      const resolvedAt = nowIso();
       const ids = toResolve.map(r => r.id);
       const idPh = ids.map(() => '?').join(', ');
 
