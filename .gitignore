@@ -44,3 +44,7 @@ llm-pipeline/.pytest_cache/
 llm-pipeline/__pycache__/
 llm-pipeline/**/__pycache__/
 tmp-world.geojson
+
+# Local Ollama implementation planning files
+/.github/prompts/implement-ollama-sdk-provider.prompt.md
+/docs/ollama-sdk-integration.md
