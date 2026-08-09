@@ -8,7 +8,7 @@ def test_config_defaults(monkeypatch):
     monkeypatch.setenv("PREDICTION_SERVICE_KEY", "secret")
     cfg = Config.from_env()
     assert cfg.llm_provider == "ollama"
-    assert cfg.llm_model == "llama3.1:8b"
+    assert cfg.llm_model == "qwen3:8b"
     assert cfg.ollama_timeout_seconds == 180.0
     assert cfg.ollama_context_length == 4096
     assert cfg.ollama_keep_alive == "15m"
