@@ -1,0 +1,27 @@
+{
+  "evaluation_id": "eval-2026-08-08-blocked-baseline",
+  "base_commit": "0c3afc3fb48e37b1098f2febd1e86ec380cbc5a2",
+  "candidate_commit": "c9819abe26d21f1d086606f1a6e426149f5866e0",
+  "database_snapshot_hash": null,
+  "source_snapshot_hash": null,
+  "feature_schema_hash": null,
+  "fold_manifest_hash": null,
+  "training_data_cutoff": null,
+  "numeric_model_artifact_hashes": null,
+  "stacker_artifact_hash": null,
+  "calibrator_artifact_hash": null,
+  "ollama_runtime_digest": "sha256:cd33c5656285ca365c9c5495fe0240a70aef642088c6427c461fd54b62f80ffb",
+  "ollama_runtime_image": "ollama/ollama:latest (floating tag; container image sha256:e009e15e7221cc285c29499de8db99cf2408233131cbf278c8376597bf16bc0d)",
+  "ollama_model_name": "llama3.1:8b (also present: qwen3:8b, nomic-embed-text:latest)",
+  "ollama_model_digest": "llama3.1:8b=46e0c10c039e; qwen3:8b=500a1f067a9f782620b40bee6f7b0c89e17ae61f686b92c24933e4ca4b2b8b41",
+  "prompt_hash": null,
+  "extraction_schema_version": null,
+  "hardware_profile": {
+    "gpu": "NVIDIA GeForce RTX 4070 SUPER",
+    "vram_mib": 12282,
+    "driver_version": "595.95",
+    "os": "Windows 11 Home 10.0.26200"
+  },
+  "execution_timestamp": "2026-08-08",
+  "null_field_reason": "No immutable database snapshot, source snapshot, dataset manifest, temporal fold manifest, trained model artifacts, stacker, or calibrator exist in the repository at either commit. Nulls are recorded as missing evidence, not as passes (spec rule: 'Do not mark missing evidence as passed')."
+}

@@ -1,0 +1,2 @@
+fold_id,train_event_range,validation_event_range,baseline_log_loss,candidate_log_loss,baseline_brier,candidate_brier
+# No temporal folds exist. The repository at both commits uses shuffled StratifiedKFold (ufc245-predictions/model/__init__.py:336); an event-grouped walk-forward evaluator has not been built. Status: blocked.

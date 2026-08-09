@@ -1,0 +1,9 @@
+metric,baseline,candidate,delta,confidence_interval,decision
+log_loss,blocked,blocked,NA,NA,blocked
+brier_score,blocked,blocked,NA,NA,blocked
+calibration_slope,blocked,blocked,NA,NA,blocked
+calibration_intercept,blocked,blocked,NA,NA,blocked
+expected_calibration_error,blocked,blocked,NA,NA,blocked
+accuracy,blocked,blocked,NA,NA,blocked
+roc_auc,blocked,blocked,NA,NA,blocked
+# No metrics were computed. Baseline is not reproducible (no dataset manifest, no temporal fold tooling, no pinned snapshot) and the candidate commit contains no prediction-related changes. Values are deliberately not fabricated per agent rule "Do not claim improvement without reproducible artifacts and measured evidence."

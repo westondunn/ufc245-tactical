@@ -1,0 +1,26 @@
+{
+  "evaluation_id": "eval-2026-08-08-blocked-baseline",
+  "status": "not_executed",
+  "reason": "No full-event capacity run was performed: no pinned database snapshot exists to select an event card from, and the full_event_12gb_gpu capacity suite does not exist. Only static hardware facts were verified.",
+  "verified_hardware": {
+    "gpu_model": "NVIDIA GeForce RTX 4070 SUPER",
+    "vram_total_mib": 12282,
+    "driver_version": "595.95",
+    "ollama_container": "running (26h uptime, healthy), port 11434"
+  },
+  "gpu_model_residency": null,
+  "peak_vram_mb": null,
+  "gpu_queue_wait_p50_ms": null,
+  "gpu_queue_wait_p95_ms": null,
+  "extraction_latency_p50_ms": null,
+  "extraction_latency_p95_ms": null,
+  "prompt_tokens": null,
+  "completion_tokens": null,
+  "tokens_per_second": null,
+  "model_load_duration_ms": null,
+  "full_event_duration_ms": null,
+  "oom_count": null,
+  "cpu_offload_count": null,
+  "retry_rate": null,
+  "fallback_rate": null
+}

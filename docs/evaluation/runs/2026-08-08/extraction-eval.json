@@ -1,0 +1,6 @@
+{
+  "evaluation_id": "eval-2026-08-08-blocked-baseline",
+  "status": "not_applicable_and_blocked",
+  "reason": "Not applicable: no prompt, schema, model, retrieval, source-handling, or cache changes exist between base and candidate commits (the diff touches only CI workflows, Playwright dependencies, and documentation). Additionally blocked: no frozen extraction golden set exists in the repository to run.",
+  "metrics": null
+}

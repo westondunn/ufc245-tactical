@@ -1,0 +1,20 @@
+{
+  "evaluation_id": "eval-2026-08-08-blocked-baseline",
+  "note": "Per agent-evaluation-prompt.md rule 9, missing evidence is 'blocked', not 'passed'. Gates marked 'fail' have direct static code evidence at the candidate commit; gates marked 'blocked' cannot be executed because the required test infrastructure, snapshots, or artifacts do not exist in the repository.",
+  "gates": [
+    {"id": "PIT-1", "name": "No known point-in-time leakage", "result": "fail", "evidence": "F-001: llm-pipeline/pipeline/train.py:46-50 fetches career-stats with as_of, but per forecasting-evaluation-report.md the response also carries current fighter profile fields consumed by the feature builder; no point-in-time feature service exists to refute this."},
+    {"id": "PIT-2", "name": "Future-data mutation tests pass", "result": "blocked", "evidence": "No future_data_mutation test suite exists anywhere in tests/, ufc245-predictions/, or llm-pipeline/ (grep returned no matches)."},
+    {"id": "SPLIT-1", "name": "Event-grouped temporal evaluation", "result": "fail", "evidence": "ufc245-predictions/model/__init__.py:336 uses StratifiedKFold(shuffle=True, random_state=42); no event-grouped walk-forward evaluator exists."},
+    {"id": "SPLIT-2", "name": "Final holdout untouched during development", "result": "blocked", "evidence": "No holdout definition, fold manifest, or dataset manifest exists to verify."},
+    {"id": "SYM-1", "name": "Mean corner-swap probability error <= 0.01", "result": "blocked", "evidence": "No corner_swap_invariance test exists; no trained artifacts against a pinned snapshot to measure against."},
+    {"id": "SYM-2", "name": "P99 corner-swap probability error <= 0.03", "result": "blocked", "evidence": "Same as SYM-1."},
+    {"id": "EVID-1", "name": "Every qualitative signal has an immutable source snapshot", "result": "blocked", "evidence": "F-004: llm-pipeline signal records carry no source_snapshot_id; no immutable snapshot store exists to audit."},
+    {"id": "EVID-2", "name": "Every source predates the prediction cutoff", "result": "blocked", "evidence": "F-017: published_at / prediction_cutoff are not first-class fields; cannot be validated."},
+    {"id": "EVID-3", "name": "Published evidence offsets validate == 1.0", "result": "blocked", "evidence": "Extraction schema has no evidence_start/evidence_end offsets to validate."},
+    {"id": "NUM-1", "name": "Numeric probabilities are independent of Ollama", "result": "fail", "evidence": "F-003: llm-pipeline/prompts/reason.md:11 asks the LLM for win_probability; llm-pipeline/pipeline/reason.py:48,89 parses and publishes it as the final probability."},
+    {"id": "RUNTIME-1", "name": "Full event card completes without GPU OOM", "result": "blocked", "evidence": "Target GPU present (RTX 4070 SUPER 12GB, driver 595.95) but no full_event_12gb_gpu capacity test exists and no pinned database snapshot to run a full card against."},
+    {"id": "FALLBACK-1", "name": "Ollama failure yields quantitative-only output", "result": "blocked", "evidence": "No numeric_only_without_ollama integration test exists; not executed in this run."},
+    {"id": "REPRO-1", "name": "Complete artifact lineage recorded", "result": "fail", "evidence": "F-011: docker-compose uses ollama/ollama:latest (floating tag); model configured by mutable name; no registry records feature_schema_hash, fold_manifest_hash, prompt_hash, or calibrator artifacts."},
+    {"id": "TEST-1", "name": "Required quality suites pass", "result": "blocked", "evidence": "None of the required_test_suites in agent-evaluation-spec.yaml (source_cutoff, future_data_mutation, event_fold_isolation, corner_swap_invariance, historical_replay, full_event_12gb_gpu, etc.) exist in the repository."}
+  ]
+}

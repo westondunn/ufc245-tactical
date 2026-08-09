@@ -1,0 +1,19 @@
+{
+  "evaluation_id": "eval-2026-08-08-blocked-baseline",
+  "verdict": "blocked",
+  "scale": {"min": 0, "max": 5},
+  "note": "Scores are the provisional baseline scores from agent-evaluation-spec.yaml, carried forward unchanged because no measured evaluation could be executed (verdict: blocked). The candidate commit contains no prediction-related code changes versus the base commit, so no domain score can move on measured evidence.",
+  "domains": [
+    {"id": "point_in_time_data_integrity", "weight": 18, "score": 1.5, "basis": "provisional; F-001 leakage path still present"},
+    {"id": "validation_and_experimental_design", "weight": 15, "score": 1.0, "basis": "provisional; shuffled StratifiedKFold confirmed at candidate commit"},
+    {"id": "winner_model_quality_and_calibration", "weight": 15, "score": 2.0, "basis": "provisional; unmeasured"},
+    {"id": "ollama_evidence_pipeline", "weight": 12, "score": 2.5, "basis": "provisional; unchanged between commits"},
+    {"id": "method_and_round_modeling", "weight": 8, "score": 1.0, "basis": "provisional; LLM still emits single method/round"},
+    {"id": "local_gpu_runtime", "weight": 8, "score": 2.5, "basis": "provisional; target 12GB GPU verified present, no capacity test run"},
+    {"id": "mlops_and_reproducibility", "weight": 8, "score": 2.0, "basis": "provisional; floating ollama:latest tag confirmed"},
+    {"id": "testing_and_quality_gates", "weight": 8, "score": 2.5, "basis": "provisional; zero of the 14 required gate suites exist"},
+    {"id": "observability", "weight": 5, "score": 2.0, "basis": "provisional; unmeasured"},
+    {"id": "security_and_governance", "weight": 3, "score": 2.5, "basis": "provisional; unmeasured"}
+  ],
+  "weighted_total": 36.7
+}
