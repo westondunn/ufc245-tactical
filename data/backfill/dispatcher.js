@@ -231,6 +231,11 @@ async function runBackfill({ runId, dryRun = false, scraperMocks = null } = {}) 
 
       const current = ctx[gap.column] != null ? ctx[gap.column] : null;
 
+      // No identity link yet → the fighter-page URL would be /fighter-details/null.
+      // Skip; the ufcstats_hash gap's auto-link cascade fills these same columns
+      // in the same run once the hash resolves.
+      if (specEntry.source === 'ufcstats-fighter-page' && !ctx.ufcstats_hash) continue;
+
       const srcResult = await fetchOnce(specEntry.source, ctx);
       if (!srcResult) continue;
 
