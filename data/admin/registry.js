@@ -73,6 +73,17 @@ const FIELD_TYPES = {
     if (u.protocol !== 'https:') throw new Error('expected https URL');
     return s;
   },
+  json: v => {
+    if (v === '' || v === null || v === undefined) return null;
+    if (typeof v === 'object') return JSON.stringify(v);
+    const s = String(v).trim();
+    try {
+      JSON.parse(s);
+      return s;
+    } catch {
+      throw new Error('expected valid JSON');
+    }
+  },
   outcomeStatus: v => {
     if (v === '' || v === null || v === undefined) return null;
     const s = String(v).trim();
@@ -148,6 +159,35 @@ const TABLES = {
   round_stats: {
     keyColumns: ['fight_id', 'fighter_id', 'round'],
     fields: fields(roundStats.map(name => [name, 'int'])),
+  },
+  walkout_playlists: {
+    keyColumns: ['event_id', 'fighter_id'],
+    fields: fields([
+      ['snapshot_mode', 'text'],
+      ['stats_snapshot_json', 'json'],
+      ['source', 'text'],
+      ['source_url', 'url'],
+      ['captured_at', 'datetime'],
+      ['confidence', 'text'],
+      ['review_status', 'text'],
+    ]),
+  },
+  walkout_playlist_tracks: {
+    keyColumns: ['id'],
+    fields: fields([
+      ['event_id', 'int'],
+      ['fighter_id', 'int'],
+      ['track_order', 'int'],
+      ['song_title', 'text'],
+      ['artist', 'text'],
+      ['album', 'text'],
+      ['duration_sec', 'int'],
+      ['source', 'text'],
+      ['source_url', 'url'],
+      ['captured_at', 'datetime'],
+      ['confidence', 'text'],
+      ['review_status', 'text'],
+    ]),
   },
 };
 

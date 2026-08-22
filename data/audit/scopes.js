@@ -88,6 +88,32 @@ const SCOPES = {
       idColumn: 'predictions.id',
     }),
   },
+  walkout_playlists: {
+    'all': () => ({ joinSql: 'walkout_playlists', idColumn: `walkout_playlists.event_id || ':' || walkout_playlists.fighter_id` }),
+    'upcoming-roster': () => ({
+      joinSql: `walkout_playlists
+        JOIN events ON events.id = walkout_playlists.event_id
+        WHERE events.date >= date('now')`,
+      idColumn: `walkout_playlists.event_id || ':' || walkout_playlists.fighter_id`,
+    }),
+    'event': (eventId) => ({
+      joinSql: `walkout_playlists WHERE walkout_playlists.event_id = ${eventId}`,
+      idColumn: `walkout_playlists.event_id || ':' || walkout_playlists.fighter_id`,
+    }),
+  },
+  walkout_playlist_tracks: {
+    'all': () => ({ joinSql: 'walkout_playlist_tracks', idColumn: 'walkout_playlist_tracks.id' }),
+    'upcoming-roster': () => ({
+      joinSql: `walkout_playlist_tracks
+        JOIN events ON events.id = walkout_playlist_tracks.event_id
+        WHERE events.date >= date('now')`,
+      idColumn: 'walkout_playlist_tracks.id',
+    }),
+    'event': (eventId) => ({
+      joinSql: `walkout_playlist_tracks WHERE walkout_playlist_tracks.event_id = ${eventId}`,
+      idColumn: 'walkout_playlist_tracks.id',
+    }),
+  },
 };
 
 function resolveScope(table, scopeName) {

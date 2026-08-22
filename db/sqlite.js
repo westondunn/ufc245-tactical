@@ -169,6 +169,42 @@ const SCHEMA = `
     raw_json TEXT
   );
   CREATE INDEX IF NOT EXISTS idx_official_outcomes_event ON official_fight_outcomes(event_id);
+  CREATE TABLE IF NOT EXISTS walkout_playlists (
+    event_id INTEGER NOT NULL REFERENCES events(id),
+    fighter_id INTEGER NOT NULL REFERENCES fighters(id),
+    snapshot_mode TEXT NOT NULL DEFAULT 'frozen_event',
+    stats_snapshot_json TEXT,
+    source TEXT,
+    source_url TEXT,
+    captured_at TEXT NOT NULL,
+    confidence TEXT NOT NULL DEFAULT 'review',
+    review_status TEXT NOT NULL DEFAULT 'pending',
+    PRIMARY KEY (event_id, fighter_id)
+  );
+  CREATE TABLE IF NOT EXISTS walkout_playlist_tracks (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    event_id INTEGER NOT NULL,
+    fighter_id INTEGER NOT NULL,
+    track_order INTEGER NOT NULL,
+    song_title TEXT NOT NULL,
+    artist TEXT NOT NULL,
+    album TEXT,
+    duration_sec INTEGER,
+    source TEXT,
+    source_url TEXT,
+    captured_at TEXT NOT NULL,
+    confidence TEXT NOT NULL DEFAULT 'review',
+    review_status TEXT NOT NULL DEFAULT 'pending',
+    FOREIGN KEY (event_id, fighter_id)
+      REFERENCES walkout_playlists(event_id, fighter_id)
+      ON DELETE CASCADE,
+    UNIQUE (event_id, fighter_id, track_order)
+  );
+  CREATE INDEX IF NOT EXISTS idx_walkout_playlists_event ON walkout_playlists(event_id);
+  CREATE INDEX IF NOT EXISTS idx_walkout_playlists_fighter ON walkout_playlists(fighter_id);
+  CREATE INDEX IF NOT EXISTS idx_walkout_tracks_event ON walkout_playlist_tracks(event_id);
+  CREATE INDEX IF NOT EXISTS idx_walkout_tracks_fighter ON walkout_playlist_tracks(fighter_id);
+  CREATE INDEX IF NOT EXISTS idx_walkout_tracks_order ON walkout_playlist_tracks(event_id, fighter_id, track_order);
   CREATE TABLE IF NOT EXISTS db_meta (
     key TEXT PRIMARY KEY,
     value TEXT
@@ -399,6 +435,62 @@ function seedFromFile(seedPath) {
     }
     insRound.free();
   }
+
+  const insWalkoutPlaylist = db.prepare(
+    'INSERT OR REPLACE INTO walkout_playlists (event_id,fighter_id,snapshot_mode,stats_snapshot_json,source,source_url,captured_at,confidence,review_status) VALUES (?,?,?,?,?,?,?,?,?)'
+  );
+  for (const p of seed.walkout_playlists || []) {
+    if (!p || !Number.isFinite(+p.event_id) || !Number.isFinite(+p.fighter_id)) continue;
+    const snapshotJson = p.stats_snapshot_json != null
+      ? String(p.stats_snapshot_json)
+      : (p.stats_snapshot ? JSON.stringify(p.stats_snapshot) : null);
+    insWalkoutPlaylist.run([
+      p.event_id,
+      p.fighter_id,
+      p.snapshot_mode || 'frozen_event',
+      snapshotJson,
+      p.source || null,
+      p.source_url || null,
+      p.captured_at || new Date().toISOString(),
+      p.confidence || 'review',
+      p.review_status || 'pending',
+    ]);
+  }
+  insWalkoutPlaylist.free();
+
+  const insWalkoutTrack = db.prepare(
+    `INSERT INTO walkout_playlist_tracks
+     (event_id,fighter_id,track_order,song_title,artist,album,duration_sec,source,source_url,captured_at,confidence,review_status)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(event_id,fighter_id,track_order) DO UPDATE SET
+       song_title = excluded.song_title,
+       artist = excluded.artist,
+       album = excluded.album,
+       duration_sec = excluded.duration_sec,
+       source = excluded.source,
+       source_url = excluded.source_url,
+       captured_at = excluded.captured_at,
+       confidence = excluded.confidence,
+       review_status = excluded.review_status`
+  );
+  for (const t of seed.walkout_playlist_tracks || []) {
+    if (!t || !Number.isFinite(+t.event_id) || !Number.isFinite(+t.fighter_id)) continue;
+    insWalkoutTrack.run([
+      t.event_id,
+      t.fighter_id,
+      Number.isFinite(+t.track_order) ? +t.track_order : 1,
+      t.song_title || 'Unknown',
+      t.artist || 'Unknown',
+      t.album || null,
+      t.duration_sec == null ? null : +t.duration_sec,
+      t.source || null,
+      t.source_url || null,
+      t.captured_at || new Date().toISOString(),
+      t.confidence || 'review',
+      t.review_status || 'pending',
+    ]);
+  }
+  insWalkoutTrack.free();
 
   db.run("INSERT OR REPLACE INTO db_meta (key,value) VALUES ('seeded_at','" + new Date().toISOString() + "')");
 
@@ -773,6 +865,89 @@ function upsertFightStats(s) {
     [s.fight_id,s.fighter_id,s.sig_str_landed||0,s.sig_str_attempted||0,s.total_str_landed||0,s.total_str_attempted||0,s.takedowns_landed||0,s.takedowns_attempted||0,s.knockdowns||0,s.sub_attempts||0,s.control_time_sec||0,s.head_landed||0,s.body_landed||0,s.leg_landed||0,s.distance_landed||0,s.clinch_landed||0,s.ground_landed||0]);
 }
 
+function upsertWalkoutPlaylist(p) {
+  const snapshotJson = p.stats_snapshot_json != null
+    ? String(p.stats_snapshot_json)
+    : (p.stats_snapshot ? JSON.stringify(p.stats_snapshot) : null);
+  run(
+    `INSERT OR REPLACE INTO walkout_playlists
+     (event_id,fighter_id,snapshot_mode,stats_snapshot_json,source,source_url,captured_at,confidence,review_status)
+     VALUES (?,?,?,?,?,?,?,?,?)`,
+    [
+      p.event_id,
+      p.fighter_id,
+      p.snapshot_mode || 'frozen_event',
+      snapshotJson,
+      p.source || null,
+      p.source_url || null,
+      p.captured_at || new Date().toISOString(),
+      p.confidence || 'review',
+      p.review_status || 'pending',
+    ]
+  );
+}
+
+function upsertWalkoutTrack(t) {
+  run(
+    `INSERT INTO walkout_playlist_tracks
+     (event_id,fighter_id,track_order,song_title,artist,album,duration_sec,source,source_url,captured_at,confidence,review_status)
+     VALUES (?,?,?,?,?,?,?,?,?,?,?,?)
+     ON CONFLICT(event_id,fighter_id,track_order) DO UPDATE SET
+       song_title = excluded.song_title,
+       artist = excluded.artist,
+       album = excluded.album,
+       duration_sec = excluded.duration_sec,
+       source = excluded.source,
+       source_url = excluded.source_url,
+       captured_at = excluded.captured_at,
+       confidence = excluded.confidence,
+       review_status = excluded.review_status`,
+    [
+      t.event_id,
+      t.fighter_id,
+      Number.isFinite(+t.track_order) ? +t.track_order : 1,
+      t.song_title || 'Unknown',
+      t.artist || 'Unknown',
+      t.album || null,
+      t.duration_sec == null ? null : +t.duration_sec,
+      t.source || null,
+      t.source_url || null,
+      t.captured_at || new Date().toISOString(),
+      t.confidence || 'review',
+      t.review_status || 'pending',
+    ]
+  );
+}
+
+function replaceWalkoutPlaylist(bundle) {
+  const eventId = Number(bundle.event_id);
+  const fighterId = Number(bundle.fighter_id);
+  if (!Number.isFinite(eventId) || !Number.isFinite(fighterId)) {
+    const err = new Error('invalid event_id or fighter_id');
+    err.code = 'invalid_walkout_key';
+    throw err;
+  }
+  const tracks = Array.isArray(bundle.tracks) ? bundle.tracks : [];
+  run('BEGIN');
+  try {
+    upsertWalkoutPlaylist(bundle);
+    run('DELETE FROM walkout_playlist_tracks WHERE event_id = ? AND fighter_id = ?', [eventId, fighterId]);
+    tracks.forEach((t, idx) => {
+      upsertWalkoutTrack({
+        ...t,
+        event_id: eventId,
+        fighter_id: fighterId,
+        track_order: Number.isFinite(+t.track_order) ? +t.track_order : (idx + 1),
+      });
+    });
+    run('COMMIT');
+  } catch (err) {
+    try { run('ROLLBACK'); } catch {}
+    throw err;
+  }
+  return getFighterEventWalkoutPlaylist(eventId, fighterId);
+}
+
 function nextId(table) {
   const row = oneRow('SELECT MAX(id) as m FROM ' + table);
   return (row && row.m ? row.m : 0) + 1;
@@ -785,6 +960,8 @@ function getDbStats() {
     fights: (oneRow('SELECT COUNT(*) as c FROM fights') || {}).c || 0,
     fight_stats: (oneRow('SELECT COUNT(*) as c FROM fight_stats') || {}).c || 0,
     official_outcomes: (oneRow('SELECT COUNT(*) as c FROM official_fight_outcomes') || {}).c || 0,
+    walkout_playlists: (oneRow('SELECT COUNT(*) as c FROM walkout_playlists') || {}).c || 0,
+    walkout_tracks: (oneRow('SELECT COUNT(*) as c FROM walkout_playlist_tracks') || {}).c || 0,
     persistent: !!dbPath,
     dbPath: dbPath || ':memory:',
     last_scrape: (oneRow("SELECT value FROM db_meta WHERE key = 'last_scrape'") || {}).value || null
@@ -805,6 +982,84 @@ function getFighterEvents(fighterId) {
   return allRows(
     'SELECT DISTINCT e.id, e.number, e.name, e.date, e.venue, e.city, f.id as fight_id, f.card_position, f.method, f.round, f.time, f.winner_id, f.is_title, f.is_main, fr.name as red_name, fr.headshot_url as red_headshot_url, fr.body_url as red_body_url, fb.name as blue_name, fb.headshot_url as blue_headshot_url, fb.body_url as blue_body_url, fr.id as red_id, fb.id as blue_id FROM events e JOIN fights f ON f.event_id = e.id JOIN fighters fr ON f.red_fighter_id = fr.id JOIN fighters fb ON f.blue_fighter_id = fb.id WHERE f.red_fighter_id = ? OR f.blue_fighter_id = ? ORDER BY e.date DESC, f.card_position ASC',
     [fighterId, fighterId]);
+}
+
+function getEventWalkouts(eventId) {
+  return allRows(
+    `SELECT
+       wp.event_id, wp.fighter_id, wp.snapshot_mode, wp.stats_snapshot_json,
+       wp.source, wp.source_url, wp.captured_at, wp.confidence, wp.review_status,
+       f.name AS fighter_name, f.nickname AS fighter_nickname, f.headshot_url AS fighter_headshot_url, f.body_url AS fighter_body_url,
+       wt.id AS track_id, wt.track_order, wt.song_title, wt.artist, wt.album, wt.duration_sec,
+       wt.source AS track_source, wt.source_url AS track_source_url, wt.captured_at AS track_captured_at,
+       wt.confidence AS track_confidence, wt.review_status AS track_review_status
+     FROM walkout_playlists wp
+     JOIN fighters f ON f.id = wp.fighter_id
+     LEFT JOIN walkout_playlist_tracks wt ON wt.event_id = wp.event_id AND wt.fighter_id = wp.fighter_id
+     WHERE wp.event_id = ?
+     ORDER BY f.name ASC, wt.track_order ASC`,
+    [eventId]
+  );
+}
+
+function getFighterWalkouts(fighterId, eventId = null) {
+  const params = [fighterId];
+  let where = 'wp.fighter_id = ?';
+  if (eventId != null) {
+    where += ' AND wp.event_id = ?';
+    params.push(eventId);
+  }
+  return allRows(
+    `SELECT
+       wp.event_id, wp.fighter_id, wp.snapshot_mode, wp.stats_snapshot_json,
+       wp.source, wp.source_url, wp.captured_at, wp.confidence, wp.review_status,
+       e.name AS event_name, e.number AS event_number, e.date AS event_date,
+       wt.id AS track_id, wt.track_order, wt.song_title, wt.artist, wt.album, wt.duration_sec,
+       wt.source AS track_source, wt.source_url AS track_source_url, wt.captured_at AS track_captured_at,
+       wt.confidence AS track_confidence, wt.review_status AS track_review_status
+     FROM walkout_playlists wp
+     JOIN events e ON e.id = wp.event_id
+     LEFT JOIN walkout_playlist_tracks wt ON wt.event_id = wp.event_id AND wt.fighter_id = wp.fighter_id
+     WHERE ${where}
+     ORDER BY e.date DESC, wp.event_id DESC, wt.track_order ASC`,
+    params
+  );
+}
+
+function getFighterEventWalkoutPlaylist(eventId, fighterId) {
+  const rows = getFighterWalkouts(fighterId, eventId);
+  if (!rows.length) return null;
+  const head = rows[0];
+  let snapshot = null;
+  if (head.stats_snapshot_json) {
+    try { snapshot = JSON.parse(head.stats_snapshot_json); } catch { snapshot = null; }
+  }
+  return {
+    event_id: head.event_id,
+    fighter_id: head.fighter_id,
+    snapshot_mode: head.snapshot_mode || 'frozen_event',
+    stats_snapshot: snapshot,
+    source: head.source || null,
+    source_url: head.source_url || null,
+    captured_at: head.captured_at || null,
+    confidence: head.confidence || 'review',
+    review_status: head.review_status || 'pending',
+    tracks: rows
+      .filter(r => r.track_id != null)
+      .map(r => ({
+        id: r.track_id,
+        track_order: r.track_order,
+        song_title: r.song_title,
+        artist: r.artist,
+        album: r.album,
+        duration_sec: r.duration_sec,
+        source: r.track_source || null,
+        source_url: r.track_source_url || null,
+        captured_at: r.track_captured_at || null,
+        confidence: r.track_confidence || 'review',
+        review_status: r.track_review_status || 'pending',
+      })),
+  };
 }
 
 function getEventCard(eventId) {
@@ -2501,6 +2756,8 @@ module.exports = {
   searchFighters, getFighter, getFighterEvents,
   getEventCard, getEvent, getEventByNumber, getFight, getAllEvents,
   getCareerStats, getHeadToHead, getFighterRecord,
+  upsertWalkoutPlaylist, upsertWalkoutTrack, replaceWalkoutPlaylist,
+  getEventWalkouts, getFighterWalkouts, getFighterEventWalkoutPlaylist,
   upsertOfficialOutcome, getOfficialOutcome, getOfficialOutcomesForEvent,
   getRoundStats, getFightWithRounds, getStatLeaders, getAllFighters, getFunFacts,
   upsertFighter, upsertEvent, upsertFight, upsertFightStats, voidPicksOrphanedByCardChange,

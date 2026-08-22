@@ -834,6 +834,8 @@ output = {
     'fights': fights,
     'fight_stats': fight_stats_list,
     'round_stats': round_stats_list,
+    'walkout_playlists': old.get('walkout_playlists', []) if os.path.exists(existing) else [],
+    'walkout_playlist_tracks': old.get('walkout_playlist_tracks', []) if os.path.exists(existing) else [],
     'biomechanics_templates': bio_templates
 }
 
