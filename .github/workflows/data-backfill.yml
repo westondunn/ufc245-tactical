@@ -1,0 +1,144 @@
+name: Data audit + backfill against prod DB
+
+# One-click audit → backfill runner against the production Postgres, using the
+# same code path as the in-app nightly scheduler (data/audit + data/backfill).
+# Runs from a GitHub runner because backfill scrapes ufcstats.com / ufc.com,
+# which the app's own container can also do — this workflow exists for manual,
+# on-demand sweeps (e.g. same-day before an event).
+#
+# Setup: uses the existing DATABASE_URL repository secret (Railway →
+# Postgres → DATABASE_PUBLIC_URL). The optional predictions trigger uses the
+# existing RAILWAY_PREDICTIONS_URL + PREDICTION_SERVICE_KEY secrets.
+# Safe to re-run: audit snapshots are append-only, backfill is confidence-
+# gated (risky gaps go to the review queue instead of being written).
+
+on:
+  workflow_dispatch:
+    inputs:
+      scope:
+        description: 'Audit scope (empty = full audit; e.g. upcoming-roster or event:779)'
+        type: string
+        default: ''
+      dry_run:
+        description: 'Backfill dry run (log decisions, write nothing)'
+        type: boolean
+        default: false
+      predict_event_id:
+        description: 'Event id to trigger predictions for after backfill (empty = skip, "auto" = today''s event)'
+        type: string
+        default: ''
+
+permissions:
+  contents: read
+
+concurrency:
+  group: data-backfill
+  cancel-in-progress: false
+
+jobs:
+  backfill:
+    name: Audit + backfill prod
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Check DATABASE_URL secret
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: |
+          if [ -z "$DATABASE_URL" ]; then
+            echo "::error::DATABASE_URL secret not set. Add the Railway DATABASE_PUBLIC_URL value as a repository secret named DATABASE_URL, then re-run."
+            exit 1
+          fi
+          echo "DATABASE_URL secret present."
+
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          fetch-depth: 1
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: 'npm'
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Audit (pre-backfill)
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUDIT_SCOPE: ${{ inputs.scope }}
+        run: |
+          if [ -n "$AUDIT_SCOPE" ]; then
+            node scripts/audit-run.js "--scope=$AUDIT_SCOPE"
+          else
+            node scripts/audit-run.js
+          fi
+
+      - name: Backfill
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        run: |
+          if [ "$DRY_RUN" = "true" ]; then
+            node scripts/backfill-run.js --dry-run
+          else
+            node scripts/backfill-run.js
+          fi
+
+      - name: Audit (post-backfill coverage delta)
+        if: ${{ inputs.dry_run == false }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          AUDIT_SCOPE: ${{ inputs.scope }}
+        run: |
+          if [ -n "$AUDIT_SCOPE" ]; then
+            node scripts/audit-run.js "--scope=$AUDIT_SCOPE"
+          else
+            node scripts/audit-run.js
+          fi
+
+      - name: Integrity scan summary
+        if: ${{ inputs.dry_run == false }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+        run: node scripts/integrity.js scan
+
+      - name: Trigger predictions for event
+        if: ${{ inputs.predict_event_id != '' }}
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          RAILWAY_PREDICTIONS_URL: ${{ secrets.RAILWAY_PREDICTIONS_URL }}
+          PREDICTION_SERVICE_KEY: ${{ secrets.PREDICTION_SERVICE_KEY }}
+          PREDICT_EVENT_ID: ${{ inputs.predict_event_id }}
+        run: |
+          if [ -z "$RAILWAY_PREDICTIONS_URL" ] || [ -z "$PREDICTION_SERVICE_KEY" ]; then
+            echo "::error::RAILWAY_PREDICTIONS_URL / PREDICTION_SERVICE_KEY secrets not set — cannot trigger predictions."
+            exit 1
+          fi
+          if [ "$PREDICT_EVENT_ID" = "auto" ]; then
+            PREDICT_EVENT_ID=$(node -e "
+              const db = require('./db');
+              (async () => {
+                await db.init();
+                const today = new Date().toISOString().slice(0, 10);
+                const rows = await db.allRows('SELECT id, name, date FROM events WHERE date = ? ORDER BY id', [today]);
+                if (!rows.length) { console.error('No event dated ' + today); process.exit(1); }
+                console.error('Resolved event: ' + JSON.stringify(rows[0]));
+                console.log(rows[0].id);
+                process.exit(0);
+              })().catch(e => { console.error(e.message); process.exit(1); });
+            ")
+          fi
+          echo "Triggering predictions for event_id=$PREDICT_EVENT_ID"
+          HTTP_CODE=$(curl -s -o /tmp/predict-response.json -w "%{http_code}" --max-time 570 \
+            -X POST "$RAILWAY_PREDICTIONS_URL/admin/predict-event?event_id=$PREDICT_EVENT_ID" \
+            -H "x-prediction-key: $PREDICTION_SERVICE_KEY")
+          echo "HTTP $HTTP_CODE"
+          cat /tmp/predict-response.json
+          echo
+          if [ "$HTTP_CODE" != "200" ]; then
+            echo "::error::predict-event returned HTTP $HTTP_CODE"
+            exit 1
+          fi
